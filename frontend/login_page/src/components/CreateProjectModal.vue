@@ -54,7 +54,6 @@
 <script setup lang="ts">
 import { reactive, ref, watch } from 'vue'
 import { createProject as createTaskProject } from '../services/tasks'
-import { createProject as createTimeProject } from '../services/time'
 import { useMessage } from 'naive-ui'
 
 /* props / emits */
@@ -79,7 +78,7 @@ function onCancel() {
   innerShow.value = false
 }
 
-/* создаём проект сразу в двух сервисах */
+/* создаём проект в task-service (единственный сервис с проектами) */
 async function onSave() {
   if (!form.name || !form.name.trim()) {
     message.error('Введите название проекта')
@@ -88,22 +87,10 @@ async function onSave() {
 
   saving.value = true
   try {
-    // 1️⃣ создаём проект в task-service
     const createdTaskProject = await createTaskProject({
       name: form.name.trim(),
       description: form.description?.trim() || ''
     })
-
-    // 2️⃣ создаём проект в time-service
-    try {
-      await createTimeProject({
-        name: createdTaskProject.name,
-        description: createdTaskProject.description || '',
-        external_id: createdTaskProject.id  // синхронизация через external_id
-      })
-    } catch (err) {
-      console.warn('Не удалось создать проект в time-service, таймеры могут не работать', err)
-    }
 
     message.success('Проект создан')
     emit('created', createdTaskProject)

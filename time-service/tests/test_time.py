@@ -14,8 +14,6 @@ PROTECTED = [
     ("get", "/api/time/time-entries"),
     ("post", "/api/time/time-entries"),
     ("get", "/api/time/statistics/users"),
-    ("get", "/api/time/projects"),
-    ("post", "/api/time/projects"),
 ]
 
 
@@ -109,6 +107,14 @@ def test_statistics_admin_only(client, user1, admin):
     assert r.status_code == 200
     [row] = r.json()
     assert (row["user_id"], row["task_count"], row["avg_minutes"]) == (1, 2, 15)
+
+
+# --- Проекты удалены из time (проекты живут в task-service) ---
+
+@pytest.mark.parametrize("method", ["get", "post"])
+def test_projects_endpoint_removed_404(client, user1, method):
+    r = client.request(method, "/api/time/projects", json={"name": "p"}, headers=user1)
+    assert r.status_code == 404
 
 
 # --- DATABASE_URL обязателен ---

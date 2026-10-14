@@ -1,10 +1,5 @@
 import api from './api'
 
-export async function createProject(payload: { name: string; description?: string }) {
-  const r = await api.post('/api/time/projects', payload)
-  return r.data
-}
-
 export async function createTimeEntry(entry: {
   task_id: number
   user_id: number | null

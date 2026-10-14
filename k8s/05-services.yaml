@@ -221,6 +221,36 @@ spec:
       labels:
         app: ser-time
     spec:
+      # Миграции до старта приложения: тот же образ и env, что у ser-time (env.py читает настройки сервиса).
+      # Временное решение, в 1.4 заменяется на Job
+      initContainers:
+      - name: migrate
+        image: ser-time:latest
+        imagePullPolicy: Never
+        command: ["alembic", "upgrade", "head"]
+        env:
+        - name: TIME_USER
+          valueFrom:
+            secretKeyRef:
+              name: db-credentials
+              key: time-user
+        - name: TIME_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: db-credentials
+              key: time-password
+        - name: DATABASE_URL
+          value: "postgresql+psycopg://time_user:time_password@time-db:5432/time_db"
+        - name: SECRET_KEY
+          valueFrom:
+            secretKeyRef:
+              name: app-secrets
+              key: secret-key
+        - name: ALGORITHM
+          valueFrom:
+            secretKeyRef:
+              name: app-secrets
+              key: algorithm
       containers:
       - name: ser-time
         image: ser-time:latest

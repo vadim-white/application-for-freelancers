@@ -20,15 +20,6 @@ def get_db():
     finally:
         db.close()
 
-# Projects
-@router.post("/projects", response_model=schemas.ProjectRead)
-def create_project(project_in: schemas.ProjectCreate, db: Session = Depends(get_db)):
-    return crud.create_project(db, project_in)
-
-@router.get("/projects", response_model=List[schemas.ProjectRead])
-def list_projects(db: Session = Depends(get_db)):
-    return crud.get_projects(db)
-
 # Time entries
 @router.post("/time-entries", response_model=schemas.TimeEntryRead)
 def create_entry(entry_in: schemas.TimeEntryCreate, db: Session = Depends(get_db),

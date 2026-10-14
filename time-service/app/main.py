@@ -1,5 +1,4 @@
 from fastapi import FastAPI
-from .db import Base, engine
 from .api import router as time_router
 import logging
 
@@ -8,12 +7,7 @@ logger = logging.getLogger(__name__)
 
 app = FastAPI(title="Time Service")
 
-# Инициализация БД при старте
-@app.on_event("startup")
-async def startup_event():
-    Base.metadata.create_all(bind=engine)
-    logger.info("Database tables created or already exist")
-
+# Таблицы создаёт не приложение, а миграции: alembic upgrade head (в compose — сервис ser-time-migrate)
 app.include_router(time_router, prefix="/api/time")
 
 @app.get("/")

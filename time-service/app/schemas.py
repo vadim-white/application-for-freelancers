@@ -2,23 +2,6 @@ from pydantic import BaseModel, Field, validator
 from typing import Optional
 from datetime import datetime
 
-class ProjectBase(BaseModel):
-    name: str
-    description: Optional[str] = None
-
-class ProjectCreate(BaseModel):
-    name: str
-    description: Optional[str] = ""
-    external_id: Optional[int] = None
-
-class ProjectRead(ProjectBase):
-    id: int
-    is_active: bool
-    created_at: datetime
-
-    class Config:
-        orm_mode = True
-
 class TimeEntryBase(BaseModel):
     task_id: int
     minutes: int = Field(..., gt=0, description="Количество минут > 0")
@@ -36,7 +19,7 @@ class TimeEntryCreate(TimeEntryBase):
 
 class TimeEntryRead(TimeEntryBase):
     id: int
-    user_id: Optional[int] = None
+    user_id: int
     date: datetime
     is_active: bool
     created_at: datetime

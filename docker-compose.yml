@@ -149,16 +149,31 @@ services:
     container_name: ser-time
     expose:
       - "8003"
-    environment:
+    # &time-env: те же переменные нужны ser-time-migrate (env.py импортирует настройки сервиса)
+    environment: &time-env
       DATABASE_URL: postgresql+psycopg://time_user:time_password@ser-time-db:5432/time_db
       SECRET_KEY: 228
       ALGORITHM: HS256
+    depends_on:
+      # таблицы создаёт миграция, приложение стартует после её успешного завершения
+      ser-time-migrate:
+        condition: service_completed_successfully
+    networks:
+      - ser-network
+    restart: unless-stopped
+
+  # Миграции Time Service: одноразовый запуск alembic upgrade head перед ser-time
+  ser-time-migrate:
+    image: ser-time:latest
+    container_name: ser-time-migrate
+    command: alembic upgrade head
+    environment: *time-env
     depends_on:
       ser-time-db:
         condition: service_healthy
     networks:
       - ser-network
-    restart: unless-stopped
+    restart: "no"
 
   # Frontend (Vue)
   ser-frontend:
