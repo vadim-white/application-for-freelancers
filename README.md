@@ -39,7 +39,7 @@
 
 ## Стек
 
-- Python 3.11, FastAPI, SQLAlchemy 2, Pydantic 2
+- Python 3.14, FastAPI, SQLAlchemy 2.0, Pydantic 2, драйвер PostgreSQL psycopg 3
 - PostgreSQL 15 (в Docker), SQLite для локальной разработки без контейнеров
 - JWT (python-jose), хеширование паролей через bcrypt
 - Vue 3, TypeScript, Pinia, Vue Router, Axios, Vite, Naive UI
@@ -79,7 +79,7 @@ docker compose down -v
 
 ### Локальный запуск без Docker
 
-Нужны Python 3.11+ и Node.js 20+. Каждый сервис запускается в отдельном терминале со своим виртуальным окружением. Таблицы создаются автоматически при старте. По умолчанию сервисы используют SQLite-файлы в своих папках.
+Нужны Python 3.14 (версия в `.python-version`) и Node.js 20+. Каждый сервис запускается в отдельном терминале со своим виртуальным окружением. Таблицы создаются автоматически при старте. По умолчанию сервисы используют SQLite-файлы в своих папках.
 
 Перед первым запуском скопируйте в каждой папке сервиса и в `frontend/login_page` файл `.env.example` в `.env`. В `.env` всех четырёх бэкенд-сервисов впишите один и тот же `SECRET_KEY`, без него сервисы не стартуют. Сгенерировать ключ: `python3 -c "import secrets; print(secrets.token_urlsafe(32))"`. Остальные значения из примеров подходят для локального запуска.
 
@@ -121,7 +121,7 @@ npm run dev
 Тесты есть у gateway, auth-service, task-service и time-service. Им не нужны запущенные сервисы: внешние HTTP-вызовы (gateway → сервисы, task → time) подменяются в тестах, базы — временная SQLite. Запуск в том же образе Python, что и у сервиса (`<service>` — `gateway-service`, `auth-service`, `task-service` или `time-service`):
 
 ```bash
-docker run --rm -v "$PWD/<service>":/src:ro python:3.11-slim sh -c \
+docker run --rm -v "$PWD/<service>":/src:ro python:3.14-slim sh -c \
   "cp -r /src /app && cd /app && rm -rf .env .venv && pip install -q -r requirements.txt -r requirements-dev.txt && python -m pytest -q"
 ```
 
@@ -211,7 +211,7 @@ curl -X POST http://localhost:8000/api/auth/login \
 - `SECRET_KEY` обязателен во всех сервисах. CORS настроен только в gateway и разрешает лишь адреса из `CORS_ORIGINS`
 - Фронтенд сам обновляет access-токен: на ответ 401 он один раз запрашивает `/api/auth/refresh` (параллельные запросы ждут один общий refresh) и повторяет запрос. Если refresh не удался, токены удаляются и открывается страница входа. Refresh-токен живёт 7 дней и не обновляется, после этого нужно войти заново
 - Кнопка «Выполнено» в списке задач проекта ставит статус `done`, а не удаляет задачу. Выполненные задачи показываются отдельным сворачиваемым блоком под текущими
-- В Docker Compose все сервисы работают с PostgreSQL. В task-service и time-service закреплена только версия SQLAlchemy (2.1 по умолчанию требует драйвер `psycopg` v3), остальные зависимости этих сервисов не закреплены
+- Python 3.14 во всех образах. В Docker Compose и Kubernetes сервисы работают с PostgreSQL через psycopg 3 (`postgresql+psycopg://`). Все прямые зависимости бэкенда закреплены точными версиями (`==`), общие пакеты одинаковы во всех сервисах; `pytest` и `httpx` для тестов вынесены в `requirements-dev.txt`
 - Нет миграций, таблицы создаются через `create_all` при старте
 - Автотесты (pytest) есть у всех бэкенд-сервисов, CI нет
 - Фронтенд запускается в dev-режиме, production-сборки нет
@@ -222,7 +222,7 @@ curl -X POST http://localhost:8000/api/auth/login \
 ## Планы
 
 - Владелец у задач и проектов, доступ только к своим данным (admin видит всё)
-- Закреплённые версии зависимостей во всех сервисах, миграции через Alembic
+- Миграции через Alembic, обязательный `DATABASE_URL`, переход на uv (`pyproject.toml` + `uv.lock`)
 - Серверное состояние таймера: запуск, пауза и остановка на бэкенде, защита от параллельных таймеров
 - Тесты (pytest) для всех сервисов и CI
 - Production-сборка фронтенда за nginx

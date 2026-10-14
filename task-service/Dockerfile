@@ -1,10 +1,10 @@
-FROM python:3.11-slim
+FROM python:3.14-slim
 
 WORKDIR /app
 
 # Установка зависимостей
 COPY task-service/requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt psycopg2-binary
+RUN pip install --no-cache-dir -r requirements.txt
 
 # Копирование приложения
 COPY task-service .
