@@ -26,4 +26,3 @@ docs/
 
 # Разовые скрипты (пока не удалены)
 init_db.py
-auth-service/fix.py
