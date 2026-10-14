@@ -1,11 +1,19 @@
 """
-Инициализация тестовых пользователей в БД
+Тестовые пользователи для разработки: python -m app.init_users
+
+Создаёт пользователей только при SEED_TEST_USERS=true, иначе пишет «пропущено» и выходит с кодом 0.
+Таблицы должны уже существовать (alembic upgrade head). Повторный запуск не создаёт дублей.
 """
+import logging
+
 from sqlalchemy.orm import Session
 from . import models
 from .models import UserRole
+from .core.config import settings
 from .core.security import get_password_hash
 from .db import SessionLocal
+
+logger = logging.getLogger("app.init_users")
 
 # Тестовые пользователи
 TEST_USERS = [
@@ -30,42 +38,40 @@ TEST_USERS = [
 ]
 
 def init_test_users(db: Session):
-    """Создать тестовых пользователей если их еще нет"""
+    """Создать тестовых пользователей, которых ещё нет"""
     for user_data in TEST_USERS:
-        # Проверить есть ли уже такой пользователь
         existing_user = db.query(models.User).filter(
             models.User.email == user_data["email"]
         ).first()
-        
+
         if not existing_user:
-            new_user = models.User(
+            db.add(models.User(
                 email=user_data["email"],
                 full_name=user_data["full_name"],
                 hashed_password=get_password_hash(user_data["password"]),
                 role=user_data["role"],
-            )
-            db.add(new_user)
-            role_name = "Admin" if user_data["role"] == UserRole.admin else "User"
-            print(f"✅ Created user: {user_data['email']} ({role_name})")
+            ))
+            logger.info("Создан пользователь %s (%s)", user_data["email"], user_data["role"].value)
         else:
-            role_name = "Admin" if user_data["role"] == UserRole.admin else "User"
-            print(f"⏭️  User already exists: {user_data['email']} ({role_name})")
-    
+            logger.info("Пользователь уже есть: %s", user_data["email"])
+
     db.commit()
 
-def initialize_database():
-    """Инициализация БД с тестовыми пользователями"""
+def main():
+    if not settings.SEED_TEST_USERS:
+        logger.info("SEED_TEST_USERS не включён, создание тестовых пользователей пропущено")
+        return
     db = SessionLocal()
     try:
-        print("🚀 Initializing test users...")
         init_test_users(db)
-        print("✨ Database initialization complete!")
-    except Exception as e:
-        print(f"❌ Error initializing database: {e}")
+    except Exception:
         db.rollback()
+        logger.exception("Не удалось создать тестовых пользователей")
         raise
     finally:
         db.close()
+    logger.info("Тестовые пользователи готовы")
 
 if __name__ == "__main__":
-    initialize_database()
+    logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
+    main()

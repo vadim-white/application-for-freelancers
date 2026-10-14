@@ -10,7 +10,7 @@ class Settings(BaseSettings):
     ACCESS_TOKEN_EXPIRE_MINUTES: int = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "15"))
     REFRESH_TOKEN_EXPIRE_MINUTES: int = int(os.getenv("REFRESH_TOKEN_EXPIRE_MINUTES", str(60 * 24 * 7)))
     ALGORITHM: str = os.getenv("ALGORITHM", "HS256")
-    # Тестовые пользователи создаются при старте только при SEED_TEST_USERS=true
+    # Тестовых пользователей создаёт команда python -m app.init_users, и только при SEED_TEST_USERS=true
     SEED_TEST_USERS: bool = False
 
     class Config:

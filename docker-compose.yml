@@ -90,17 +90,17 @@ services:
     container_name: ser-auth
     expose:
       - "8001"
-    # &auth-env: те же переменные нужны ser-auth-migrate (env.py импортирует настройки сервиса)
+    # &auth-env: те же переменные нужны ser-auth-migrate и ser-auth-seed (они импортируют настройки сервиса)
     environment: &auth-env
       DATABASE_URL: postgresql+psycopg://auth_user:auth_password@ser-auth-db:5432/auth_db
       SECRET_KEY: 228
       ALGORITHM: HS256
       ACCESS_TOKEN_EXPIRE_MINUTES: 15
-      # только для разработки: admin@example.com, user1/user2@example.com с паролем password123
-      SEED_TEST_USERS: "true"
     depends_on:
-      # таблицы создаёт миграция, приложение стартует после её успешного завершения
+      # таблицы создаёт миграция, тестовых пользователей — seed; приложение стартует после обоих
       ser-auth-migrate:
+        condition: service_completed_successfully
+      ser-auth-seed:
         condition: service_completed_successfully
     networks:
       - ser-network
@@ -115,6 +115,24 @@ services:
     depends_on:
       ser-auth-db:
         condition: service_healthy
+    networks:
+      - ser-network
+    restart: "no"
+
+  # Тестовые пользователи Auth Service: одноразовый запуск python -m app.init_users после миграций.
+  # При SEED_TEST_USERS=false пишет «пропущено» и завершается с кодом 0
+  ser-auth-seed:
+    image: ser-auth:latest
+    container_name: ser-auth-seed
+    command: python -m app.init_users
+    environment:
+      <<: *auth-env
+      # только для разработки: admin@example.com, user1/user2@example.com с паролем password123.
+      # Выключить: SEED_TEST_USERS=false docker compose up
+      SEED_TEST_USERS: ${SEED_TEST_USERS:-true}
+    depends_on:
+      ser-auth-migrate:
+        condition: service_completed_successfully
     networks:
       - ser-network
     restart: "no"

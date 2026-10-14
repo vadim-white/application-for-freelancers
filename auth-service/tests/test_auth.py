@@ -8,7 +8,7 @@ import pytest
 from fastapi.testclient import TestClient
 from jose import jwt
 
-from app import models
+from app import init_users, models
 from app.core.config import settings
 from app.main import app
 from tests.conftest import PASSWORD, login
@@ -179,19 +179,48 @@ def test_me_inactive_or_deleted_user(client, make_user, db, is_active, delete):
 
 # --- seed тестовых пользователей ---
 
-def test_no_seed_by_default(db):
+def test_startup_does_not_seed(db, monkeypatch):
+    # seed — отдельная команда, приложение при старте пользователей не создаёт даже с флагом
+    monkeypatch.setattr(settings, "SEED_TEST_USERS", True)
     with TestClient(app):
         pass
     assert db.query(models.User).count() == 0
 
 
-def test_seed_when_enabled(db, monkeypatch):
+def test_init_users_creates_test_users(client, db, monkeypatch):
     monkeypatch.setattr(settings, "SEED_TEST_USERS", True)
-    with TestClient(app) as client:
-        r = login(client, email="admin@example.com")
+    init_users.main()
+    emails = {u.email: u.role for u in db.query(models.User)}
+    assert emails == {
+        "admin@example.com": models.UserRole.admin,
+        "user1@example.com": models.UserRole.user,
+        "user2@example.com": models.UserRole.user,
+    }
+    r = login(client, email="admin@example.com")
     assert r.status_code == 200
     assert claims(r.json()["access_token"])["role"] == "admin"
+
+
+def test_init_users_twice_no_duplicates(db, monkeypatch):
+    monkeypatch.setattr(settings, "SEED_TEST_USERS", True)
+    init_users.main()
+    init_users.main()
     assert db.query(models.User).count() == 3
+
+
+def test_init_users_skipped_without_flag(db, caplog):
+    with caplog.at_level("INFO", logger="app.init_users"):
+        init_users.main()
+    assert db.query(models.User).count() == 0
+    assert "пропущено" in caplog.text
+
+
+def test_init_users_module_exits_zero_without_flag(tmp_path):
+    env = {**os.environ, "SEED_TEST_USERS": "false", "PYTHONPATH": str(SERVICE_ROOT)}
+    r = subprocess.run([sys.executable, "-m", "app.init_users"],
+                       cwd=tmp_path, env=env, capture_output=True, text=True)
+    assert r.returncode == 0, r.stderr
+    assert "пропущено" in r.stderr
 
 
 # --- SECRET_KEY обязателен ---
