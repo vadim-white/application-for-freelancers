@@ -69,10 +69,10 @@ services:
       AUTH_URL: http://ser-auth:8001
       TASK_URL: http://ser-task:8002
       TIME_URL: http://ser-time:8003
-      SECRET_KEY: 228
-      ALGORITHM: HS256
+      SECRET_KEY: ${SECRET_KEY:?задайте в .env (./scripts/init-env.sh)}
+      ALGORITHM: ${ALGORITHM:-HS256}
       # откуда браузеру разрешены запросы (CORS), через запятую
-      CORS_ORIGINS: http://localhost:5173,http://127.0.0.1:5173
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:5173,http://127.0.0.1:5173}
     depends_on:
       - ser-auth
       - ser-task
@@ -93,9 +93,9 @@ services:
     # &auth-env: те же переменные нужны ser-auth-migrate и ser-auth-seed (они импортируют настройки сервиса)
     environment: &auth-env
       DATABASE_URL: postgresql+psycopg://auth_user:auth_password@ser-auth-db:5432/auth_db
-      SECRET_KEY: 228
-      ALGORITHM: HS256
-      ACCESS_TOKEN_EXPIRE_MINUTES: 15
+      SECRET_KEY: ${SECRET_KEY:?задайте в .env (./scripts/init-env.sh)}
+      ALGORITHM: ${ALGORITHM:-HS256}
+      ACCESS_TOKEN_EXPIRE_MINUTES: ${ACCESS_TOKEN_EXPIRE_MINUTES:-15}
     depends_on:
       # таблицы создаёт миграция, тестовых пользователей — seed; приложение стартует после обоих
       ser-auth-migrate:
@@ -150,8 +150,8 @@ services:
     environment: &task-env
       DATABASE_URL: postgresql+psycopg://task_user:task_password@ser-task-db:5432/task_db
       TIME_SERVICE_URL: http://ser-time:8003
-      SECRET_KEY: 228
-      ALGORITHM: HS256
+      SECRET_KEY: ${SECRET_KEY:?задайте в .env (./scripts/init-env.sh)}
+      ALGORITHM: ${ALGORITHM:-HS256}
     depends_on:
       # таблицы создаёт миграция, приложение стартует после её успешного завершения
       ser-task-migrate:
@@ -185,8 +185,8 @@ services:
     # &time-env: те же переменные нужны ser-time-migrate (env.py импортирует настройки сервиса)
     environment: &time-env
       DATABASE_URL: postgresql+psycopg://time_user:time_password@ser-time-db:5432/time_db
-      SECRET_KEY: 228
-      ALGORITHM: HS256
+      SECRET_KEY: ${SECRET_KEY:?задайте в .env (./scripts/init-env.sh)}
+      ALGORITHM: ${ALGORITHM:-HS256}
     depends_on:
       # таблицы создаёт миграция, приложение стартует после её успешного завершения
       ser-time-migrate:

@@ -54,8 +54,11 @@
 ```bash
 git clone https://github.com/vadim-white/application-for-freelancers.git
 cd application-for-freelancers
+./scripts/init-env.sh        # создаёт .env со случайным SECRET_KEY (повторный запуск ничего не ломает)
 docker compose up --build
 ```
+
+Без `.env` `docker compose` не стартует и пишет «задайте в .env (./scripts/init-env.sh)». Скрипт создаёт корневой `.env` из `.env.example`; если `.env` уже есть, дописывает только отсутствующие ключи, существующие значения не трогает. Значения секретов он не печатает.
 
 После запуска:
 
@@ -65,7 +68,7 @@ docker compose up --build
 
 Таблицы auth-service, task-service и time-service создают одноразовые контейнеры `ser-auth-migrate`, `ser-task-migrate` и `ser-time-migrate` (`alembic upgrade head`), сервис стартует только после успешного завершения своей миграции. Если тома остались от версии без миграций, один раз выполните `docker compose down -v`: иначе миграция упадёт на уже существующих таблицах.
 
-Тестовых пользователей создаёт одноразовый контейнер `ser-auth-seed` (`python -m app.init_users`) после миграции auth, ser-auth стартует после него. Сам сервис при старте пользователей не создаёт. В `docker-compose.yml` для seed включён `SEED_TEST_USERS=true`: создаются пользователи, которых ещё нет, повторный запуск дублей не делает. Без тестовых пользователей: `SEED_TEST_USERS=false docker compose up --build` (seed пишет в лог «пропущено» и завершается с кодом 0, войти можно после регистрации). Вне Docker то же делает `python -m app.init_users` в папке auth-service после `alembic upgrade head`, если в `.env` указано `SEED_TEST_USERS=true`.
+Тестовых пользователей создаёт одноразовый контейнер `ser-auth-seed` (`python -m app.init_users`) после миграции auth, ser-auth стартует после него. Сам сервис при старте пользователей не создаёт. По умолчанию (`SEED_TEST_USERS=true` в `.env`, дефолт в `docker-compose.yml` тоже `true`): создаются пользователи, которых ещё нет, повторный запуск дублей не делает. Без тестовых пользователей: `SEED_TEST_USERS=false docker compose up --build` (seed пишет в лог «пропущено» и завершается с кодом 0, войти можно после регистрации). Вне Docker то же делает `python -m app.init_users` в папке auth-service после `alembic upgrade head`, если в `.env` указано `SEED_TEST_USERS=true`.
 
 | Email | Пароль | Роль |
 |-------|--------|------|
@@ -164,7 +167,7 @@ kubectl get pods -n <namespace>
 
 ## Конфигурация
 
-Основные переменные окружения. Все переменные с описанием собраны в файлах `.env.example` в папке каждого сервиса и в `frontend/login_page`.
+Основные переменные окружения. Для Docker Compose общие переменные (`SECRET_KEY`, `ALGORITHM`, `ACCESS_TOKEN_EXPIRE_MINUTES`, `CORS_ORIGINS`, `SEED_TEST_USERS`) задаются в корневом `.env`: шаблон — [.env.example](.env.example), создаёт файл `./scripts/init-env.sh`, в git `.env` не попадает. Остальное (адреса сервисов, `DATABASE_URL`) задано в `docker-compose.yml`. Для запуска без Docker все переменные с описанием собраны в файлах `.env.example` в папке каждого сервиса и в `frontend/login_page`.
 
 | Переменная | Где используется | Описание |
 |------------|------------------|----------|
@@ -178,7 +181,7 @@ kubectl get pods -n <namespace>
 | `TIME_SERVICE_URL` | task | Адрес Time Service для сбора статистики |
 | `VITE_API_BASE` | frontend | Адрес gateway |
 
-Значения из `docker-compose.yml` годятся только для разработки. Перед любым реальным деплоем замените `SECRET_KEY` и пароли баз данных.
+`SECRET_KEY` в compose обязателен и берётся из `.env` (ключ генерирует `init-env.sh`). Пароли баз данных пока зашиты в `docker-compose.yml` и годятся только для разработки; вынести их в `.env` предстоит в 1.3.2, до реального деплоя замените.
 
 ## API
 
@@ -223,6 +226,8 @@ curl -X POST http://localhost:8000/api/auth/login \
 ├── gateway-service/     API Gateway
 ├── frontend/login_page/ клиентское приложение (Vue 3)
 ├── k8s/                 манифесты Kubernetes
+├── scripts/             вспомогательные скрипты (init-env.sh — генерация .env)
+├── .env.example         шаблон общих переменных для Docker Compose
 ├── docker-compose.yml
 └── helm-values.yaml
 ```
