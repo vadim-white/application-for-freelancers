@@ -222,7 +222,7 @@ curl -X POST http://localhost:8000/api/auth/login \
 - Кнопка «Выполнено» в списке задач проекта ставит статус `done`, а не удаляет задачу. Выполненные задачи показываются отдельным сворачиваемым блоком под текущими
 - Python 3.14 во всех образах. В Docker Compose и Kubernetes сервисы работают с PostgreSQL через psycopg 3 (`postgresql+psycopg://`). Все прямые зависимости бэкенда закреплены точными версиями (`==`), общие пакеты одинаковы во всех сервисах; `pytest` и `httpx` для тестов вынесены в `requirements-dev.txt`
 - Схема БД auth-service, task-service и time-service управляется миграциями Alembic (`<service>/migrations/`): в Docker Compose их применяют сервисы `ser-auth-migrate`, `ser-task-migrate` и `ser-time-migrate` до старта своего сервиса, в Kubernetes — initContainer `migrate`. Тест в каждом из них проверяет, что миграции совпадают с моделями
-- Проекты хранятся только в task-service: дубль проектов в time-service (`/api/time/projects`) удалён, фронтенд создаёт проект одним запросом. `user_id` записи времени обязателен (NOT NULL)
+- Проекты хранятся только в task-service: дубль проектов в time-service (`/api/time/projects`) удалён, фронтенд создаёт проект одним запросом. `user_id` записи времени обязателен (NOT NULL), фронтенд его не отправляет: сервер берёт `user_id` из токена
 - Автотесты (pytest) есть у всех бэкенд-сервисов, CI нет
 - Фронтенд запускается в dev-режиме, production-сборки нет
 - В Kubernetes нет Ingress и автомасштабирования, у всех сервисов одна реплика
@@ -233,7 +233,7 @@ curl -X POST http://localhost:8000/api/auth/login \
 
 - Переход на uv (`pyproject.toml` + `uv.lock`)
 - Серверное состояние таймера: запуск, пауза и остановка на бэкенде, защита от параллельных таймеров
-- Тесты (pytest) для всех сервисов и CI
+- CI: тесты, линтер, сборка фронтенда
 - Production-сборка фронтенда за nginx
 - Ingress, HPA, health и readiness probes в Kubernetes
 - Отчёты по времени и экспорт

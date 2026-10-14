@@ -98,7 +98,6 @@
 
 <script setup lang="ts">
 import { ref, watch, computed, onUnmounted } from 'vue'
-import { useAuthStore } from '../stores/auth'
 import { createTimeEntry } from '../services/time'
 import { updateTask } from '../services/tasks'
 import { useMessage } from 'naive-ui'
@@ -109,7 +108,6 @@ const props = defineProps({
 })
 const emit = defineEmits(['update:show', 'stopped'])
 
-const auth = useAuthStore()
 const message = useMessage()
 
 const innerShow = ref(props.show)
@@ -186,7 +184,6 @@ async function onStop() {
   const minutes = Math.round(elapsed.value / 60)
   const payload = {
     task_id: props.task.id,
-    user_id: auth.user?.id ?? null,
     minutes,
     description: note.value || props.task.title
   }
@@ -194,7 +191,6 @@ async function onStop() {
   console.log('Time entry payload:', payload)
   console.log('Task ID:', payload.task_id, 'Type:', typeof payload.task_id)
   console.log('Minutes:', payload.minutes, 'Type:', typeof payload.minutes)
-  console.log('User ID:', payload.user_id, 'Type:', typeof payload.user_id)
 
   saving.value = true
   try {

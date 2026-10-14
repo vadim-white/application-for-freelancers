@@ -253,7 +253,6 @@ function createProjectOpen() {
 
 function onProjectCreated(created: any) {
   load()
-  message.success('Проект успешно создан')
 }
 
 onMounted(async () => {

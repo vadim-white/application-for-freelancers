@@ -2,13 +2,11 @@ import api from './api'
 
 export async function createTimeEntry(entry: {
   task_id: number
-  user_id: number | null
   minutes: number
   description?: string
 }) {
   // гарантируем числа
   entry.task_id = Number(entry.task_id)
-  entry.user_id = entry.user_id !== null && entry.user_id !== undefined ? Number(entry.user_id) : null
   entry.minutes = Number(entry.minutes)
   
   console.log('createTimeEntry called with:', entry)

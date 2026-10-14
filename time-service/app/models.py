@@ -1,5 +1,4 @@
-from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, Boolean, Float, func
-from sqlalchemy.orm import relationship
+from sqlalchemy import Column, Integer, String, DateTime, Boolean, func
 from .db import Base
 
 class TimeEntry(Base):

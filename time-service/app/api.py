@@ -63,8 +63,6 @@ def get_users_statistics(db: Session = Depends(get_db), user: CurrentUser = Depe
             models.TimeEntry.user_id,
             func.count(models.TimeEntry.id).label('task_count'),
             func.avg(models.TimeEntry.minutes).label('avg_minutes')
-        ).filter(
-            models.TimeEntry.user_id != None
         ).group_by(
             models.TimeEntry.user_id
         ).all()

@@ -89,7 +89,7 @@
           </div>
         </div>
 
-        <div v-else class="empty-tasks">
+        <div v-if="!tasks.length" class="empty-tasks">
           <div style="font-size: 48px; margin-bottom: 12px">📭</div>
           <div style="font-weight: 600">Нет задач</div>
           <div style="color: var(--color-text-secondary); font-size: 13px">

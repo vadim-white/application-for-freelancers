@@ -5,7 +5,6 @@ import os
 class Settings(BaseSettings):
     # Без значения по умолчанию: без строки подключения сервис не стартует
     DATABASE_URL: str = Field(min_length=1)
-    # Если в проде — поставить отдельную БД
 
     # Адреса других сервисов (в Docker — имена контейнеров)
     TIME_SERVICE_URL: str = os.getenv("TIME_SERVICE_URL", "http://127.0.0.1:8003")
