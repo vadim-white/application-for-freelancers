@@ -1,52 +1,59 @@
 import httpx
 from fastapi import Request, Response
-from fastapi.responses import StreamingResponse
-from typing import Dict
+from typing import Dict, Optional
 from .core.config import settings
 import logging
 
 logger = logging.getLogger(__name__)
 
-# helper to build target URL based on incoming path
-def _route_to_target(path: str) -> str:
-    # incoming paths: /api/auth/..., /api/tasks/..., /api/time/...
-    if path.startswith("/api/auth"):
-        base = settings.AUTH_URL
-    elif path.startswith("/api/tasks"):
-        base = settings.TASK_URL
-    elif path.startswith("/api/time"):
-        base = settings.TIME_URL
-    else:
-        # default: health or unknown
-        base = settings.AUTH_URL
-    # forward same path and query
-    return base + path
+# Заголовки, которые ставит только gateway; клиентские значения затираются
+USER_HEADER_PREFIX = "x-user-"
 
-async def stream_proxy(request: Request) -> Response:
-    target_url = _route_to_target(str(request.url.path))
+
+def resolve_upstream(path: str) -> Optional[str]:
+    """Базовый адрес сервиса для пути /api/{auth,tasks,time}/... или None для неизвестного пути."""
+    # точечные сегменты не пропускаем: httpx нормализует их и запрос уйдёт не туда, где проверялся
+    if any(segment in (".", "..") for segment in path.split("/")):
+        return None
+    routes = {
+        "/api/auth": settings.AUTH_URL,
+        "/api/tasks": settings.TASK_URL,
+        "/api/time": settings.TIME_URL,
+    }
+    for prefix, base in routes.items():
+        if path == prefix or path.startswith(prefix + "/"):
+            return base
+    return None
+
+
+async def stream_proxy(request: Request, base_url: str, user: Optional[dict]) -> Response:
+    target_url = base_url + request.url.path
     if request.url.query:
         target_url = target_url + "?" + request.url.query
 
     logger.info(f"Proxying {request.method} {request.url.path} -> {target_url}")
 
-    # build headers to forward (exclude host)
+    # build headers to forward (exclude host and client-supplied X-User-*)
     headers: Dict[str, str] = {}
     for k, v in request.headers.items():
-        if k.lower() == "host":
+        lower = k.lower()
+        if lower == "host" or lower.startswith(USER_HEADER_PREFIX):
             continue
         headers[k] = v
-    
-    logger.debug(f"Forwarding headers: {dict(list(headers.items())[:5])}")  # log first 5 headers
+
+    if user is not None:
+        headers["X-User-Id"] = user["id"]
+        headers["X-User-Role"] = user["role"]
 
     async with httpx.AsyncClient(timeout=30.0) as client:
         # read body (async)
         body = await request.body()
-        
+
         # Если есть body, убедимся что Content-Type установлен правильно
         if body and "content-type" not in {k.lower() for k in headers.keys()}:
             headers["Content-Type"] = "application/json"
             logger.debug("Added Content-Type: application/json")
-        
+
         try:
             r = await client.request(
                 method=request.method,
@@ -57,7 +64,7 @@ async def stream_proxy(request: Request) -> Response:
             logger.info(f"Upstream response: {r.status_code}")
         except httpx.RequestError as e:
             logger.error(f"Upstream request failed: {e}")
-            return Response(content=f"Upstream request failed: {e}", status_code=502)
+            return Response(content="Upstream service unavailable", status_code=502)
 
     # build FastAPI response with upstream status and headers
     response_headers = dict(r.headers)

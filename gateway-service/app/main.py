@@ -1,9 +1,8 @@
-from fastapi import FastAPI, Request, Depends
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from .proxy import stream_proxy
-from .deps import require_jwt
+from .proxy import resolve_upstream, stream_proxy
+from .middleware import authenticate
 from .health import router as health_router
-from .core.config import settings
 
 app = FastAPI(title="API Gateway")
 
@@ -18,13 +17,14 @@ app.add_middleware(
 app.include_router(health_router)
 
 # catch-all proxy route: all paths under /api/*
-# For protected endpoints we call require_jwt which will validate token if needed.
+# Неизвестные пути -> 404, всё кроме публичных эндпоинтов auth требует Bearer access-токен.
 @app.api_route("/api/{full_path:path}", methods=["GET","POST","PUT","PATCH","DELETE","OPTIONS"])
 async def proxy(full_path: str, request: Request):
-    # проверяем токен только для защищённых эндпоинтов
-    from .middleware import jwt_middleware
-    await jwt_middleware(request)
-    return await stream_proxy(request)
+    base_url = resolve_upstream(request.url.path)
+    if base_url is None:
+        raise HTTPException(status_code=404, detail="Not found")
+    user = authenticate(request)
+    return await stream_proxy(request, base_url, user)
 
 @app.get("/")
 async def root():

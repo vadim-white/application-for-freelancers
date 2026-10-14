@@ -24,5 +24,4 @@ async def health():
             ok["time"] = r.status_code == 200
         except Exception:
             ok["time"] = False
-    print('fnbndfnbdmdf')
     return {"gateway": "ok", "upstreams": ok}
