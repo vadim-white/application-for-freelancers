@@ -6,8 +6,8 @@
    python -m venv .venv
    source .venv/bin/activate
    pip install -r requirements.txt
-3. Инициализируйте БД (для sqlite используем create_all):
-   python -c "from app.db import Base, engine; from app import models; Base.metadata.create_all(bind=engine)"
+3. Создайте таблицы миграциями (URL берётся из DATABASE_URL):
+   alembic upgrade head
 4. Запустите сервис:
    uvicorn app.main:app --reload --port 8001
 

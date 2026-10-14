@@ -14,6 +14,41 @@ spec:
       labels:
         app: ser-auth
     spec:
+      # Миграции до старта приложения: тот же образ и env, что у ser-auth (env.py читает настройки сервиса).
+      # Временное решение, в 1.4 заменяется на Job
+      initContainers:
+      - name: migrate
+        image: ser-auth:latest
+        imagePullPolicy: Never
+        command: ["alembic", "upgrade", "head"]
+        env:
+        - name: AUTH_USER
+          valueFrom:
+            secretKeyRef:
+              name: db-credentials
+              key: auth-user
+        - name: AUTH_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: db-credentials
+              key: auth-password
+        - name: DATABASE_URL
+          value: "postgresql+psycopg://auth_user:auth_password@auth-db:5432/auth_db"
+        - name: SECRET_KEY
+          valueFrom:
+            secretKeyRef:
+              name: app-secrets
+              key: secret-key
+        - name: ALGORITHM
+          valueFrom:
+            secretKeyRef:
+              name: app-secrets
+              key: algorithm
+        - name: ACCESS_TOKEN_EXPIRE_MINUTES
+          valueFrom:
+            secretKeyRef:
+              name: app-secrets
+              key: access-token-expire-minutes
       containers:
       - name: ser-auth
         image: ser-auth:latest

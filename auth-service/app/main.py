@@ -1,16 +1,14 @@
 from fastapi import FastAPI
 from .api import router as api_router
-from .db import Base, engine, SessionLocal
+from .db import SessionLocal
 from .init_users import init_test_users
 from .core.config import settings
 
 app = FastAPI(title="Auth Service (auth-service)")
 
-# Инициализация БД при старте
+# Таблицы создаёт не приложение, а миграции: alembic upgrade head (в compose — сервис ser-auth-migrate)
 @app.on_event("startup")
 async def startup_event():
-    Base.metadata.create_all(bind=engine)
-
     # Тестовые пользователи с известными паролями — только для разработки
     if not settings.SEED_TEST_USERS:
         return

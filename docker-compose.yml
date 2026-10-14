@@ -90,7 +90,8 @@ services:
     container_name: ser-auth
     expose:
       - "8001"
-    environment:
+    # &auth-env: те же переменные нужны ser-auth-migrate (env.py импортирует настройки сервиса)
+    environment: &auth-env
       DATABASE_URL: postgresql+psycopg://auth_user:auth_password@ser-auth-db:5432/auth_db
       SECRET_KEY: 228
       ALGORITHM: HS256
@@ -98,11 +99,25 @@ services:
       # только для разработки: admin@example.com, user1/user2@example.com с паролем password123
       SEED_TEST_USERS: "true"
     depends_on:
+      # таблицы создаёт миграция, приложение стартует после её успешного завершения
+      ser-auth-migrate:
+        condition: service_completed_successfully
+    networks:
+      - ser-network
+    restart: unless-stopped
+
+  # Миграции Auth Service: одноразовый запуск alembic upgrade head перед ser-auth
+  ser-auth-migrate:
+    image: ser-auth:latest
+    container_name: ser-auth-migrate
+    command: alembic upgrade head
+    environment: *auth-env
+    depends_on:
       ser-auth-db:
         condition: service_healthy
     networks:
       - ser-network
-    restart: unless-stopped
+    restart: "no"
 
   # Task Service
   ser-task:

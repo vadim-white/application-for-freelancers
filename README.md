@@ -63,6 +63,8 @@ docker compose up --build
 - gateway: http://localhost:8000
 - документация сервисов (Swagger) доступна на `/docs` у каждого сервиса. В compose наружу опубликованы только gateway и frontend, поэтому Swagger остальных сервисов открывается при локальном запуске
 
+Таблицы auth-service создаёт одноразовый контейнер `ser-auth-migrate` (`alembic upgrade head`), auth-service стартует только после его успешного завершения. Если тома остались от версии без миграций, один раз выполните `docker compose down -v`: иначе миграция упадёт на уже существующих таблицах.
+
 В `docker-compose.yml` включён `SEED_TEST_USERS=true`, поэтому при старте auth-service создаёт тестовых пользователей (если их ещё нет). По умолчанию, без этой переменной, тестовые пользователи не создаются:
 
 | Email | Пароль | Роль |
@@ -79,7 +81,7 @@ docker compose down -v
 
 ### Локальный запуск без Docker
 
-Нужны Python 3.14 (версия в `.python-version`) и Node.js 20+. Каждый сервис запускается в отдельном терминале со своим виртуальным окружением. Таблицы создаются автоматически при старте. Базу выбирает обязательная переменная `DATABASE_URL`: для локального запуска в `.env.example` указан SQLite-файл в папке сервиса.
+Нужны Python 3.14 (версия в `.python-version`) и Node.js 20+. Каждый сервис запускается в отдельном терминале со своим виртуальным окружением. В auth-service таблицы создаёт `alembic upgrade head` (выполнить перед первым запуском и после обновления кода), в task-service и time-service таблицы пока создаются автоматически при старте. Если `auth.db` осталась от версии без миграций, удалите её: на таблицах, созданных без Alembic, `alembic upgrade head` падает с ошибкой `table users already exists`. Базу выбирает обязательная переменная `DATABASE_URL`: для локального запуска в `.env.example` указан SQLite-файл в папке сервиса.
 
 Перед первым запуском скопируйте в каждой папке сервиса и в `frontend/login_page` файл `.env.example` в `.env`. В `.env` всех четырёх бэкенд-сервисов впишите один и тот же `SECRET_KEY`. `DATABASE_URL` в auth, task и time уже есть в примере (SQLite). Без `SECRET_KEY` и `DATABASE_URL` сервисы не стартуют: значений по умолчанию нет, сервис сразу падает с ошибкой валидации настроек. Сгенерировать ключ: `python3 -c "import secrets; print(secrets.token_urlsafe(32))"`. Остальные значения из примеров подходят для локального запуска.
 
@@ -88,6 +90,7 @@ docker compose down -v
 cd auth-service
 python3 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
+alembic upgrade head
 uvicorn app.main:app --reload --port 8001
 
 # task-service
@@ -212,7 +215,7 @@ curl -X POST http://localhost:8000/api/auth/login \
 - Фронтенд сам обновляет access-токен: на ответ 401 он один раз запрашивает `/api/auth/refresh` (параллельные запросы ждут один общий refresh) и повторяет запрос. Если refresh не удался, токены удаляются и открывается страница входа. Refresh-токен живёт 7 дней и не обновляется, после этого нужно войти заново
 - Кнопка «Выполнено» в списке задач проекта ставит статус `done`, а не удаляет задачу. Выполненные задачи показываются отдельным сворачиваемым блоком под текущими
 - Python 3.14 во всех образах. В Docker Compose и Kubernetes сервисы работают с PostgreSQL через psycopg 3 (`postgresql+psycopg://`). Все прямые зависимости бэкенда закреплены точными версиями (`==`), общие пакеты одинаковы во всех сервисах; `pytest` и `httpx` для тестов вынесены в `requirements-dev.txt`
-- Нет миграций, таблицы создаются через `create_all` при старте
+- Схема БД auth-service управляется миграциями Alembic (`auth-service/migrations/`): в Docker Compose их применяет сервис `ser-auth-migrate` до старта auth-service, в Kubernetes — initContainer `migrate`. Тест проверяет, что миграции совпадают с моделями. task-service и time-service пока создают таблицы через `create_all` при старте
 - Автотесты (pytest) есть у всех бэкенд-сервисов, CI нет
 - Фронтенд запускается в dev-режиме, production-сборки нет
 - В Kubernetes нет Ingress и автомасштабирования, у всех сервисов одна реплика
@@ -222,7 +225,7 @@ curl -X POST http://localhost:8000/api/auth/login \
 ## Планы
 
 - Владелец у задач и проектов, доступ только к своим данным (admin видит всё)
-- Миграции через Alembic, переход на uv (`pyproject.toml` + `uv.lock`)
+- Миграции Alembic в task-service и time-service, переход на uv (`pyproject.toml` + `uv.lock`)
 - Серверное состояние таймера: запуск, пауза и остановка на бэкенде, защита от параллельных таймеров
 - Тесты (pytest) для всех сервисов и CI
 - Production-сборка фронтенда за nginx
