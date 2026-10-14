@@ -1,0 +1,43 @@
+# Шаблон конфига nginx фронтенда. При старте контейнера envsubst подставляет переменные окружения
+# GATEWAY_URL и NGINX_LOCAL_RESOLVERS (фильтр NGINX_ENVSUBST_FILTER в Dockerfile),
+# переменные nginx (uri, host, gateway…) не трогает. Подстановка работает и в комментариях.
+server {
+    listen 8080;
+    server_name _;
+
+    root /usr/share/nginx/html;
+
+    # DNS Docker/k8s; valid=10s — адрес gateway перечитывается после пересоздания контейнера
+    resolver ${NGINX_LOCAL_RESOLVERS} valid=10s;
+
+    gzip on;
+    gzip_min_length 1024;
+    gzip_types text/css application/javascript application/json image/svg+xml;
+
+    # API: тот же origin для браузера, CORS не нужен. proxy_pass через переменную, чтобы имя
+    # резолвилось при запросе, а не один раз при старте. Без URI: путь /api/... уходит как есть
+    location /api/ {
+        set $gateway ${GATEWAY_URL};
+        proxy_pass $gateway;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    # файлы сборки с хешем в имени: можно кэшировать надолго
+    location /assets/ {
+        add_header Cache-Control "public, max-age=31536000, immutable";
+        try_files $uri =404;
+    }
+
+    # index.html всегда перепроверяется, иначе после деплоя браузер возьмёт старые ссылки на assets
+    location = /index.html {
+        add_header Cache-Control "no-cache";
+    }
+
+    # SPA: роуты /dashboard, /profile и т.п. отдают index.html
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+}

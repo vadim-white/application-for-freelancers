@@ -1,6 +1,7 @@
 import axios, { AxiosError, InternalAxiosRequestConfig } from 'axios'
 
-const API_BASE = (import.meta.env.VITE_API_BASE as string) || 'http://localhost:8000'
+// по умолчанию тот же origin: /api проксирует nginx (Docker) или Vite (npm run dev)
+const API_BASE = (import.meta.env.VITE_API_BASE as string | undefined) ?? ''
 
 // axios instance
 const api = axios.create({

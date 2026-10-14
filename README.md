@@ -15,8 +15,8 @@
 ## Архитектура
 
 ```
-                      Frontend (Vue 3, :5173)
-                               |
+              Браузер → Frontend (nginx, :5173)
+                  статика Vue 3 |  /api/* (прокси)
                                v
                        API Gateway (:8000)
                       /        |         \
@@ -33,7 +33,7 @@
 | auth-service | 8001 | Пользователи, регистрация, вход, выдача и обновление токенов |
 | task-service | 8002 | Проекты, задачи, статусы, агрегированная статистика |
 | time-service | 8003 | Записи о затраченном времени, статистика по времени |
-| frontend | 5173 | SPA на Vue 3, TypeScript, Pinia, Naive UI |
+| frontend | 5173 (в контейнере 8080) | SPA на Vue 3, TypeScript, Pinia, Naive UI. В Docker — собранная статика за nginx, который проксирует `/api/` на gateway: браузер работает с одним адресом, CORS для фронтенда не нужен |
 
 У каждого сервиса своя база данных, сервисы не ходят в чужие таблицы. Task Service обращается к Time Service по HTTP, когда собирает статистику.
 
@@ -43,6 +43,7 @@
 - PostgreSQL 15 (в Docker), SQLite для локальной разработки без контейнеров
 - JWT (python-jose), хеширование паролей через bcrypt
 - Vue 3, TypeScript, Pinia, Vue Router, Axios, Vite, Naive UI
+- nginx (раздача собранного фронтенда и прокси `/api`)
 - Docker, Docker Compose, Kubernetes
 
 ## Быстрый старт
@@ -58,14 +59,14 @@ cd application-for-freelancers
 docker compose up --build --wait
 ```
 
-`--wait` возвращает управление, когда одноразовые контейнеры (миграции, seed) завершились с кодом 0, а auth, task, time, gateway и базы стали `healthy` (проверка — публичный `GET /`). Поэтому сразу после команды можно входить под тестовыми пользователями. Без `--wait` стек тоже поднимется, но сервисы ещё какое-то время будут стартовать. Нужен Docker Compose v2 (проверено на 2.40.2).
+`--wait` возвращает управление, когда одноразовые контейнеры (миграции, seed) завершились с кодом 0, а auth, task, time, gateway, frontend и базы стали `healthy` (проверка — публичный `GET /`). Поэтому сразу после команды можно входить под тестовыми пользователями. Без `--wait` стек тоже поднимется, но сервисы ещё какое-то время будут стартовать. Нужен Docker Compose v2 (проверено на 2.40.2).
 
 Без `.env` `docker compose` не стартует и пишет «задайте в .env (./scripts/init-env.sh)». Скрипт создаёт корневой `.env` из `.env.example`; если `.env` уже есть, дописывает только отсутствующие ключи, существующие значения не трогает. Значения секретов он не печатает.
 
 После запуска:
 
-- приложение: http://localhost:5173
-- gateway: http://localhost:8000
+- приложение: http://localhost:5173 (nginx отдаёт собранный фронтенд и проксирует `/api/` на gateway)
+- gateway: http://localhost:8000 (опубликован для curl, Swagger и smoke-прогона; фронтенд ходит к нему через nginx)
 - документация сервисов (Swagger) доступна на `/docs` у каждого сервиса. В compose наружу опубликованы только gateway и frontend, поэтому Swagger остальных сервисов открывается при локальном запуске
 
 Таблицы auth-service, task-service и time-service создают одноразовые контейнеры `ser-auth-migrate`, `ser-task-migrate` и `ser-time-migrate` (`alembic upgrade head`), сервис стартует только после успешного завершения своей миграции. Если тома остались от версии без миграций, один раз выполните `docker compose down -v`: иначе миграция упадёт на уже существующих таблицах. То же после перехода на пароли из `.env`: пароль БД применяется только при создании тома.
@@ -124,7 +125,7 @@ npm install
 npm run dev
 ```
 
-Адрес gateway для фронтенда задаётся переменной `VITE_API_BASE` в `frontend/login_page/.env`. Если фронтенд открыт не на `http://localhost:5173`, добавьте его адрес в `CORS_ORIGINS` gateway.
+Фронтенд обращается к API по относительному пути `/api`: `npm run dev` проксирует его на gateway `http://localhost:8000` (`server.proxy` в `vite.config.ts`), браузер остаётся на одном адресе, CORS не участвует. Переменная `VITE_API_BASE` в `frontend/login_page/.env` необязательна: задавайте её, только если фронтенд должен ходить на gateway напрямую, и тогда добавьте адрес фронтенда в `CORS_ORIGINS` gateway. Если в вашем `.env` осталась старая строка `VITE_API_BASE=http://localhost:8000`, уберите её, чтобы запросы шли через прокси.
 
 ### Тесты
 
@@ -182,7 +183,8 @@ kubectl get pods -n <namespace>
 | `AUTH_URL`, `TASK_URL`, `TIME_URL` | gateway | Адреса внутренних сервисов |
 | `CORS_ORIGINS` | gateway | Адреса фронтенда, которым разрешены запросы из браузера, через запятую. По умолчанию `http://localhost:5173,http://127.0.0.1:5173`. Внутренние сервисы CORS не настраивают: браузер обращается только к gateway |
 | `TIME_SERVICE_URL` | task | Адрес Time Service для сбора статистики |
-| `VITE_API_BASE` | frontend | Адрес gateway |
+| `GATEWAY_URL` | frontend (nginx, при запуске контейнера) | Адрес gateway без пути, куда nginx проксирует `/api/`. В compose — `http://ser-gateway:8000`. Имя резолвится при запросах (DNS Docker), поэтому пересоздание gateway не требует перезапуска фронтенда |
+| `VITE_API_BASE` | frontend (на этапе сборки) | Необязательна. Пусто или не задана — запросы идут на тот же адрес по пути `/api` (в Docker их проксирует nginx, в `npm run dev` — Vite). В образе не задаётся, один образ годится для любого окружения |
 
 `SECRET_KEY` и пароли баз (`AUTH_DB_PASSWORD`, `TASK_DB_PASSWORD`, `TIME_DB_PASSWORD`) в compose обязательны и берутся из `.env`; их генерирует `init-env.sh`. Пароль подставляется в `DATABASE_URL`, поэтому только символы `[A-Za-z0-9_-]` (`@`, `:`, `/` ломают URL). Пароль применяется при создании тома БД: если вы обновились с версии, где пароли были зашиты в compose, один раз выполните `docker compose down -v` (данные при этом удаляются).
 
@@ -228,6 +230,7 @@ curl -X POST http://localhost:8000/api/auth/login \
 ├── time-service/        учёт времени
 ├── gateway-service/     API Gateway
 ├── frontend/login_page/ клиентское приложение (Vue 3)
+├── frontend/nginx/      шаблон конфига nginx фронтенда (статика и прокси /api)
 ├── k8s/                 манифесты Kubernetes
 ├── scripts/             вспомогательные скрипты (init-env.sh — генерация .env)
 ├── .env.example         шаблон общих переменных для Docker Compose
@@ -244,7 +247,7 @@ curl -X POST http://localhost:8000/api/auth/login \
 - У проектов и задач есть владелец (`owner_id`, NOT NULL): при создании он берётся из токена, задача в проекте получает владельца проекта. Проекты создают все пользователи. Пользователь видит, меняет и удаляет только свои проекты и задачи (на чужие — 404), admin — все; задача не может оказаться в проекте другого владельца. time-service пока не проверяет, что `task_id` записи времени принадлежит пользователю
 - auth-service: роль в access-токене берётся из БД и при входе, и при обновлении токена; отключённый (`is_active=false`) или удалённый пользователь не может войти, обновить токен и получить `/api/auth/me`. Ключ `SECRET_KEY` обязателен. Тестовых пользователей сервис при старте не создаёт: это делает отдельная команда `python -m app.init_users` (в compose — контейнер `ser-auth-seed`) и только при `SEED_TEST_USERS=true`, вывод идёт через logging и виден в `docker logs ser-auth-seed`
 - Python-сервисы в образах работают не от root (пользователь `app`, UID 10001), код в образе доступен только на чтение
-- В Docker Compose у auth, task, time и gateway есть healthcheck (`GET /`), порядок старта задан через `depends_on: service_healthy`: task ждёт time, gateway — три сервиса, frontend — gateway. Полные `/health` и `/ready` с проверкой БД — в планах
+- В Docker Compose у auth, task, time и gateway есть healthcheck (`GET /`), у frontend — `GET /` nginx, порядок старта задан через `depends_on: service_healthy`: task ждёт time, gateway — три сервиса, frontend — gateway. Полные `/health` и `/ready` с проверкой БД — в планах
 - `.dockerignore` исключает `.env`, `*.db`, `.venv`, `node_modules` во всех папках, локальные настройки и базы больше не попадают в образы
 - `SECRET_KEY` обязателен во всех сервисах, `DATABASE_URL` обязателен в auth, task и time: значений по умолчанию (в том числе SQLite-файла) нет, без них сервис не стартует. CORS настроен только в gateway и разрешает лишь адреса из `CORS_ORIGINS`
 - Фронтенд сам обновляет access-токен: на ответ 401 он один раз запрашивает `/api/auth/refresh` (параллельные запросы ждут один общий refresh) и повторяет запрос. Если refresh не удался, токены удаляются и открывается страница входа. Refresh-токен живёт 7 дней и не обновляется, после этого нужно войти заново
@@ -253,7 +256,7 @@ curl -X POST http://localhost:8000/api/auth/login \
 - Схема БД auth-service, task-service и time-service управляется миграциями Alembic (`<service>/migrations/`): в Docker Compose их применяют сервисы `ser-auth-migrate`, `ser-task-migrate` и `ser-time-migrate` до старта своего сервиса, в Kubernetes — initContainer `migrate`. Тест в каждом из них проверяет, что миграции совпадают с моделями
 - Проекты хранятся только в task-service: дубль проектов в time-service (`/api/time/projects`) удалён, фронтенд создаёт проект одним запросом. `user_id` записи времени обязателен (NOT NULL), фронтенд его не отправляет: сервер берёт `user_id` из токена
 - Автотесты (pytest) есть у всех бэкенд-сервисов (gateway 45, auth 34, task 51, time 25), CI нет.
-- Фронтенд запускается в dev-режиме, production-сборки нет
+- Фронтенд в Docker собирается multi-stage (`npm ci`, `vite build`) и раздаётся nginx без root (`nginx-unprivileged`, слушает 8080): долгий кэш для `/assets/`, `index.html` без кэша, gzip, SPA-роуты отдают `index.html`. Запросы `/api/` nginx проксирует на gateway, поэтому браузер ходит на один адрес и CORS для фронтенда не нужен. Манифест Kubernetes фронтенда под новый образ ещё не обновлён (этап 1.4)
 - В Kubernetes нет Ingress и автомасштабирования, у всех сервисов одна реплика
 - Нет пагинации, фильтрации и сортировки задач
 - Секреты и пароли баз в Docker Compose генерирует `scripts/init-env.sh` (в `.env`, не в git); в манифестах Kubernetes пароли пока зашиты (этап 1.4)
@@ -263,7 +266,6 @@ curl -X POST http://localhost:8000/api/auth/login \
 - Переход на uv (`pyproject.toml` + `uv.lock`)
 - Серверное состояние таймера: запуск, пауза и остановка на бэкенде, защита от параллельных таймеров
 - CI: тесты, линтер, сборка фронтенда, сквозной smoke-прогон через gateway
-- Production-сборка фронтенда за nginx
 - Ingress, HPA, health и readiness probes в Kubernetes, миграции отдельным Job вместо initContainer
 - Отчёты по времени и экспорт
 - Лимиты запросов, логирование, метрики

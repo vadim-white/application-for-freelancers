@@ -9,6 +9,10 @@ export default defineConfig({
       protocol: 'ws',
       host: 'localhost',
       port: 5173
+    },
+    // npm run dev без Docker: /api на gateway, браузер остаётся на одном origin (как с nginx)
+    proxy: {
+      '/api': 'http://localhost:8000'
     }
   }
 })
