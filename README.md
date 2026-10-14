@@ -130,6 +130,25 @@ docker run --rm -v "$PWD/<service>":/src:ro python:3.14-slim sh -c \
   "cp -r /src /app && cd /app && rm -rf .env .venv && pip install -q -r requirements.txt -r requirements-dev.txt && python -m pytest -q"
 ```
 
+### Миграции
+
+Схему БД auth-service, task-service и time-service ведёт Alembic (`<service>/migrations/`). Применяются они отдельно от приложения: `alembic upgrade head` (в compose — сервисы `ser-*-migrate`). Новая миграция создаётся автогенерацией по изменённым моделям (`<service>` — `auth`, `task` или `time`, нужен запущенный стек, у которого база уже на последней ревизии):
+
+```bash
+docker compose run --rm --no-deps \
+  -v "$PWD/<service>-service/migrations:/app/migrations" \
+  ser-<service>-migrate alembic revision --autogenerate -m "что изменилось"
+```
+
+Каталог `migrations` монтируется с хоста, иначе файл ревизии останется внутри одноразового контейнера. Сервис собирается из образа, поэтому сначала пересоберите его (`docker compose build ser-<service>`), чтобы в образе были изменённые модели.
+
+Сгенерированный файл (`migrations/versions/<дата>-<ревизия>_….py`) нужно вычитать вручную:
+- `server_default=sa.text('now()')` заменить на `sa.func.now()`: на SQLite функции `now()` нет, тест миграций упадёт;
+- для enum в `downgrade` после `op.drop_table` добавить `sa.Enum(name='…').drop(op.get_bind(), checkfirst=True)`: PostgreSQL не удаляет тип вместе с таблицей;
+- убрать комментарии «auto generated».
+
+Затем проверьте цикл `alembic upgrade head` → `alembic check` → `alembic downgrade base` → `alembic upgrade head`. Его выполняет `tests/test_migrations.py`: при расхождении моделей и миграций тест падает. Применить новую ревизию к базе стека: `docker compose up --build -d` (migrate-сервис выполнится сам) или `docker compose run --rm --no-deps ser-<service>-migrate alembic upgrade head`. Вне Docker те же команды `alembic …` запускаются в папке сервиса.
+
 ### Kubernetes
 
 Манифесты лежат в [k8s/](k8s/).
@@ -223,7 +242,7 @@ curl -X POST http://localhost:8000/api/auth/login \
 - Python 3.14 во всех образах. В Docker Compose и Kubernetes сервисы работают с PostgreSQL через psycopg 3 (`postgresql+psycopg://`). Все прямые зависимости бэкенда закреплены точными версиями (`==`), общие пакеты одинаковы во всех сервисах; `pytest` и `httpx` для тестов вынесены в `requirements-dev.txt`
 - Схема БД auth-service, task-service и time-service управляется миграциями Alembic (`<service>/migrations/`): в Docker Compose их применяют сервисы `ser-auth-migrate`, `ser-task-migrate` и `ser-time-migrate` до старта своего сервиса, в Kubernetes — initContainer `migrate`. Тест в каждом из них проверяет, что миграции совпадают с моделями
 - Проекты хранятся только в task-service: дубль проектов в time-service (`/api/time/projects`) удалён, фронтенд создаёт проект одним запросом. `user_id` записи времени обязателен (NOT NULL), фронтенд его не отправляет: сервер берёт `user_id` из токена
-- Автотесты (pytest) есть у всех бэкенд-сервисов, CI нет
+- Автотесты (pytest) есть у всех бэкенд-сервисов (gateway 45, auth 34, task 51, time 25), CI нет.
 - Фронтенд запускается в dev-режиме, production-сборки нет
 - В Kubernetes нет Ingress и автомасштабирования, у всех сервисов одна реплика
 - Нет пагинации, фильтрации и сортировки задач
@@ -233,9 +252,9 @@ curl -X POST http://localhost:8000/api/auth/login \
 
 - Переход на uv (`pyproject.toml` + `uv.lock`)
 - Серверное состояние таймера: запуск, пауза и остановка на бэкенде, защита от параллельных таймеров
-- CI: тесты, линтер, сборка фронтенда
+- CI: тесты, линтер, сборка фронтенда, сквозной smoke-прогон через gateway
 - Production-сборка фронтенда за nginx
-- Ingress, HPA, health и readiness probes в Kubernetes
+- Ingress, HPA, health и readiness probes в Kubernetes, миграции отдельным Job вместо initContainer
 - Отчёты по времени и экспорт
 - Лимиты запросов, логирование, метрики
 
