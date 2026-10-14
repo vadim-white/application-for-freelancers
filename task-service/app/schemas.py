@@ -23,8 +23,10 @@ class ProjectCreate(ProjectBase):
 class ProjectUpdate(ProjectBase):
     name: Optional[str] = None
 
+# owner_id только в ответах: владельца задаёт токен, поле в теле запроса игнорируется
 class ProjectRead(ProjectBase):
     id: int
+    owner_id: int
     created_at: Optional[datetime] = None
 
     class Config:
@@ -52,6 +54,7 @@ class TaskUpdate(BaseModel):
 
 class TaskRead(TaskBase):
     id: int
+    owner_id: int
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
     project: Optional[ProjectRead] = None

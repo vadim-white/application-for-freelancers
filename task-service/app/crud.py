@@ -3,10 +3,11 @@ from . import models, schemas
 from typing import List, Optional
 
 # Projects
-def create_project(db: Session, project_in: schemas.ProjectCreate) -> models.Project:
+def create_project(db: Session, project_in: schemas.ProjectCreate, owner_id: int) -> models.Project:
     project = models.Project(
         name=project_in.name,
         description=project_in.description,
+        owner_id=owner_id,
         is_active=project_in.is_active if project_in.is_active is not None else True,
     )
     db.add(project)
@@ -38,13 +39,14 @@ def delete_project(db: Session, project: models.Project):
     return True
 
 # Tasks
-def create_task(db: Session, task_in: schemas.TaskCreate) -> models.Task:
+def create_task(db: Session, task_in: schemas.TaskCreate, owner_id: int) -> models.Task:
     task = models.Task(
         title=task_in.title,
         description=task_in.description,
         status=task_in.status,
         deadline=task_in.deadline,
         project_id=task_in.project_id,
+        owner_id=owner_id,
         is_active=task_in.is_active if task_in.is_active is not None else True,
     )
     db.add(task)

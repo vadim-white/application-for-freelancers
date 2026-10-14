@@ -9,8 +9,8 @@
 2. Скопировать пример .env:
    cp .env.example .env
 
-3. Создать таблицы:
-   python -c "from app.db import Base, engine; import app.models as m; Base.metadata.create_all(bind=engine)"
+3. Создать таблицы (миграции Alembic, повторять после обновления кода):
+   alembic upgrade head
 
 4. Запустить:
    uvicorn app.main:app --reload --port 8002

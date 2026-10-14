@@ -128,17 +128,32 @@ services:
     container_name: ser-task
     expose:
       - "8002"
-    environment:
+    # &task-env: те же переменные нужны ser-task-migrate (env.py импортирует настройки сервиса)
+    environment: &task-env
       DATABASE_URL: postgresql+psycopg://task_user:task_password@ser-task-db:5432/task_db
       TIME_SERVICE_URL: http://ser-time:8003
       SECRET_KEY: 228
       ALGORITHM: HS256
     depends_on:
+      # таблицы создаёт миграция, приложение стартует после её успешного завершения
+      ser-task-migrate:
+        condition: service_completed_successfully
+    networks:
+      - ser-network
+    restart: unless-stopped
+
+  # Миграции Task Service: одноразовый запуск alembic upgrade head перед ser-task
+  ser-task-migrate:
+    image: ser-task:latest
+    container_name: ser-task-migrate
+    command: alembic upgrade head
+    environment: *task-env
+    depends_on:
       ser-task-db:
         condition: service_healthy
     networks:
       - ser-network
-    restart: unless-stopped
+    restart: "no"
 
   # Time Service
   ser-time:

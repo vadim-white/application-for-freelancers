@@ -7,6 +7,9 @@ from datetime import timedelta
 import httpx
 import pytest
 
+from app import models
+from app.db import SessionLocal
+
 from .conftest import auth, make_token
 
 SERVICE_ROOT = pathlib.Path(__file__).resolve().parent.parent
@@ -130,3 +133,59 @@ def test_settings_require_database_url(tmp_path):
                        cwd=tmp_path, env=env, capture_output=True, text=True)
     assert r.returncode != 0
     assert "DATABASE_URL" in r.stderr
+
+
+# --- Владелец проектов и задач (owner_id из токена) ---
+
+def test_project_owner_from_token(client, admin_headers):
+    r = client.post("/api/tasks/projects", json={"name": "p"}, headers=admin_headers)
+    assert r.status_code == 201
+    pid = r.json()["id"]
+    assert r.json()["owner_id"] == 99
+    assert client.get(f"/api/tasks/projects/{pid}", headers=admin_headers).json()["owner_id"] == 99
+    assert client.get("/api/tasks/projects", headers=admin_headers).json()[0]["owner_id"] == 99
+
+
+def test_task_without_project_owner_from_token(client, user_headers):
+    r = client.post("/api/tasks/tasks", json={"title": "t"}, headers=user_headers)
+    assert r.status_code == 201
+    tid = r.json()["id"]
+    assert r.json()["project_id"] is None
+    assert r.json()["owner_id"] == 1
+    assert client.get(f"/api/tasks/tasks/{tid}", headers=user_headers).json()["owner_id"] == 1
+    assert client.get("/api/tasks/tasks", headers=user_headers).json()[0]["owner_id"] == 1
+
+
+def test_owner_id_in_body_ignored(client, user_headers, admin_headers):
+    r = client.post("/api/tasks/projects", json={"name": "p", "owner_id": 5}, headers=admin_headers)
+    assert r.status_code == 201
+    pid = r.json()["id"]
+    assert r.json()["owner_id"] == 99
+    r = client.put(f"/api/tasks/projects/{pid}", json={"name": "x", "owner_id": 5}, headers=admin_headers)
+    assert r.status_code == 200
+    assert r.json()["owner_id"] == 99
+
+    r = client.post("/api/tasks/tasks", json={"title": "t", "owner_id": 5}, headers=user_headers)
+    assert r.status_code == 201
+    tid = r.json()["id"]
+    assert r.json()["owner_id"] == 1
+    r = client.put(f"/api/tasks/tasks/{tid}", json={"title": "x", "owner_id": 5}, headers=user_headers)
+    assert r.status_code == 200
+    assert r.json()["owner_id"] == 1
+
+
+def test_admin_task_in_foreign_project_gets_project_owner(client, admin_headers):
+    # Через API проекты создаёт только admin, поэтому проект пользователя 7 — напрямую в БД
+    db = SessionLocal()
+    try:
+        project = models.Project(name="чужой", owner_id=7)
+        db.add(project)
+        db.commit()
+        pid = project.id
+    finally:
+        db.close()
+
+    r = client.post("/api/tasks/tasks", json={"title": "t", "project_id": pid}, headers=admin_headers)
+    assert r.status_code == 201
+    assert r.json()["owner_id"] == 7
+    assert r.json()["project"]["owner_id"] == 7

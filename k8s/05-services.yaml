@@ -135,6 +135,41 @@ spec:
       labels:
         app: ser-task
     spec:
+      # Миграции до старта приложения: тот же образ и env, что у ser-task (env.py читает настройки сервиса).
+      # Временное решение, в 1.4 заменяется на Job
+      initContainers:
+      - name: migrate
+        image: ser-task:latest
+        imagePullPolicy: Never
+        command: ["alembic", "upgrade", "head"]
+        env:
+        - name: TASK_USER
+          valueFrom:
+            secretKeyRef:
+              name: db-credentials
+              key: task-user
+        - name: TASK_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: db-credentials
+              key: task-password
+        - name: DATABASE_URL
+          value: "postgresql+psycopg://task_user:task_password@task-db:5432/task_db"
+        - name: TIME_SERVICE_URL
+          valueFrom:
+            configMapKeyRef:
+              name: service-config
+              key: time-url
+        - name: SECRET_KEY
+          valueFrom:
+            secretKeyRef:
+              name: app-secrets
+              key: secret-key
+        - name: ALGORITHM
+          valueFrom:
+            secretKeyRef:
+              name: app-secrets
+              key: algorithm
       containers:
       - name: ser-task
         image: ser-task:latest

@@ -17,7 +17,7 @@ router = APIRouter(dependencies=[Depends(get_current_user)])
 @router.post("/projects", response_model=schemas.ProjectRead, status_code=status.HTTP_201_CREATED)
 def create_project(project_in: schemas.ProjectCreate, db: Session = Depends(get_db),
                    user: CurrentUser = Depends(require_admin)):
-    project = crud.create_project(db, project_in)
+    project = crud.create_project(db, project_in, owner_id=user.id)
     logger.info(f"Project created: id={project.id}")
     return project
 
@@ -52,14 +52,18 @@ def delete_project(project_id: int, db: Session = Depends(get_db),
 
 # --- Tasks ---
 @router.post("/tasks", response_model=schemas.TaskRead, status_code=status.HTTP_201_CREATED)
-def create_task(task_in: schemas.TaskCreate, db: Session = Depends(get_db)):
-    # optional: validate project exists
+def create_task(task_in: schemas.TaskCreate, db: Session = Depends(get_db),
+                user: CurrentUser = Depends(get_current_user)):
+    # Владелец из токена. Задача в проекте принадлежит владельцу проекта
+    # (admin, создавая задачу в чужом проекте, не становится её владельцем)
+    owner_id = user.id
     if task_in.project_id:
         proj = crud.get_project(db, task_in.project_id)
         if not proj:
             raise HTTPException(status_code=400, detail="Project does not exist")
-    task = crud.create_task(db, task_in)
-    logger.info(f"Task created: id={task.id}, project_id={task.project_id}")
+        owner_id = proj.owner_id
+    task = crud.create_task(db, task_in, owner_id=owner_id)
+    logger.info(f"Task created: id={task.id}, project_id={task.project_id}, owner_id={task.owner_id}")
     return task
 
 @router.get("/tasks", response_model=List[schemas.TaskRead])
