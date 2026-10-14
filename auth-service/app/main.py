@@ -1,19 +1,10 @@
 from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware
 from .api import router as api_router
 from .db import Base, engine, SessionLocal
 from .init_users import init_test_users
 from .core.config import settings
 
 app = FastAPI(title="Auth Service (auth-service)")
-
-# CORS - подберите origin в production
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
 
 # Инициализация БД при старте
 @app.on_event("startup")

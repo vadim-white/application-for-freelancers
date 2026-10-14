@@ -1,16 +1,8 @@
 from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware
 from .api import router as api_router
 from .db import Base, engine
 
 app = FastAPI(title="Task Service (task-service)")
-
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],  # для разработки, в проде сузить
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
 
 # Инициализация БД при старте
 @app.on_event("startup")

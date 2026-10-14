@@ -1,4 +1,9 @@
+import os
 from datetime import datetime, timedelta, timezone
+
+# Окружение задаётся до импорта приложения: config и CORS настраиваются при импорте
+os.environ["SECRET_KEY"] = "test-secret"
+os.environ["CORS_ORIGINS"] = "http://localhost:5173, http://app.example"
 
 import httpx
 import pytest

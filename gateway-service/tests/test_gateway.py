@@ -2,6 +2,7 @@ from datetime import timedelta
 
 import pytest
 
+from app.core.config import settings
 from tests.conftest import bearer, make_token
 
 
@@ -166,3 +167,42 @@ def test_cors_preflight_without_token(client, upstream):
     })
     assert r.status_code == 200
     assert upstream == []
+
+
+def preflight(client, origin):
+    return client.options("/api/tasks/projects", headers={
+        "Origin": origin,
+        "Access-Control-Request-Method": "GET",
+        "Access-Control-Request-Headers": "authorization",
+    })
+
+
+def test_cors_origins_parsed_from_env():
+    assert settings.cors_origins == ["http://localhost:5173", "http://app.example"]
+
+
+@pytest.mark.parametrize("origin", ["http://localhost:5173", "http://app.example"])
+def test_cors_allowed_origin(client, upstream, origin):
+    r = preflight(client, origin)
+    assert r.headers["access-control-allow-origin"] == origin
+    assert "access-control-allow-credentials" not in r.headers
+
+
+def test_cors_foreign_origin_rejected(client, upstream):
+    r = preflight(client, "http://evil.example")
+    assert r.status_code == 400
+    assert "access-control-allow-origin" not in r.headers
+    assert upstream == []
+
+
+def test_cors_no_wildcard_on_simple_request(client, upstream):
+    r = client.get("/", headers={"Origin": "http://evil.example"})
+    assert "access-control-allow-origin" not in r.headers
+
+
+def test_cors_headers_on_401(client, upstream):
+    # фронт должен видеть 401, чтобы обновить токен
+    r = client.get("/api/tasks/tasks", headers={"Origin": "http://localhost:5173"})
+    assert r.status_code == 401
+    assert r.headers["access-control-allow-origin"] == "http://localhost:5173"
+

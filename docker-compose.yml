@@ -71,6 +71,8 @@ services:
       TIME_URL: http://ser-time:8003
       SECRET_KEY: 228
       ALGORITHM: HS256
+      # откуда браузеру разрешены запросы (CORS), через запятую
+      CORS_ORIGINS: http://localhost:5173,http://127.0.0.1:5173
     depends_on:
       - ser-auth
       - ser-task
@@ -153,7 +155,7 @@ services:
     ports:
       - "5173:5173"
     environment:
-      VITE_API_URL: http://localhost:8000
+      VITE_API_BASE: http://localhost:8000
     depends_on:
       - ser-gateway
     networks:

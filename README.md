@@ -81,6 +81,8 @@ docker compose down -v
 
 Нужны Python 3.11+ и Node.js 20+. Каждый сервис запускается в отдельном терминале со своим виртуальным окружением. Таблицы создаются автоматически при старте. По умолчанию сервисы используют SQLite-файлы в своих папках.
 
+Перед первым запуском скопируйте в каждой папке сервиса и в `frontend/login_page` файл `.env.example` в `.env`. В `.env` всех четырёх бэкенд-сервисов впишите один и тот же `SECRET_KEY`, без него сервисы не стартуют. Сгенерировать ключ: `python3 -c "import secrets; print(secrets.token_urlsafe(32))"`. Остальные значения из примеров подходят для локального запуска.
+
 ```bash
 # auth-service
 cd auth-service
@@ -112,7 +114,7 @@ npm install
 npm run dev
 ```
 
-Адрес gateway для фронтенда задаётся переменной `VITE_API_BASE` в `frontend/login_page/.env`.
+Адрес gateway для фронтенда задаётся переменной `VITE_API_BASE` в `frontend/login_page/.env`. Если фронтенд открыт не на `http://localhost:5173`, добавьте его адрес в `CORS_ORIGINS` gateway.
 
 ### Тесты
 
@@ -120,7 +122,7 @@ npm run dev
 
 ```bash
 docker run --rm -v "$PWD/<service>":/src:ro python:3.11-slim sh -c \
-  "cp -r /src /app && cd /app && rm -f .env && pip install -q -r requirements.txt -r requirements-dev.txt && python -m pytest -q"
+  "cp -r /src /app && cd /app && rm -rf .env .venv && pip install -q -r requirements.txt -r requirements-dev.txt && python -m pytest -q"
 ```
 
 ### Kubernetes
@@ -136,16 +138,17 @@ kubectl get pods -n <namespace>
 
 ## Конфигурация
 
-Основные переменные окружения:
+Основные переменные окружения. Все переменные с описанием собраны в файлах `.env.example` в папке каждого сервиса и в `frontend/login_page`.
 
 | Переменная | Где используется | Описание |
 |------------|------------------|----------|
 | `DATABASE_URL` | auth, task, time | Строка подключения SQLAlchemy |
-| `SECRET_KEY` | все сервисы | Ключ подписи JWT, должен быть одинаковым везде. auth, task и time без него не стартуют |
+| `SECRET_KEY` | все сервисы | Ключ подписи JWT, должен быть одинаковым везде. Обязателен: без него сервисы не стартуют |
 | `ALGORITHM` | все сервисы | Алгоритм подписи, по умолчанию `HS256` |
 | `ACCESS_TOKEN_EXPIRE_MINUTES` | auth | Время жизни access-токена |
 | `SEED_TEST_USERS` | auth | `true` — создать тестовых пользователей при старте, только для разработки. По умолчанию `false` |
 | `AUTH_URL`, `TASK_URL`, `TIME_URL` | gateway | Адреса внутренних сервисов |
+| `CORS_ORIGINS` | gateway | Адреса фронтенда, которым разрешены запросы из браузера, через запятую. По умолчанию `http://localhost:5173,http://127.0.0.1:5173`. Внутренние сервисы CORS не настраивают: браузер обращается только к gateway |
 | `TIME_SERVICE_URL` | task | Адрес Time Service для сбора статистики |
 | `VITE_API_BASE` | frontend | Адрес gateway |
 
@@ -201,7 +204,7 @@ curl -X POST http://localhost:8000/api/auth/login \
 - Задачи и проекты пока видны всем авторизованным пользователям: у них ещё нет поля владельца (появится с миграциями)
 - auth-service: роль в access-токене берётся из БД и при входе, и при обновлении токена; отключённый (`is_active=false`) или удалённый пользователь не может войти, обновить токен и получить `/api/auth/me`. Ключ `SECRET_KEY` обязателен, тестовые пользователи создаются только при `SEED_TEST_USERS=true`
 - `.dockerignore` исключает `.env`, `*.db`, `.venv`, `node_modules` во всех папках, локальные настройки и базы больше не попадают в образы
-- В gateway у `SECRET_KEY` пока остаётся значение по умолчанию
+- `SECRET_KEY` обязателен во всех сервисах. CORS настроен только в gateway и разрешает лишь адреса из `CORS_ORIGINS`
 - Фронтенд не обновляет access-токен автоматически: через 15 минут после входа запросы получают 401, нужно войти заново
 - В Docker Compose все сервисы работают с PostgreSQL. В task-service и time-service закреплена только версия SQLAlchemy (2.1 по умолчанию требует драйвер `psycopg` v3), остальные зависимости этих сервисов не закреплены
 - Нет миграций, таблицы создаются через `create_all` при старте
@@ -213,7 +216,7 @@ curl -X POST http://localhost:8000/api/auth/login \
 
 ## Планы
 
-- Автообновление токена на фронтенде, CORS из переменной окружения, `.env.example`, обязательный `SECRET_KEY` в gateway
+- Автообновление токена на фронтенде
 - Владелец у задач и проектов, доступ только к своим данным (admin видит всё)
 - Закреплённые версии зависимостей во всех сервисах, миграции через Alembic
 - Серверное состояние таймера: запуск, пауза и остановка на бэкенде, защита от параллельных таймеров
