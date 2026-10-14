@@ -1,3 +1,13 @@
+# Общие параметры healthcheck приложений; test (публичный GET /) задан у каждого сервиса.
+# Адрес 127.0.0.1, а не localhost: uvicorn слушает только IPv4.
+# start_interval: на старте проверка раз в секунду, поэтому up --wait не ждёт лишних 10 с
+x-app-healthcheck: &app-healthcheck
+  interval: 10s
+  timeout: 3s
+  retries: 3
+  start_period: 20s
+  start_interval: 1s
+
 services:
   # PostgreSQL для Auth Service
   ser-auth-db:
@@ -74,12 +84,18 @@ services:
       # откуда браузеру разрешены запросы (CORS), через запятую
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:5173,http://127.0.0.1:5173}
     depends_on:
-      - ser-auth
-      - ser-task
-      - ser-time
+      ser-auth:
+        condition: service_healthy
+      ser-task:
+        condition: service_healthy
+      ser-time:
+        condition: service_healthy
     networks:
       - ser-network
     restart: unless-stopped
+    healthcheck:
+      <<: *app-healthcheck
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/', timeout=2)"]
 
   # Auth Service
   ser-auth:
@@ -105,6 +121,9 @@ services:
     networks:
       - ser-network
     restart: unless-stopped
+    healthcheck:
+      <<: *app-healthcheck
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8001/', timeout=2)"]
 
   # Миграции Auth Service: одноразовый запуск alembic upgrade head перед ser-auth
   ser-auth-migrate:
@@ -156,9 +175,15 @@ services:
       # таблицы создаёт миграция, приложение стартует после её успешного завершения
       ser-task-migrate:
         condition: service_completed_successfully
+      # статистика ходит в time
+      ser-time:
+        condition: service_healthy
     networks:
       - ser-network
     restart: unless-stopped
+    healthcheck:
+      <<: *app-healthcheck
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8002/', timeout=2)"]
 
   # Миграции Task Service: одноразовый запуск alembic upgrade head перед ser-task
   ser-task-migrate:
@@ -194,6 +219,9 @@ services:
     networks:
       - ser-network
     restart: unless-stopped
+    healthcheck:
+      <<: *app-healthcheck
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8003/', timeout=2)"]
 
   # Миграции Time Service: одноразовый запуск alembic upgrade head перед ser-time
   ser-time-migrate:
@@ -220,7 +248,8 @@ services:
     environment:
       VITE_API_BASE: http://localhost:8000
     depends_on:
-      - ser-gateway
+      ser-gateway:
+        condition: service_healthy
     networks:
       - ser-network
     restart: unless-stopped
