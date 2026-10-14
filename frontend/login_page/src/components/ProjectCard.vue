@@ -40,7 +40,7 @@
             class="task-item"
           >
             <div class="task-icon">
-              <span v-if="t.status === 'completed'" class="status-icon">✓</span>
+              <span v-if="t.status === 'done'" class="status-icon">✓</span>
               <span v-else-if="t.status === 'in_progress'" class="status-icon">⟳</span>
               <span v-else class="status-icon">○</span>
             </div>
@@ -90,9 +90,10 @@ function open() {
 
 function formatStatus(status: string): string {
   const statusMap: Record<string, string> = {
-    'pending': 'В ожидании',
+    'todo': 'К выполнению',
     'in_progress': 'В работе',
-    'completed': 'Завершена'
+    'done': 'Завершена',
+    'blocked': 'Заблокирована'
   }
   return statusMap[status] || status
 }
@@ -255,7 +256,7 @@ function formatStatus(status: string): string {
   width: fit-content;
 }
 
-.status-completed {
+.status-done {
   background: rgba(86, 171, 47, 0.15);
   color: #56ab2f;
 }
@@ -265,9 +266,14 @@ function formatStatus(status: string): string {
   color: #f7971e;
 }
 
-.status-pending {
+.status-todo {
   background: rgba(79, 172, 254, 0.15);
   color: #4facfe;
+}
+
+.status-blocked {
+  background: rgba(235, 87, 87, 0.15);
+  color: #eb5757;
 }
 
 .empty-tasks {

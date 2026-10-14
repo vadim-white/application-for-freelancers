@@ -25,9 +25,8 @@ export const useAuthStore = defineStore('auth', () => {
       return null
     }
     try {
-      const r = await api.get('/api/auth/me', {
-        headers: { Authorization: `Bearer ${accessToken.value}` }
-      })
+      // токен (в т.ч. обновлённый после refresh) ставит интерцептор из localStorage
+      const r = await api.get('/api/auth/me')
       user.value = r.data
       return user.value
     } catch (err) {

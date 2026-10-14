@@ -135,6 +135,7 @@
 
     <!-- Drawer с задачами -->
     <ProjectTasksDrawer
+      ref="tasksDrawer"
       :project="activeProject"
       :show="drawerShow"
       @update:show="drawerShow = $event"
@@ -187,6 +188,7 @@ const usersStats = ref<any[]>([])
 const currentTab = ref('tasks')
 
 const drawerShow = ref(false)
+const tasksDrawer = ref<InstanceType<typeof ProjectTasksDrawer> | null>(null)
 const activeProject = ref<any | null>(null)
 
 const selectedTask = ref<any | null>(null)
@@ -234,6 +236,7 @@ function openTaskModal(task: any) {
 
 function onTaskStopped(payload: any) {
   load()
+  tasksDrawer.value?.loadTasks()
 }
 
 function onLogout() {

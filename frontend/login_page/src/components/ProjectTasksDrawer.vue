@@ -21,9 +21,10 @@
         <!-- Список задач -->
         <div v-if="tasks.length" class="tasks-section">
           <h3 class="section-title">📝 Текущие задачи</h3>
+          <div v-if="!activeTasks.length" class="no-active-tasks">Нет текущих задач</div>
           <div class="tasks-list">
             <div 
-              v-for="task in tasks" 
+              v-for="task in activeTasks" 
               :key="task.id"
               class="task-item"
             >
@@ -53,10 +54,36 @@
                   type="success"
                   text
                   @click="markDone(task)" 
-                  :loading="task.isDeleting"
+                  :loading="task.isSaving"
                 >
                   ✓
                 </n-button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Выполненные задачи -->
+        <div v-if="doneTasks.length" class="tasks-section">
+          <h3 class="section-title section-toggle" @click="showDone = !showDone">
+            {{ showDone ? '▾' : '▸' }} ✅ Выполненные ({{ doneTasks.length }})
+          </h3>
+          <div v-if="showDone" class="tasks-list">
+            <div 
+              v-for="task in doneTasks" 
+              :key="task.id"
+              class="task-item task-item-done"
+            >
+              <div class="task-main">
+                <div class="task-header">
+                  <div class="task-title-row">
+                    <span class="task-status-badge" :class="`badge-${task.status}`">
+                      {{ formatStatus(task.status) }}
+                    </span>
+                    <div class="task-title">{{ task.title }}</div>
+                  </div>
+                </div>
+                <div v-if="task.description" class="task-desc">{{ task.description }}</div>
               </div>
             </div>
           </div>
@@ -107,8 +134,8 @@
 </template>
 
 <script setup lang="ts">
-import { ref, watch } from 'vue'
-import { getTasks, createTask, deleteTask } from '../services/tasks'
+import { ref, computed, watch } from 'vue'
+import { getTasks, createTask, updateTask } from '../services/tasks'
 import { useMessage } from 'naive-ui'
 
 const props = defineProps({
@@ -127,6 +154,9 @@ function updateShow(v: boolean) {
 
 const loading = ref(false)
 const tasks = ref<any[]>([])
+const activeTasks = computed(() => tasks.value.filter(t => t.status !== 'done'))
+const doneTasks = computed(() => tasks.value.filter(t => t.status === 'done'))
+const showDone = ref(true)
 const message = useMessage()
 
 watch(
@@ -156,32 +186,35 @@ async function loadTasks() {
   }
 }
 
+defineExpose({ loadTasks })
+
 function openTask(t: any) {
   emit('open-task', t)
 }
 
 function formatStatus(status: string): string {
   const statusMap: Record<string, string> = {
-    'pending': 'В ожидании',
+    'todo': 'К выполнению',
     'in_progress': 'В работе',
     'done': 'Завершена',
-    'completed': 'Завершена'
+    'blocked': 'Заблокирована'
   }
   return statusMap[status] || status
 }
 
 async function markDone(t: any) {
   if (!t || !t.id) return
-  t.isDeleting = true
+  t.isSaving = true
   try {
-    await deleteTask(t.id)
-    tasks.value = [...tasks.value.filter(task => task.id !== t.id)]
+    const updated = await updateTask(t.id, { status: 'done' })
+    tasks.value = tasks.value.map(task => (task.id === t.id ? updated : task))
     message.success('Задача выполнена')
     emit('changed')
   } catch (err) {
     console.error(err)
-    t.isDeleting = false
     message.error('Не удалось завершить задачу')
+  } finally {
+    t.isSaving = false
   }
 }
 
@@ -298,7 +331,7 @@ async function addTask() {
   white-space: nowrap;
 }
 
-.badge-pending {
+.badge-todo {
   background: rgba(79, 172, 254, 0.2);
   color: #4facfe;
 }
@@ -308,10 +341,34 @@ async function addTask() {
   color: #f7971e;
 }
 
-.badge-done,
-.badge-completed {
+.badge-done {
   background: rgba(86, 171, 47, 0.2);
   color: #56ab2f;
+}
+
+.badge-blocked {
+  background: rgba(235, 87, 87, 0.2);
+  color: #eb5757;
+}
+
+.section-toggle {
+  cursor: pointer;
+  user-select: none;
+}
+
+.no-active-tasks {
+  font-size: 13px;
+  color: var(--color-text-secondary);
+  margin-bottom: 12px;
+}
+
+.task-item-done {
+  opacity: 0.7;
+  border-left-color: #56ab2f;
+}
+
+.task-item-done .task-title {
+  text-decoration: line-through;
 }
 
 .task-title {
