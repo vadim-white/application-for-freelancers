@@ -73,8 +73,9 @@ services:
       dockerfile: gateway-service/Dockerfile
     image: ser-gateway:latest
     container_name: ser-gateway
+    # BIND_ADDR из .env: по умолчанию только 127.0.0.1 (см. .env.example)
     ports:
-      - "8000:8000"
+      - "${BIND_ADDR:-127.0.0.1}:8000:8000"
     environment:
       AUTH_URL: http://ser-auth:8001
       TASK_URL: http://ser-task:8002
@@ -244,7 +245,7 @@ services:
     image: ser-frontend:latest
     container_name: ser-frontend
     ports:
-      - "5173:8080"
+      - "${BIND_ADDR:-127.0.0.1}:5173:8080"
     environment:
       GATEWAY_URL: http://ser-gateway:8000
     depends_on:
