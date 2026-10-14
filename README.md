@@ -136,6 +136,8 @@ kubectl get pods -n <namespace>
 
 Имя namespace указано в [k8s/00-namespace.yaml](k8s/00-namespace.yaml).
 
+В манифестах не задан `SEED_TEST_USERS`, поэтому тестовые пользователи в кластере не создаются: зарегистрируйтесь через `/api/auth/register` (роль `user`). Манифесты Kubernetes ещё не приведены в порядок после изменений безопасности, см. [Планы](#планы).
+
 ## Конфигурация
 
 Основные переменные окружения. Все переменные с описанием собраны в файлах `.env.example` в папке каждого сервиса и в `frontend/login_page`.
@@ -156,7 +158,9 @@ kubectl get pods -n <namespace>
 
 ## API
 
-Все запросы идут через gateway с префиксом `/api`. Все эндпоинты, кроме `/api/auth/register`, `/api/auth/login` и `/api/auth/refresh`, требуют заголовок `Authorization: Bearer <access-токен>`.
+Все запросы идут через gateway с префиксом `/api`. Все эндпоинты, кроме `/api/auth/register`, `/api/auth/login`, `/api/auth/refresh` и служебных `/health` и `/` у gateway, требуют заголовок `Authorization: Bearer <access-токен>`.
+
+Коды ошибок: без токена, с неверным, просроченным или refresh-токеном вместо access — `401`; не хватает прав (например, не admin) — `403`; неизвестный путь — `404`. Заголовки `X-User-*` от клиента игнорируются.
 
 | Метод | Путь | Описание |
 |-------|------|----------|
