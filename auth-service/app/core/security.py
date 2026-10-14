@@ -32,4 +32,16 @@ def create_refresh_token(data: Dict) -> str:
     return jwt.encode(to_encode, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
 
 def decode_token(token: str) -> Dict:
-    return jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
+    return jwt.decode(
+        token,
+        settings.SECRET_KEY,
+        algorithms=[settings.ALGORITHM],
+        options={"require_exp": True},
+    )
+
+def create_tokens_for_user(user) -> Dict[str, str]:
+    """Access-токен всегда несёт актуальную роль пользователя из БД."""
+    return {
+        "access_token": create_access_token({"sub": str(user.id), "type": "access", "role": user.role.value}),
+        "refresh_token": create_refresh_token({"sub": str(user.id), "type": "refresh"}),
+    }

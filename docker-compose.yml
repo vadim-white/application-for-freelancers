@@ -93,6 +93,8 @@ services:
       SECRET_KEY: 228
       ALGORITHM: HS256
       ACCESS_TOKEN_EXPIRE_MINUTES: 15
+      # только для разработки: admin@example.com, user1/user2@example.com с паролем password123
+      SEED_TEST_USERS: "true"
     depends_on:
       ser-auth-db:
         condition: service_healthy

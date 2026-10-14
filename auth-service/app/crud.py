@@ -29,30 +29,32 @@ def get_db():
     finally:
         db.close()
 
+def get_active_user_by_sub(db: Session, sub) -> Optional[models.User]:
+    """Пользователь по claim `sub` токена; None, если sub некорректен, пользователя нет или он неактивен."""
+    if not isinstance(sub, str) or not sub.isdigit():
+        return None
+    user = db.query(models.User).filter(models.User.id == int(sub)).first()
+    if not user or not user.is_active:
+        return None
+    return user
+
 def get_current_token_user(db: Session = Depends(get_db), authorization: Optional[str] = Header(None)):
-    """Get current user from Authorization header (Bearer token)"""
+    """Get current user from Authorization header (Bearer access token)"""
     if not authorization:
         raise HTTPException(status_code=401, detail="Missing authorization header")
-    
+
+    parts = authorization.split()
+    if len(parts) != 2 or parts[0].lower() != "bearer":
+        raise HTTPException(status_code=401, detail="Invalid auth scheme")
+
     try:
-        parts = authorization.split()
-        if len(parts) != 2 or parts[0].lower() != "bearer":
-            raise HTTPException(status_code=401, detail="Invalid auth scheme")
-        token = parts[1]
-    except Exception:
-        raise HTTPException(status_code=401, detail="Invalid authorization header")
-    
-    try:
-        payload = decode_token(token)
-        user_id = payload.get("sub")
-        if not user_id:
-            raise HTTPException(status_code=401, detail="Invalid token payload")
-        
-        user = db.query(models.User).filter(models.User.id == int(user_id)).first()
-        if not user:
-            raise HTTPException(status_code=404, detail="User not found")
-        return user
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(status_code=401, detail=f"Token validation failed: {str(e)}")
+        payload = decode_token(parts[1])
+    except JWTError:
+        raise HTTPException(status_code=401, detail="Invalid or expired token")
+    if payload.get("type") != "access":
+        raise HTTPException(status_code=401, detail="Invalid token type")
+
+    user = get_active_user_by_sub(db, payload.get("sub"))
+    if not user:
+        raise HTTPException(status_code=401, detail="Invalid token")
+    return user

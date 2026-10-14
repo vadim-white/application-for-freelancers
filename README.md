@@ -63,7 +63,7 @@ docker compose up --build
 - gateway: http://localhost:8000
 - документация сервисов (Swagger) доступна на `/docs` у каждого сервиса. В compose наружу опубликованы только gateway и frontend, поэтому Swagger остальных сервисов открывается при локальном запуске
 
-При первом старте auth-service создаёт тестовых пользователей:
+В `docker-compose.yml` включён `SEED_TEST_USERS=true`, поэтому при старте auth-service создаёт тестовых пользователей (если их ещё нет). По умолчанию, без этой переменной, тестовые пользователи не создаются:
 
 | Email | Пароль | Роль |
 |-------|--------|------|
@@ -114,6 +114,15 @@ npm run dev
 
 Адрес gateway для фронтенда задаётся переменной `VITE_API_BASE` в `frontend/login_page/.env`.
 
+### Тесты
+
+Тесты есть у gateway и auth-service. Им не нужны запущенные сервисы: gateway подменяет внутренние сервисы в тестах, auth работает с временной SQLite. Запуск в том же образе Python, что и у сервиса (`<service>` — `gateway-service` или `auth-service`):
+
+```bash
+docker run --rm -v "$PWD/<service>":/src:ro python:3.11-slim sh -c \
+  "cp -r /src /app && cd /app && rm -f .env && pip install -q -r requirements.txt -r requirements-dev.txt && python -m pytest -q"
+```
+
 ### Kubernetes
 
 Манифесты лежат в [k8s/](k8s/).
@@ -132,9 +141,10 @@ kubectl get pods -n <namespace>
 | Переменная | Где используется | Описание |
 |------------|------------------|----------|
 | `DATABASE_URL` | auth, task | Строка подключения SQLAlchemy |
-| `SECRET_KEY` | все сервисы | Ключ подписи JWT, должен быть одинаковым везде |
+| `SECRET_KEY` | все сервисы | Ключ подписи JWT, должен быть одинаковым везде. auth-service без него не стартует |
 | `ALGORITHM` | все сервисы | Алгоритм подписи, по умолчанию `HS256` |
 | `ACCESS_TOKEN_EXPIRE_MINUTES` | auth | Время жизни access-токена |
+| `SEED_TEST_USERS` | auth | `true` — создать тестовых пользователей при старте, только для разработки. По умолчанию `false` |
 | `AUTH_URL`, `TASK_URL`, `TIME_URL` | gateway | Адреса внутренних сервисов |
 | `TIME_SERVICE_URL` | task | Адрес Time Service для сбора статистики |
 | `VITE_API_BASE` | frontend | Адрес gateway |
@@ -184,12 +194,18 @@ curl -X POST http://localhost:8000/api/auth/login \
 
 ## Текущее состояние
 
-Проект работает как рабочий прототип, но не готов к продакшену. Известные ограничения, которые предстоит закрыть:
+Проект работает как рабочий прототип, но не готов к продакшену. Что уже сделано и какие ограничения предстоит закрыть:
 
-- Gateway пока не проверяет JWT: проверка в `gateway-service/app/middleware.py` отключена, токен разбирается внутри сервисов. Это значит, что часть эндпоинтов доступна без авторизации
+- Gateway проверяет Bearer access-токен (подпись, срок `exp`, тип `access`) для всех путей, кроме `/api/auth/register`, `/api/auth/login`, `/api/auth/refresh`, `/health` и `/`. Без токена или с неверным токеном ответ 401, неизвестные пути 404. Клиентские заголовки `X-User-*` затираются, gateway ставит свои `X-User-Id` и `X-User-Role` из токена
+- Сами task-service и time-service токен пока не проверяют: при прямом обращении к ним (в обход gateway) эндпоинты открыты, просроченный токен task-service принимает. Это следующий шаг
+- auth-service: роль в access-токене берётся из БД и при входе, и при обновлении токена; отключённый (`is_active=false`) или удалённый пользователь не может войти, обновить токен и получить `/api/auth/me`. Ключ `SECRET_KEY` обязателен, тестовые пользователи создаются только при `SEED_TEST_USERS=true`
+- В образ auth-service попадает локальный `auth-service/.env` (и `auth.db`, `fix.py`): `.dockerignore` их не исключает. Из-за этого образ стартует и без `SECRET_KEY` в окружении, ключ берётся из этого файла
+- В gateway, task-service и time-service у `SECRET_KEY` пока остаётся значение по умолчанию
+- Фронтенд не обновляет access-токен автоматически: через 15 минут после входа запросы получают 401, нужно войти заново
+- task-service в Docker Compose сейчас не стартует: версии зависимостей не закреплены, свежий SQLAlchemy ищет драйвер `psycopg`, а в образ ставится `psycopg2-binary`
 - Time Service использует SQLite независимо от `DATABASE_URL`, хотя в compose для него поднят PostgreSQL
 - Нет миграций, таблицы создаются через `create_all` при старте
-- Нет автотестов
+- Автотесты есть у gateway и auth-service (pytest), у task-service и time-service их нет, CI нет
 - Фронтенд запускается в dev-режиме, production-сборки нет
 - В Kubernetes нет Ingress и автомасштабирования, у всех сервисов одна реплика
 - Нет пагинации, фильтрации и сортировки задач
@@ -197,10 +213,11 @@ curl -X POST http://localhost:8000/api/auth/login \
 
 ## Планы
 
-- Проверка JWT и проброс `X-User-Id`, `X-User-Role` на уровне gateway
+- Проверка токена внутри task-service и time-service, доступ только к своим данным (admin видит всё)
+- Автообновление токена на фронтенде, CORS из переменной окружения, `.env.example`, обязательный `SECRET_KEY` во всех сервисах
 - Единая работа с PostgreSQL во всех сервисах, миграции через Alembic
 - Серверное состояние таймера: запуск, пауза и остановка на бэкенде, защита от параллельных таймеров
-- Тесты (pytest) и CI
+- Тесты (pytest) для всех сервисов и CI
 - Production-сборка фронтенда за nginx
 - Ingress, HPA, health и readiness probes в Kubernetes
 - Отчёты по времени и экспорт
