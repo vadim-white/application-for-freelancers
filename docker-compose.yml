@@ -9,7 +9,8 @@ x-app-healthcheck: &app-healthcheck
   start_interval: 1s
 
 services:
-  # PostgreSQL для Auth Service
+  # PostgreSQL для Auth Service.
+  # pg_isready с -d: без него проверка идёт к базе с именем пользователя, и postgres каждые 10 с пишет FATAL в лог
   ser-auth-db:
     image: postgres:15-alpine
     container_name: ser-auth-db
@@ -23,7 +24,7 @@ services:
       - ser-network
     restart: unless-stopped
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U auth_user"]
+      test: ["CMD-SHELL", "pg_isready -U auth_user -d auth_db"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -42,7 +43,7 @@ services:
       - ser-network
     restart: unless-stopped
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U task_user"]
+      test: ["CMD-SHELL", "pg_isready -U task_user -d task_db"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -61,7 +62,7 @@ services:
       - ser-network
     restart: unless-stopped
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U time_user"]
+      test: ["CMD-SHELL", "pg_isready -U time_user -d time_db"]
       interval: 10s
       timeout: 5s
       retries: 5
