@@ -101,13 +101,7 @@ async function onSave() {
     innerShow.value = false
   } catch (err: any) {
     console.error(err)
-    
-    // Проверка ошибки 403 - только админ может создавать
-    if (err.response?.status === 403) {
-      message.error('Только админ может создавать проекты')
-    } else {
-      message.error('Ошибка при создании проекта')
-    }
+    message.error('Ошибка при создании проекта')
   } finally {
     saving.value = false
   }

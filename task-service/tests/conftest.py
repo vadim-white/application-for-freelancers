@@ -51,6 +51,12 @@ def user_headers():
 
 
 @pytest.fixture
+def other_headers():
+    """Второй пользователь: на его объекты user_headers должен получать 404."""
+    return auth(make_token(sub="2", role="user"))
+
+
+@pytest.fixture
 def admin_headers():
     return auth(make_token(sub="99", role="admin"))
 

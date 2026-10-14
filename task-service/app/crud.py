@@ -18,8 +18,12 @@ def create_project(db: Session, project_in: schemas.ProjectCreate, owner_id: int
 def get_project(db: Session, project_id: int) -> Optional[models.Project]:
     return db.query(models.Project).filter(models.Project.id == project_id).first()
 
-def list_projects(db: Session, skip: int = 0, limit: int = 100) -> List[models.Project]:
-    return db.query(models.Project).offset(skip).limit(limit).all()
+def list_projects(db: Session, skip: int = 0, limit: int = 100,
+                  owner_id: Optional[int] = None) -> List[models.Project]:
+    q = db.query(models.Project)
+    if owner_id is not None:
+        q = q.filter(models.Project.owner_id == owner_id)
+    return q.offset(skip).limit(limit).all()
 
 def update_project(db: Session, project: models.Project, update_in: schemas.ProjectUpdate) -> models.Project:
     if update_in.name is not None:
@@ -58,8 +62,11 @@ def get_task(db: Session, task_id: int) -> Optional[models.Task]:
     return db.query(models.Task).filter(models.Task.id == task_id).first()
 
 def list_tasks(db: Session, skip: int = 0, limit: int = 100,
-               project_id: Optional[int] = None, status: Optional[models.TaskStatus] = None) -> List[models.Task]:
+               project_id: Optional[int] = None, status: Optional[models.TaskStatus] = None,
+               owner_id: Optional[int] = None) -> List[models.Task]:
     q = db.query(models.Task)
+    if owner_id is not None:
+        q = q.filter(models.Task.owner_id == owner_id)
     if project_id is not None:
         q = q.filter(models.Task.project_id == project_id)
     if status is not None:

@@ -69,9 +69,8 @@
             @open="openProject"
           />
 
-          <!-- Карточка создания проекта (только админ) -->
+          <!-- Карточка создания проекта (для всех) -->
           <div
-            v-if="isAdmin"
             class="create-project-card"
             @click="createProjectOpen"
           >
@@ -83,10 +82,10 @@
           </div>
 
           <!-- Пустое состояние -->
-          <div v-if="projects.length === 0 && !isAdmin" class="empty-state">
+          <div v-if="projects.length === 0" class="empty-state">
             <div style="font-size: 48px; margin-bottom: 12px">📭</div>
             <div style="font-weight: 600; margin-bottom: 4px">Нет проектов</div>
-            <div style="color: var(--color-text-secondary)">Созданные проекты появятся здесь</div>
+            <div style="color: var(--color-text-secondary)">Создайте первый проект — нажмите «Создать проект»</div>
           </div>
         </div>
       </div>
