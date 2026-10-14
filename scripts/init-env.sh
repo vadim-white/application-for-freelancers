@@ -10,7 +10,7 @@ EXAMPLE="$ROOT/.env.example"
 ENV_FILE="$ROOT/.env"
 
 # ключи, значения которых генерируются, если в .env их нет или они пустые
-SECRET_KEYS="SECRET_KEY"
+SECRET_KEYS="SECRET_KEY AUTH_DB_PASSWORD TASK_DB_PASSWORD TIME_DB_PASSWORD"
 
 [ -f "$EXAMPLE" ] || { echo "Нет файла $EXAMPLE" >&2; exit 1; }
 
