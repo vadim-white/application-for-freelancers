@@ -116,7 +116,7 @@ npm run dev
 
 ### Тесты
 
-Тесты есть у gateway и auth-service. Им не нужны запущенные сервисы: gateway подменяет внутренние сервисы в тестах, auth работает с временной SQLite. Запуск в том же образе Python, что и у сервиса (`<service>` — `gateway-service` или `auth-service`):
+Тесты есть у gateway, auth-service, task-service и time-service. Им не нужны запущенные сервисы: внешние HTTP-вызовы (gateway → сервисы, task → time) подменяются в тестах, базы — временная SQLite. Запуск в том же образе Python, что и у сервиса (`<service>` — `gateway-service`, `auth-service`, `task-service` или `time-service`):
 
 ```bash
 docker run --rm -v "$PWD/<service>":/src:ro python:3.11-slim sh -c \
@@ -140,8 +140,8 @@ kubectl get pods -n <namespace>
 
 | Переменная | Где используется | Описание |
 |------------|------------------|----------|
-| `DATABASE_URL` | auth, task | Строка подключения SQLAlchemy |
-| `SECRET_KEY` | все сервисы | Ключ подписи JWT, должен быть одинаковым везде. auth-service без него не стартует |
+| `DATABASE_URL` | auth, task, time | Строка подключения SQLAlchemy |
+| `SECRET_KEY` | все сервисы | Ключ подписи JWT, должен быть одинаковым везде. auth, task и time без него не стартуют |
 | `ALGORITHM` | все сервисы | Алгоритм подписи, по умолчанию `HS256` |
 | `ACCESS_TOKEN_EXPIRE_MINUTES` | auth | Время жизни access-токена |
 | `SEED_TEST_USERS` | auth | `true` — создать тестовых пользователей при старте, только для разработки. По умолчанию `false` |
@@ -153,7 +153,7 @@ kubectl get pods -n <namespace>
 
 ## API
 
-Все запросы идут через gateway с префиксом `/api`.
+Все запросы идут через gateway с префиксом `/api`. Все эндпоинты, кроме `/api/auth/register`, `/api/auth/login` и `/api/auth/refresh`, требуют заголовок `Authorization: Bearer <access-токен>`.
 
 | Метод | Путь | Описание |
 |-------|------|----------|
@@ -166,9 +166,9 @@ kubectl get pods -n <namespace>
 | GET, POST | `/api/tasks/tasks` | Список и создание задач |
 | GET, PUT, DELETE | `/api/tasks/tasks/{id}` | Задача |
 | POST | `/api/tasks/tasks/{id}/status` | Смена статуса задачи |
-| GET | `/api/tasks/statistics/users` | Статистика по пользователям |
-| GET, POST | `/api/time/time-entries` | Записи о времени |
-| GET | `/api/time/statistics/users` | Статистика времени по пользователям |
+| GET | `/api/tasks/statistics/users` | Статистика по пользователям (только admin) |
+| GET, POST | `/api/time/time-entries` | Записи о времени: `user_id` берётся из токена; пользователь видит только свои записи, admin — все (фильтр `?user_id=`) |
+| GET | `/api/time/statistics/users` | Статистика времени по пользователям (только admin) |
 
 Пример входа:
 
@@ -197,15 +197,15 @@ curl -X POST http://localhost:8000/api/auth/login \
 Проект работает как рабочий прототип, но не готов к продакшену. Что уже сделано и какие ограничения предстоит закрыть:
 
 - Gateway проверяет Bearer access-токен (подпись, срок `exp`, тип `access`) для всех путей, кроме `/api/auth/register`, `/api/auth/login`, `/api/auth/refresh`, `/health` и `/`. Без токена или с неверным токеном ответ 401, неизвестные пути 404. Клиентские заголовки `X-User-*` затираются, gateway ставит свои `X-User-Id` и `X-User-Role` из токена
-- Сами task-service и time-service токен пока не проверяют: при прямом обращении к ним (в обход gateway) эндпоинты открыты, просроченный токен task-service принимает. Это следующий шаг
+- task-service и time-service сами проверяют access-токен так же, как gateway (подпись, `exp`, тип `access`), и не доверяют заголовкам `X-User-*`: без токена 401, в том числе при обращении в обход gateway. Статистика по пользователям только для admin; task-service при сборе статистики передаёт в time-service токен пользователя. В time-service `user_id` записи берётся только из токена (поле `user_id` в теле игнорируется), пользователь видит только свои записи, admin — все
+- Задачи и проекты пока видны всем авторизованным пользователям: у них ещё нет поля владельца (появится с миграциями)
 - auth-service: роль в access-токене берётся из БД и при входе, и при обновлении токена; отключённый (`is_active=false`) или удалённый пользователь не может войти, обновить токен и получить `/api/auth/me`. Ключ `SECRET_KEY` обязателен, тестовые пользователи создаются только при `SEED_TEST_USERS=true`
-- В образ auth-service попадает локальный `auth-service/.env` (и `auth.db`, `fix.py`): `.dockerignore` их не исключает. Из-за этого образ стартует и без `SECRET_KEY` в окружении, ключ берётся из этого файла
-- В gateway, task-service и time-service у `SECRET_KEY` пока остаётся значение по умолчанию
+- `.dockerignore` исключает `.env`, `*.db`, `.venv`, `node_modules` во всех папках, локальные настройки и базы больше не попадают в образы
+- В gateway у `SECRET_KEY` пока остаётся значение по умолчанию
 - Фронтенд не обновляет access-токен автоматически: через 15 минут после входа запросы получают 401, нужно войти заново
-- task-service в Docker Compose сейчас не стартует: версии зависимостей не закреплены, свежий SQLAlchemy ищет драйвер `psycopg`, а в образ ставится `psycopg2-binary`
-- Time Service использует SQLite независимо от `DATABASE_URL`, хотя в compose для него поднят PostgreSQL
+- В Docker Compose все сервисы работают с PostgreSQL. В task-service и time-service закреплена только версия SQLAlchemy (2.1 по умолчанию требует драйвер `psycopg` v3), остальные зависимости этих сервисов не закреплены
 - Нет миграций, таблицы создаются через `create_all` при старте
-- Автотесты есть у gateway и auth-service (pytest), у task-service и time-service их нет, CI нет
+- Автотесты (pytest) есть у всех бэкенд-сервисов, CI нет
 - Фронтенд запускается в dev-режиме, production-сборки нет
 - В Kubernetes нет Ingress и автомасштабирования, у всех сервисов одна реплика
 - Нет пагинации, фильтрации и сортировки задач
@@ -213,9 +213,9 @@ curl -X POST http://localhost:8000/api/auth/login \
 
 ## Планы
 
-- Проверка токена внутри task-service и time-service, доступ только к своим данным (admin видит всё)
-- Автообновление токена на фронтенде, CORS из переменной окружения, `.env.example`, обязательный `SECRET_KEY` во всех сервисах
-- Единая работа с PostgreSQL во всех сервисах, миграции через Alembic
+- Автообновление токена на фронтенде, CORS из переменной окружения, `.env.example`, обязательный `SECRET_KEY` в gateway
+- Владелец у задач и проектов, доступ только к своим данным (admin видит всё)
+- Закреплённые версии зависимостей во всех сервисах, миграции через Alembic
 - Серверное состояние таймера: запуск, пауза и остановка на бэкенде, защита от параллельных таймеров
 - Тесты (pytest) для всех сервисов и CI
 - Production-сборка фронтенда за nginx

@@ -31,9 +31,8 @@ class TimeEntryBase(BaseModel):
         return int(v)
 
 class TimeEntryCreate(TimeEntryBase):
-    # теперь опционально — если фронтенд не передаёт user_id,
-    # мы попробуем извлечь его из JWT (см. api.py)
-    user_id: Optional[int] = None
+    # user_id не принимается от клиента: берётся из токена (лишнее поле в теле игнорируется)
+    pass
 
 class TimeEntryRead(TimeEntryBase):
     id: int

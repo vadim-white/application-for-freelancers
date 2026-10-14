@@ -1,6 +1,6 @@
 fastapi
 uvicorn[standard]
-SQLAlchemy
+SQLAlchemy==2.0.44
 pydantic
 python-multipart
 passlib[bcrypt]

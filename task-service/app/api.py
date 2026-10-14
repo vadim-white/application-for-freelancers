@@ -1,50 +1,22 @@
-from fastapi import APIRouter, Depends, HTTPException, status, Query, Request
+from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.orm import Session
 from . import schemas, crud, models
 from .deps import get_db
+from .core.auth import CurrentUser, get_current_user, require_admin
+from .core.config import settings
 from typing import List, Optional
+import httpx
 import logging
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter()
-
-def get_user_from_token(request: Request) -> dict:
-    """Извлекает информацию о пользователе из JWT токена"""
-    from jose import jwt, JWTError
-    from .core.config import settings
-    
-    auth_header = request.headers.get("authorization") or request.headers.get("Authorization")
-    if not auth_header:
-        return {"id": None, "role": None}
-    
-    try:
-        scheme, token = auth_header.split()
-        if scheme.lower() != "bearer":
-            return {"id": None, "role": None}
-        
-        payload = jwt.decode(
-            token,
-            settings.SECRET_KEY,
-            algorithms=[settings.ALGORITHM],
-            options={"verify_exp": False}
-        )
-        return {
-            "id": int(payload.get("sub")),
-            "role": payload.get("role", "user")
-        }
-    except (ValueError, JWTError, KeyError):
-        return {"id": None, "role": None}
+# Все эндпоинты требуют валидный access-токен (401 без него)
+router = APIRouter(dependencies=[Depends(get_current_user)])
 
 # --- Projects ---
 @router.post("/projects", response_model=schemas.ProjectRead, status_code=status.HTTP_201_CREATED)
-def create_project(project_in: schemas.ProjectCreate, request: Request, db: Session = Depends(get_db)):
-    # Проверка доступа - только admin может создавать проекты
-    user = get_user_from_token(request)
-    if user["role"] != "admin":
-        logger.warning(f"Unauthorized project creation attempt by user {user['id']}")
-        raise HTTPException(status_code=403, detail="Only admins can create projects")
-    
+def create_project(project_in: schemas.ProjectCreate, db: Session = Depends(get_db),
+                   user: CurrentUser = Depends(require_admin)):
     project = crud.create_project(db, project_in)
     logger.info(f"Project created: id={project.id}")
     return project
@@ -61,24 +33,16 @@ def get_project(project_id: int, db: Session = Depends(get_db)):
     return p
 
 @router.put("/projects/{project_id}", response_model=schemas.ProjectRead)
-def update_project(project_id: int, update_in: schemas.ProjectUpdate, request: Request, db: Session = Depends(get_db)):
-    # Проверка доступа - только admin может обновлять проекты
-    user = get_user_from_token(request)
-    if user["role"] != "admin":
-        raise HTTPException(status_code=403, detail="Only admins can update projects")
-    
+def update_project(project_id: int, update_in: schemas.ProjectUpdate, db: Session = Depends(get_db),
+                   user: CurrentUser = Depends(require_admin)):
     p = crud.get_project(db, project_id)
     if not p:
         raise HTTPException(status_code=404, detail="Project not found")
     return crud.update_project(db, p, update_in)
 
 @router.delete("/projects/{project_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_project(project_id: int, request: Request, db: Session = Depends(get_db)):
-    # Проверка доступа - только admin может удалять проекты
-    user = get_user_from_token(request)
-    if user["role"] != "admin":
-        raise HTTPException(status_code=403, detail="Only admins can delete projects")
-    
+def delete_project(project_id: int, db: Session = Depends(get_db),
+                   user: CurrentUser = Depends(require_admin)):
     p = crud.get_project(db, project_id)
     if not p:
         raise HTTPException(status_code=404, detail="Project not found")
@@ -154,29 +118,26 @@ def change_status(task_id: int, status_in: dict, db: Session = Depends(get_db)):
 
 # --- Statistics ---
 @router.get("/statistics/users")
-async def get_users_statistics(db: Session = Depends(get_db)):
-    """Статистика по пользователям: кол-во задач и среднее время"""
-    import httpx
-    from .core.config import settings
-    
+async def get_users_statistics(user: CurrentUser = Depends(require_admin)):
+    """Статистика по пользователям: кол-во задач и среднее время (только admin)"""
     logger.info("Getting users statistics")
-    
+
+    # time-service сам проверяет токен, поэтому пробрасываем Authorization пользователя
     try:
-        # Получаем статистику из time-service
         async with httpx.AsyncClient() as client:
             response = await client.get(
                 f"{settings.TIME_SERVICE_URL}/api/time/statistics/users",
-                timeout=10.0
+                headers={"Authorization": user.authorization},
+                timeout=10.0,
             )
-            
-            if response.status_code != 200:
-                logger.error(f"Failed to get statistics from time-service: {response.status_code}")
-                raise HTTPException(status_code=500, detail="Failed to get statistics")
-            
-            stats = response.json()
-            logger.info(f"Statistics retrieved: {len(stats)} users")
-            return stats
-            
-    except Exception as e:
-        logger.error(f"Error getting statistics: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+    except httpx.HTTPError as e:
+        logger.error(f"Error getting statistics from time-service: {e}")
+        raise HTTPException(status_code=502, detail="Time service unavailable")
+
+    if response.status_code != 200:
+        logger.error(f"Failed to get statistics from time-service: {response.status_code}")
+        raise HTTPException(status_code=502, detail="Failed to get statistics")
+
+    stats = response.json()
+    logger.info(f"Statistics retrieved: {len(stats)} users")
+    return stats

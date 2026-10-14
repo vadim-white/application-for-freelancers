@@ -1,24 +1,16 @@
-from fastapi import APIRouter, Depends, HTTPException, status, Request
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from sqlalchemy import func
-from typing import List
+from typing import List, Optional
 from . import schemas, crud
+from .core.auth import CurrentUser, get_current_user, require_admin
 from .db import SessionLocal
-from jose import JWTError
 import logging
 
 logger = logging.getLogger(__name__)
 
-# если в time-service есть core.security.decode_token и config — используем их
-try:
-    from .core.security import decode_token
-    from .core.config import settings
-    _have_jwt_tools = True
-except Exception as e:
-    logger.warning(f"JWT tools not available: {e}")
-    _have_jwt_tools = False
-
-router = APIRouter()
+# Все эндпоинты требуют валидный access-токен (401 без него)
+router = APIRouter(dependencies=[Depends(get_current_user)])
 
 # Dependency
 def get_db():
@@ -39,66 +31,33 @@ def list_projects(db: Session = Depends(get_db)):
 
 # Time entries
 @router.post("/time-entries", response_model=schemas.TimeEntryRead)
-def create_entry(entry_in: schemas.TimeEntryCreate, request: Request, db: Session = Depends(get_db)):
-    """
-    Создает запись о затраченном времени.
-    Если client не присылает user_id, попытаемся взять user id из Authorization Bearer JWT (sub).
-    Если декодирование токена недоступно или не удалось — user_id останется None (допустимо).
-    """
-    logger.info(f"Creating time entry: task_id={entry_in.task_id}, minutes={entry_in.minutes}, user_id={entry_in.user_id}")
-    
-    payload_user = None
-    if entry_in.user_id is None and _have_jwt_tools:
-        auth = request.headers.get("authorization") or request.headers.get("Authorization")
-        if auth:
-            try:
-                parts = auth.split()
-                if len(parts) == 2:
-                    scheme, token = parts
-                    if scheme.lower() == "bearer":
-                        payload = decode_token(token)
-                        sub = payload.get("sub")
-                        if sub is not None:
-                            try:
-                                payload_user = int(sub)
-                                logger.info(f"Extracted user_id from token: {payload_user}")
-                            except Exception as e:
-                                logger.warning(f"Failed to extract user_id from token: {e}")
-            except (ValueError, JWTError) as e:
-                logger.warning(f"Failed to decode token: {e}")
-
-    # build a new TimeEntryCreate object with resolved user_id
-    data = entry_in.dict()
-    if data.get("user_id") is None and payload_user is not None:
-        data["user_id"] = payload_user
-
-    # if user_id still missing – it's allowed now (nullable)
+def create_entry(entry_in: schemas.TimeEntryCreate, db: Session = Depends(get_db),
+                 user: CurrentUser = Depends(get_current_user)):
+    """Создает запись о затраченном времени. user_id берётся только из токена."""
+    logger.info(f"Creating time entry: task_id={entry_in.task_id}, minutes={entry_in.minutes}, user_id={user.id}")
     try:
-        te = schemas.TimeEntryCreate(**data)
-    except Exception as e:
-        logger.error(f"Invalid payload: {e}")
-        raise HTTPException(status_code=400, detail=f"Invalid payload: {e}")
-
-    try:
-        result = crud.create_time_entry(db, te)
+        result = crud.create_time_entry(db, entry_in, user_id=user.id)
         logger.info(f"Time entry created successfully: id={result.id}")
         return result
     except ValueError as e:
         logger.error(f"Validation error: {e}")
         raise HTTPException(status_code=400, detail=str(e))
-    except Exception as e:
-        logger.error(f"Unexpected error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
 
 @router.get("/time-entries", response_model=List[schemas.TimeEntryRead])
-def list_entries(task_id: int = None, user_id: int = None, db: Session = Depends(get_db)):
+def list_entries(task_id: Optional[int] = None, user_id: Optional[int] = None,
+                 db: Session = Depends(get_db), user: CurrentUser = Depends(get_current_user)):
+    """Пользователь видит только свои записи, admin — все (с фильтром user_id)."""
+    if not user.is_admin:
+        if user_id is not None and user_id != user.id:
+            raise HTTPException(status_code=403, detail="Cannot view other users' time entries")
+        user_id = user.id
     return crud.get_time_entries(db, task_id=task_id, user_id=user_id)
 
 # Statistics
 @router.get("/statistics/users")
-def get_users_statistics(db: Session = Depends(get_db)):
+def get_users_statistics(db: Session = Depends(get_db), user: CurrentUser = Depends(require_admin)):
     """
-    Получает статистику по пользователям:
+    Получает статистику по пользователям (только admin):
     - email, full_name из token
     - task_count: кол-во время-записей (задач выполненных)
     - avg_minutes: среднее время на задачу в минутах
@@ -135,4 +94,4 @@ def get_users_statistics(db: Session = Depends(get_db)):
         
     except Exception as e:
         logger.error(f"Error getting statistics: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Failed to get statistics")
