@@ -1,8 +1,14 @@
+import os
+import pathlib
+import subprocess
+import sys
 from datetime import timedelta
 
 import pytest
 
 from .conftest import auth, make_token
+
+SERVICE_ROOT = pathlib.Path(__file__).resolve().parent.parent
 
 PROTECTED = [
     ("get", "/api/time/time-entries"),
@@ -103,3 +109,16 @@ def test_statistics_admin_only(client, user1, admin):
     assert r.status_code == 200
     [row] = r.json()
     assert (row["user_id"], row["task_count"], row["avg_minutes"]) == (1, 2, 15)
+
+
+# --- DATABASE_URL обязателен ---
+
+def test_settings_require_database_url(tmp_path):
+    env = {k: v for k, v in os.environ.items() if k != "DATABASE_URL"}
+    env["SECRET_KEY"] = "test-secret"
+    env["PYTHONPATH"] = str(SERVICE_ROOT)
+    # cwd без .env, иначе строка подключения подтянется оттуда
+    r = subprocess.run([sys.executable, "-c", "import app.core.config"],
+                       cwd=tmp_path, env=env, capture_output=True, text=True)
+    assert r.returncode != 0
+    assert "DATABASE_URL" in r.stderr

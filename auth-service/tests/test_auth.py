@@ -215,3 +215,16 @@ def test_settings_accept_secret_key_from_env(tmp_path):
                        cwd=tmp_path, env=env, capture_output=True, text=True)
     assert r.returncode == 0, r.stderr
     assert r.stdout.strip() == "from-env"
+
+
+# --- DATABASE_URL обязателен ---
+
+def test_settings_require_database_url(tmp_path):
+    env = {k: v for k, v in os.environ.items() if k != "DATABASE_URL"}
+    env["SECRET_KEY"] = "test-secret"
+    env["PYTHONPATH"] = str(SERVICE_ROOT)
+    # cwd без .env, иначе строка подключения подтянется оттуда
+    r = subprocess.run([sys.executable, "-c", "import app.core.config"],
+                       cwd=tmp_path, env=env, capture_output=True, text=True)
+    assert r.returncode != 0
+    assert "DATABASE_URL" in r.stderr
