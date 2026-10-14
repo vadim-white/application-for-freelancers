@@ -1,0 +1,29 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+env/
+
+# Базы данных
+*.db
+
+# Секреты и окружения
+.env
+.env.*
+!.env.example
+
+# Node
+node_modules/
+frontend/login_page/dist/
+
+# OS и IDE
+.DS_Store
+.idea/
+.vscode/
+
+# Внутренние заметки
+docs/
+
+# Разовые скрипты (пока не удалены)
+init_db.py
+auth-service/fix.py

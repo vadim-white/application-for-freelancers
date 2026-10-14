@@ -1,0 +1,304 @@
+:root {
+  /* Основная палитра цветов */
+  --primary-gradient: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  --secondary-gradient: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+  --success-gradient: linear-gradient(135deg, #56ab2f 0%, #a8e063 100%);
+  --warning-gradient: linear-gradient(135deg, #f7971e 0%, #ffd200 100%);
+  --info-gradient: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+
+  /* Основные цвета */
+  --color-primary: #667eea;
+  --color-secondary: #764ba2;
+  --color-success: #56ab2f;
+  --color-warning: #f7971e;
+  --color-danger: #f5576c;
+  --color-info: #4facfe;
+
+  /* Нейтральные цвета */
+  --color-bg-light: #f8f9fa;
+  --color-bg-white: #ffffff;
+  --color-text-primary: #2c3e50;
+  --color-text-secondary: #7f8c8d;
+  --color-border: #e1e4e8;
+  --color-shadow: rgba(0, 0, 0, 0.08);
+
+  /* Переходы и анимации */
+  --transition-smooth: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html, body {
+  height: 100%;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+  color: var(--color-text-primary);
+  min-height: 100vh;
+}
+
+#app {
+  min-height: 100vh;
+}
+
+/* === ГЛОБАЛЬНЫЕ СТИЛИ КОМПОНЕНТОВ === */
+
+/* Карточки */
+.n-card {
+  border: none !important;
+  border-radius: 12px !important;
+  box-shadow: 0 4px 12px var(--color-shadow) !important;
+  transition: var(--transition-smooth) !important;
+  background: var(--color-bg-white) !important;
+}
+
+.n-card:hover {
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12) !important;
+  transform: translateY(-2px);
+}
+
+/* Кнопки */
+.n-button {
+  border-radius: 8px !important;
+  font-weight: 500 !important;
+  transition: var(--transition-smooth) !important;
+  text-transform: none !important;
+}
+
+.n-button--primary {
+  background: var(--primary-gradient) !important;
+  border: none !important;
+  color: white !important;
+}
+
+.n-button--primary:hover {
+  opacity: 0.9;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4) !important;
+}
+
+.n-button--success {
+  background: var(--success-gradient) !important;
+  border: none !important;
+  color: white !important;
+}
+
+.n-button--success:hover {
+  opacity: 0.9;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(86, 171, 47, 0.4) !important;
+}
+
+.n-button--tertiary {
+  color: var(--color-primary) !important;
+  border: none !important;
+  background: transparent !important;
+}
+
+.n-button--tertiary:hover {
+  background: rgba(102, 126, 234, 0.1) !important;
+}
+
+/* Инпуты и формы */
+.n-input,
+.n-input__input,
+.n-select {
+  border-radius: 8px !important;
+  border-color: var(--color-border) !important;
+  transition: var(--transition-smooth) !important;
+}
+
+.n-input:focus-within,
+.n-select:focus-within {
+  border-color: var(--color-primary) !important;
+  box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1) !important;
+}
+
+.n-form-item__label {
+  font-weight: 500 !important;
+  color: var(--color-text-primary) !important;
+}
+
+/* Хедер */
+.n-layout-header {
+  background: var(--primary-gradient) !important;
+  color: white !important;
+  box-shadow: 0 4px 12px var(--color-shadow) !important;
+  border-radius: 0 !important;
+}
+
+.n-layout-header .n-button--tertiary {
+  color: rgba(255, 255, 255, 0.8) !important;
+}
+
+.n-layout-header .n-button--tertiary:hover {
+  background: rgba(255, 255, 255, 0.2) !important;
+  color: white !important;
+}
+
+.n-layout-header .n-button {
+  color: white !important;
+  background: rgba(255, 255, 255, 0.2) !important;
+}
+
+.n-layout-header .n-button:hover {
+  background: rgba(255, 255, 255, 0.3) !important;
+}
+
+/* Модальные окна и ящики */
+.n-modal,
+.n-drawer {
+  border-radius: 12px !important;
+}
+
+.n-modal__mask {
+  background: rgba(0, 0, 0, 0.45) !important;
+}
+
+.n-drawer__header {
+  background: var(--primary-gradient) !important;
+  color: white !important;
+  border-bottom: none !important;
+}
+
+.n-drawer__header-title {
+  color: white !important;
+  font-weight: 600 !important;
+}
+
+.n-drawer__close-btn {
+  color: white !important;
+}
+
+/* Табы и навигация */
+.n-tabs {
+  border-radius: 8px !important;
+}
+
+/* Таблицы */
+.n-data-table {
+  border-radius: 8px !important;
+}
+
+.n-data-table th {
+  background: linear-gradient(135deg, rgba(102, 126, 234, 0.1) 0%, rgba(118, 75, 162, 0.1) 100%) !important;
+  font-weight: 600 !important;
+  color: var(--color-text-primary) !important;
+  border: none !important;
+}
+
+.n-data-table td {
+  border-color: var(--color-border) !important;
+}
+
+.n-data-table tbody tr:hover {
+  background: rgba(102, 126, 234, 0.05) !important;
+}
+
+/* Уведомления и сообщения */
+.n-message {
+  border-radius: 8px !important;
+  box-shadow: 0 4px 12px var(--color-shadow) !important;
+}
+
+/* Спинер/Лоадер */
+.n-spin {
+  color: var(--color-primary) !important;
+}
+
+/* === УТИЛИТЫ === */
+
+.flex-center {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.flex-between {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.gradient-text {
+  background: var(--primary-gradient);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  font-weight: 600;
+}
+
+.card-shadow {
+  box-shadow: 0 4px 12px var(--color-shadow);
+  border-radius: 12px;
+}
+
+/* === АДАПТИВНОСТЬ === */
+
+@media (max-width: 768px) {
+  .n-layout-header {
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .n-card {
+    border-radius: 8px !important;
+  }
+}
+
+/* === АНИМАЦИИ === */
+
+@keyframes slideInUp {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.animate-slideInUp {
+  animation: slideInUp 0.3s ease-out;
+}
+
+.animate-fadeIn {
+  animation: fadeIn 0.3s ease-out;
+}
+
+/* === СКРОЛЛ === */
+
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--color-bg-light);
+  border-radius: 10px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--color-primary);
+  border-radius: 10px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--color-secondary);
+}

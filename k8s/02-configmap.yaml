@@ -1,0 +1,9 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: service-config
+  namespace: freelance-service
+data:
+  auth-url: "http://ser-auth:8001"
+  task-url: "http://ser-task:8002"
+  time-url: "http://ser-time:8003"

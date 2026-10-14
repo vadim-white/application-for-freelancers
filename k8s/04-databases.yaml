@@ -1,0 +1,242 @@
+# PostgreSQL для Auth Service
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: auth-db
+  namespace: freelance-service
+spec:
+  serviceName: auth-db
+  replicas: 1
+  selector:
+    matchLabels:
+      app: auth-db
+  template:
+    metadata:
+      labels:
+        app: auth-db
+    spec:
+      containers:
+      - name: postgres
+        image: postgres:15-alpine
+        ports:
+        - containerPort: 5432
+          name: postgres
+        env:
+        - name: POSTGRES_DB
+          value: "auth_db"
+        - name: POSTGRES_USER
+          valueFrom:
+            secretKeyRef:
+              name: db-credentials
+              key: auth-user
+        - name: POSTGRES_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: db-credentials
+              key: auth-password
+        volumeMounts:
+        - name: auth-db-storage
+          mountPath: /var/lib/postgresql/data
+        livenessProbe:
+          exec:
+            command:
+            - /bin/sh
+            - -c
+            - pg_isready -U $POSTGRES_USER
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        readinessProbe:
+          exec:
+            command:
+            - /bin/sh
+            - -c
+            - pg_isready -U $POSTGRES_USER
+          initialDelaySeconds: 5
+          periodSeconds: 10
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "100m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+      volumes:
+      - name: auth-db-storage
+        persistentVolumeClaim:
+          claimName: auth-db-pvc
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: auth-db
+  namespace: freelance-service
+spec:
+  clusterIP: None
+  selector:
+    app: auth-db
+  ports:
+  - port: 5432
+    targetPort: 5432
+    name: postgres
+---
+# PostgreSQL для Task Service
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: task-db
+  namespace: freelance-service
+spec:
+  serviceName: task-db
+  replicas: 1
+  selector:
+    matchLabels:
+      app: task-db
+  template:
+    metadata:
+      labels:
+        app: task-db
+    spec:
+      containers:
+      - name: postgres
+        image: postgres:15-alpine
+        ports:
+        - containerPort: 5432
+          name: postgres
+        env:
+        - name: POSTGRES_DB
+          value: "task_db"
+        - name: POSTGRES_USER
+          valueFrom:
+            secretKeyRef:
+              name: db-credentials
+              key: task-user
+        - name: POSTGRES_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: db-credentials
+              key: task-password
+        volumeMounts:
+        - name: task-db-storage
+          mountPath: /var/lib/postgresql/data
+        livenessProbe:
+          exec:
+            command:
+            - /bin/sh
+            - -c
+            - pg_isready -U $POSTGRES_USER
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        readinessProbe:
+          exec:
+            command:
+            - /bin/sh
+            - -c
+            - pg_isready -U $POSTGRES_USER
+          initialDelaySeconds: 5
+          periodSeconds: 10
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "100m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+      volumes:
+      - name: task-db-storage
+        persistentVolumeClaim:
+          claimName: task-db-pvc
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: task-db
+  namespace: freelance-service
+spec:
+  clusterIP: None
+  selector:
+    app: task-db
+  ports:
+  - port: 5432
+    targetPort: 5432
+    name: postgres
+---
+# PostgreSQL для Time Service
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: time-db
+  namespace: freelance-service
+spec:
+  serviceName: time-db
+  replicas: 1
+  selector:
+    matchLabels:
+      app: time-db
+  template:
+    metadata:
+      labels:
+        app: time-db
+    spec:
+      containers:
+      - name: postgres
+        image: postgres:15-alpine
+        ports:
+        - containerPort: 5432
+          name: postgres
+        env:
+        - name: POSTGRES_DB
+          value: "time_db"
+        - name: POSTGRES_USER
+          valueFrom:
+            secretKeyRef:
+              name: db-credentials
+              key: time-user
+        - name: POSTGRES_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: db-credentials
+              key: time-password
+        volumeMounts:
+        - name: time-db-storage
+          mountPath: /var/lib/postgresql/data
+        livenessProbe:
+          exec:
+            command:
+            - /bin/sh
+            - -c
+            - pg_isready -U $POSTGRES_USER
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        readinessProbe:
+          exec:
+            command:
+            - /bin/sh
+            - -c
+            - pg_isready -U $POSTGRES_USER
+          initialDelaySeconds: 5
+          periodSeconds: 10
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "100m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+      volumes:
+      - name: time-db-storage
+        persistentVolumeClaim:
+          claimName: time-db-pvc
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: time-db
+  namespace: freelance-service
+spec:
+  clusterIP: None
+  selector:
+    app: time-db
+  ports:
+  - port: 5432
+    targetPort: 5432
+    name: postgres

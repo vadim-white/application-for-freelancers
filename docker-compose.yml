@@ -1,0 +1,168 @@
+services:
+  # PostgreSQL для Auth Service
+  ser-auth-db:
+    image: postgres:15-alpine
+    container_name: ser-auth-db
+    environment:
+      POSTGRES_DB: auth_db
+      POSTGRES_USER: auth_user
+      POSTGRES_PASSWORD: auth_password
+    volumes:
+      - ser-auth-db-data:/var/lib/postgresql/data
+    networks:
+      - ser-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U auth_user"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # PostgreSQL для Task Service
+  ser-task-db:
+    image: postgres:15-alpine
+    container_name: ser-task-db
+    environment:
+      POSTGRES_DB: task_db
+      POSTGRES_USER: task_user
+      POSTGRES_PASSWORD: task_password
+    volumes:
+      - ser-task-db-data:/var/lib/postgresql/data
+    networks:
+      - ser-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U task_user"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # PostgreSQL для Time Service
+  ser-time-db:
+    image: postgres:15-alpine
+    container_name: ser-time-db
+    environment:
+      POSTGRES_DB: time_db
+      POSTGRES_USER: time_user
+      POSTGRES_PASSWORD: time_password
+    volumes:
+      - ser-time-db-data:/var/lib/postgresql/data
+    networks:
+      - ser-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U time_user"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Gateway Service (главный точка входа)
+  ser-gateway:
+    build:
+      context: .
+      dockerfile: gateway-service/Dockerfile
+    image: ser-gateway:latest
+    container_name: ser-gateway
+    ports:
+      - "8000:8000"
+    environment:
+      AUTH_URL: http://ser-auth:8001
+      TASK_URL: http://ser-task:8002
+      TIME_URL: http://ser-time:8003
+      SECRET_KEY: 228
+      ALGORITHM: HS256
+    depends_on:
+      - ser-auth
+      - ser-task
+      - ser-time
+    networks:
+      - ser-network
+    restart: unless-stopped
+
+  # Auth Service
+  ser-auth:
+    build:
+      context: .
+      dockerfile: auth-service/Dockerfile
+    image: ser-auth:latest
+    container_name: ser-auth
+    expose:
+      - "8001"
+    environment:
+      DATABASE_URL: postgresql://auth_user:auth_password@ser-auth-db:5432/auth_db
+      SECRET_KEY: 228
+      ALGORITHM: HS256
+      ACCESS_TOKEN_EXPIRE_MINUTES: 15
+    depends_on:
+      ser-auth-db:
+        condition: service_healthy
+    networks:
+      - ser-network
+    restart: unless-stopped
+
+  # Task Service
+  ser-task:
+    build:
+      context: .
+      dockerfile: task-service/Dockerfile
+    image: ser-task:latest
+    container_name: ser-task
+    expose:
+      - "8002"
+    environment:
+      DATABASE_URL: postgresql://task_user:task_password@ser-task-db:5432/task_db
+      TIME_SERVICE_URL: http://ser-time:8003
+      SECRET_KEY: 228
+      ALGORITHM: HS256
+    depends_on:
+      ser-task-db:
+        condition: service_healthy
+    networks:
+      - ser-network
+    restart: unless-stopped
+
+  # Time Service
+  ser-time:
+    build:
+      context: .
+      dockerfile: time-service/Dockerfile
+    image: ser-time:latest
+    container_name: ser-time
+    expose:
+      - "8003"
+    environment:
+      DATABASE_URL: postgresql://time_user:time_password@ser-time-db:5432/time_db
+      SECRET_KEY: 228
+      ALGORITHM: HS256
+    depends_on:
+      ser-time-db:
+        condition: service_healthy
+    networks:
+      - ser-network
+    restart: unless-stopped
+
+  # Frontend (Vue)
+  ser-frontend:
+    build:
+      context: .
+      dockerfile: frontend/Dockerfile
+    image: ser-frontend:latest
+    container_name: ser-frontend
+    ports:
+      - "5173:5173"
+    environment:
+      VITE_API_URL: http://localhost:8000
+    depends_on:
+      - ser-gateway
+    networks:
+      - ser-network
+    restart: unless-stopped
+
+volumes:
+  ser-auth-db-data:
+  ser-task-db-data:
+  ser-time-db-data:
+
+networks:
+  ser-network:
+    driver: bridge

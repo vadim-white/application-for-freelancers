@@ -1,0 +1,140 @@
+# Gateway Service
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ser-gateway
+  namespace: freelance-service
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: ser-gateway
+  template:
+    metadata:
+      labels:
+        app: ser-gateway
+    spec:
+      containers:
+      - name: ser-gateway
+        image: ser-gateway:latest
+        imagePullPolicy: Never
+        ports:
+        - containerPort: 8000
+          name: http
+        env:
+        - name: AUTH_URL
+          valueFrom:
+            configMapKeyRef:
+              name: service-config
+              key: auth-url
+        - name: TASK_URL
+          valueFrom:
+            configMapKeyRef:
+              name: service-config
+              key: task-url
+        - name: TIME_URL
+          valueFrom:
+            configMapKeyRef:
+              name: service-config
+              key: time-url
+        - name: SECRET_KEY
+          valueFrom:
+            secretKeyRef:
+              name: app-secrets
+              key: secret-key
+        - name: ALGORITHM
+          valueFrom:
+            secretKeyRef:
+              name: app-secrets
+              key: algorithm
+        livenessProbe:
+          httpGet:
+            path: /
+            port: 8000
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /
+            port: 8000
+          initialDelaySeconds: 10
+          periodSeconds: 5
+        resources:
+          requests:
+            memory: "128Mi"
+            cpu: "50m"
+          limits:
+            memory: "256Mi"
+            cpu: "200m"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ser-gateway
+  namespace: freelance-service
+spec:
+  selector:
+    app: ser-gateway
+  ports:
+  - port: 8000
+    targetPort: 8000
+    protocol: TCP
+    name: http
+  type: LoadBalancer
+---
+# Frontend
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ser-frontend
+  namespace: freelance-service
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: ser-frontend
+  template:
+    metadata:
+      labels:
+        app: ser-frontend
+    spec:
+      containers:
+      - name: ser-frontend
+        image: ser-frontend:latest
+        imagePullPolicy: Never
+        ports:
+        - containerPort: 5173
+          name: http
+        env:
+        - name: VITE_API_URL
+          value: "http://ser-gateway:8000"
+        livenessProbe:
+          httpGet:
+            path: /
+            port: 5173
+          initialDelaySeconds: 120
+          periodSeconds: 30
+          timeoutSeconds: 10
+          failureThreshold: 5
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "100m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ser-frontend
+  namespace: freelance-service
+spec:
+  selector:
+    app: ser-frontend
+  ports:
+  - port: 5173
+    targetPort: 5173
+    protocol: TCP
+    name: http
+  type: LoadBalancer
