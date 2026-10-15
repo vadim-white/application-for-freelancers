@@ -159,16 +159,19 @@ docker compose run --rm --no-deps --user "$(id -u):$(id -g)" \
 
 ### Kubernetes
 
-Манифесты лежат в [k8s/](k8s/).
+Проверка идёт в локальном кластере [kind](https://kind.sigs.k8s.io/) (Kubernetes в Docker): он применяет NetworkPolicy, и тот же кластер пойдёт в CI. Нужны Docker и kubectl.
 
 ```bash
-kubectl apply -f k8s/
-kubectl get pods -n <namespace>
+brew install kind                # проверено на v0.33.0
+./scripts/kind-up.sh             # кластер freelance + сборка и загрузка образов ser-*:latest
+kubectl config get-contexts      # контекст kind-freelance
 ```
 
-Имя namespace указано в [k8s/00-namespace.yaml](k8s/00-namespace.yaml).
+`kind-up.sh` создаёт кластер по [k8s/kind-config.yaml](k8s/kind-config.yaml) (один узел `kindest/node` v1.35.8, имя `freelance`), собирает образы через `docker compose build` и загружает пять образов `ser-auth`, `ser-task`, `ser-time`, `ser-gateway`, `ser-frontend` (`:latest`) в узел. Повторный запуск кластер не пересоздаёт, образы обновляет. Секреты для него не нужны. Вход в кластер появится на `http://127.0.0.1:8080` с шага 1.4.5; порт узла 30080 на него уже проброшен, но пока никто не слушает.
 
-В кластере seed не запускается (вопрос, нужен ли он, решается в 1.4), поэтому тестовых пользователей там нет: зарегистрируйтесь через `/api/auth/register` (роль `user`). Манифесты Kubernetes ещё не приведены в порядок после изменений безопасности и этапа Docker Compose: пароли баз в них зашиты, а манифест фронтенда описывает dev-сервер на порту 5173, тогда как образ теперь nginx на 8080 с переменной `GATEWAY_URL`. См. [Планы](#планы).
+Манифесты в [k8s/](k8s/) в процессе переделки (этап 1.4), поэтому `kubectl --context kind-freelance apply -f k8s/` пока даёт известные сбои: пароли баз зашиты, фронт не стартует (манифест описывает dev-сервер на 5173 без `GATEWAY_URL`), DNS в namespace закрыт NetworkPolicy, миграции в initContainer не доходят до баз, оба `LoadBalancer` без адреса. Ещё `apply -f k8s/` ругается на `kind-config.yaml` (это не манифест); после перехода на kustomize (1.4.2) проблема уйдёт. Имя namespace — в [k8s/00-namespace.yaml](k8s/00-namespace.yaml).
+
+В кластере seed пока не запускается: он будет Job в `overlays/local` (шаг 1.4.3), тогда появятся тестовые пользователи. Сейчас можно зарегистрироваться через `/api/auth/register` (роль `user`). См. [Планы](#планы).
 
 ## Конфигурация
 
@@ -235,7 +238,8 @@ curl -X POST http://localhost:8000/api/auth/login \
 ├── frontend/login_page/ клиентское приложение (Vue 3)
 ├── frontend/nginx/      шаблон конфига nginx фронтенда (статика и прокси /api)
 ├── k8s/                 манифесты Kubernetes
-├── scripts/             вспомогательные скрипты (init-env.sh — генерация .env)
+│   └── kind-config.yaml конфиг локального кластера kind
+├── scripts/             вспомогательные скрипты (init-env.sh — генерация .env, kind-up.sh — кластер kind и образы)
 ├── .env.example         шаблон общих переменных для Docker Compose
 ├── docker-compose.yml
 └── helm-values.yaml
@@ -260,7 +264,7 @@ curl -X POST http://localhost:8000/api/auth/login \
 - Проекты хранятся только в task-service: дубль проектов в time-service (`/api/time/projects`) удалён, фронтенд создаёт проект одним запросом. `user_id` записи времени обязателен (NOT NULL), фронтенд его не отправляет: сервер берёт `user_id` из токена
 - Автотесты (pytest) есть у всех бэкенд-сервисов (gateway 45, auth 34, task 51, time 25), CI нет.
 - Фронтенд в Docker собирается multi-stage (`npm ci`, `vite build`) и раздаётся nginx без root (`nginx-unprivileged`, слушает 8080): долгий кэш для `/assets/`, `index.html` без кэша, gzip, SPA-роуты отдают `index.html`. Запросы `/api/` nginx проксирует на gateway, поэтому браузер ходит на один адрес и CORS для фронтенда не нужен. Манифест Kubernetes фронтенда под новый образ ещё не обновлён (этап 1.4)
-- В Kubernetes нет Ingress и автомасштабирования, у всех сервисов одна реплика
+- В Kubernetes нет Ingress и автомасштабирования, у всех сервисов одна реплика. Локальный кластер kind (`./scripts/kind-up.sh`) готов, манифесты ещё не исправлены, известные сбои описаны в разделе «Kubernetes» (этап 1.4 в процессе)
 - Нет пагинации, фильтрации и сортировки задач
 - В Docker Compose наружу опубликованы только frontend (5173) и gateway (8000), по умолчанию на `127.0.0.1` (`BIND_ADDR`); auth, task, time и базы доступны только внутри сети compose
 - Секреты и пароли баз в Docker Compose генерирует `scripts/init-env.sh` (в `.env`, не в git); в манифестах Kubernetes пароли пока зашиты (этап 1.4)
