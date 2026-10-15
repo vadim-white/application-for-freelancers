@@ -1,0 +1,45 @@
+# Сеть для Job auth-seed: обе стороны связи seed → auth-db:5432. Здесь, а не в base, как и сам Job:
+# в base seed нет. Политики складываются: к ingress auth-db из base добавляется ещё один источник.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: auth-seed
+  namespace: freelance-service
+  labels:
+    app.kubernetes.io/part-of: freelance-service
+spec:
+  podSelector:
+    matchLabels:
+      app: auth-seed
+  policyTypes:
+  - Egress
+  egress:
+  - to:
+    - podSelector:
+        matchLabels:
+          app: auth-db
+    ports:
+    - protocol: TCP
+      port: 5432
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: auth-db-from-seed
+  namespace: freelance-service
+  labels:
+    app.kubernetes.io/part-of: freelance-service
+spec:
+  podSelector:
+    matchLabels:
+      app: auth-db
+  policyTypes:
+  - Ingress
+  ingress:
+  - from:
+    - podSelector:
+        matchLabels:
+          app: auth-seed
+    ports:
+    - protocol: TCP
+      port: 5432

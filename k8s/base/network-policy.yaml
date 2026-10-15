@@ -1,27 +1,339 @@
+# Сетевые политики namespace: по умолчанию запрещено всё (вход и выход у каждого пода),
+# дальше — только нужные связи. Политики складываются (разрешено, если разрешает хоть одна).
+# Раскладка: одна политика на под (podSelector по метке app) — в ней всё, что под принимает
+# (ingress) и куда ходит сам (egress); одну связь всегда описывают две стороны: egress у источника
+# и ingress у получателя. Порты — порты контейнера (targetPort), а не Service: политика проверяет
+# пакет после DNAT, когда адрес уже IP пода.
+# Вход снаружи (прокси Envoy) открывает overlay, который выбирает реализацию Gateway
+# (overlays/local/network-policy-entry.yaml); seed — свой overlay (overlays/local-seed).
+# kubelet (probes) ходит с узла и политиками не ограничивается; pg_isready через exec сеть не использует.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
-  name: freelance-service-netpol
+  name: default-deny-all
   namespace: freelance-service
 spec:
   podSelector: {}
   policyTypes:
   - Ingress
   - Egress
-  ingress:
-  - from:
-    - namespaceSelector:
-        matchLabels:
-          name: freelance-service
+---
+# DNS всем подам: kube-dns (CoreDNS) в kube-system. Namespace — по метке kubernetes.io/metadata.name:
+# её ставит API-сервер, подделать или забыть её нельзя (в отличие от самописной метки).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-dns
+  namespace: freelance-service
+spec:
+  podSelector: {}
+  policyTypes:
+  - Egress
   egress:
   - to:
     - namespaceSelector:
         matchLabels:
-          name: freelance-service
-  - to:
-    - podSelector: {}
+          kubernetes.io/metadata.name: kube-system
+      podSelector:
+        matchLabels:
+          k8s-app: kube-dns
     ports:
-    - protocol: TCP
-      port: 53
     - protocol: UDP
       port: 53
+    - protocol: TCP
+      port: 53
+---
+# Фронт: принимает только вход (overlay), ходит только в gateway (nginx проксирует /api)
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: ser-frontend
+  namespace: freelance-service
+spec:
+  podSelector:
+    matchLabels:
+      app: ser-frontend
+  policyTypes:
+  - Egress
+  egress:
+  - to:
+    - podSelector:
+        matchLabels:
+          app: ser-gateway
+    ports:
+    - protocol: TCP
+      port: 8000
+---
+# API Gateway: принимает от фронта (и от входа — overlay), ходит в auth, task, time
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: ser-gateway
+  namespace: freelance-service
+spec:
+  podSelector:
+    matchLabels:
+      app: ser-gateway
+  policyTypes:
+  - Ingress
+  - Egress
+  ingress:
+  - from:
+    - podSelector:
+        matchLabels:
+          app: ser-frontend
+    ports:
+    - protocol: TCP
+      port: 8000
+  egress:
+  - to:
+    - podSelector:
+        matchLabels:
+          app: ser-auth
+    ports:
+    - protocol: TCP
+      port: 8001
+  - to:
+    - podSelector:
+        matchLabels:
+          app: ser-task
+    ports:
+    - protocol: TCP
+      port: 8002
+  - to:
+    - podSelector:
+        matchLabels:
+          app: ser-time
+    ports:
+    - protocol: TCP
+      port: 8003
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: ser-auth
+  namespace: freelance-service
+spec:
+  podSelector:
+    matchLabels:
+      app: ser-auth
+  policyTypes:
+  - Ingress
+  - Egress
+  ingress:
+  - from:
+    - podSelector:
+        matchLabels:
+          app: ser-gateway
+    ports:
+    - protocol: TCP
+      port: 8001
+  egress:
+  - to:
+    - podSelector:
+        matchLabels:
+          app: auth-db
+    ports:
+    - protocol: TCP
+      port: 5432
+---
+# task ходит в time за статистикой (TIME_SERVICE_URL)
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: ser-task
+  namespace: freelance-service
+spec:
+  podSelector:
+    matchLabels:
+      app: ser-task
+  policyTypes:
+  - Ingress
+  - Egress
+  ingress:
+  - from:
+    - podSelector:
+        matchLabels:
+          app: ser-gateway
+    ports:
+    - protocol: TCP
+      port: 8002
+  egress:
+  - to:
+    - podSelector:
+        matchLabels:
+          app: task-db
+    ports:
+    - protocol: TCP
+      port: 5432
+  - to:
+    - podSelector:
+        matchLabels:
+          app: ser-time
+    ports:
+    - protocol: TCP
+      port: 8003
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: ser-time
+  namespace: freelance-service
+spec:
+  podSelector:
+    matchLabels:
+      app: ser-time
+  policyTypes:
+  - Ingress
+  - Egress
+  ingress:
+  - from:
+    - podSelector:
+        matchLabels:
+          app: ser-gateway
+    - podSelector:
+        matchLabels:
+          app: ser-task
+    ports:
+    - protocol: TCP
+      port: 8003
+  egress:
+  - to:
+    - podSelector:
+        matchLabels:
+          app: time-db
+    ports:
+    - protocol: TCP
+      port: 5432
+---
+# Базы: принимают только свой сервис и его Job миграций (auth-db ещё seed — overlay local-seed),
+# сами никуда не ходят (egress закрыт default-deny-all, кроме DNS)
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: auth-db
+  namespace: freelance-service
+spec:
+  podSelector:
+    matchLabels:
+      app: auth-db
+  policyTypes:
+  - Ingress
+  ingress:
+  - from:
+    - podSelector:
+        matchLabels:
+          app: ser-auth
+    - podSelector:
+        matchLabels:
+          app: auth-migrate
+    ports:
+    - protocol: TCP
+      port: 5432
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: task-db
+  namespace: freelance-service
+spec:
+  podSelector:
+    matchLabels:
+      app: task-db
+  policyTypes:
+  - Ingress
+  ingress:
+  - from:
+    - podSelector:
+        matchLabels:
+          app: ser-task
+    - podSelector:
+        matchLabels:
+          app: task-migrate
+    ports:
+    - protocol: TCP
+      port: 5432
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: time-db
+  namespace: freelance-service
+spec:
+  podSelector:
+    matchLabels:
+      app: time-db
+  policyTypes:
+  - Ingress
+  ingress:
+  - from:
+    - podSelector:
+        matchLabels:
+          app: ser-time
+    - podSelector:
+        matchLabels:
+          app: time-migrate
+    ports:
+    - protocol: TCP
+      port: 5432
+---
+# Job миграций (migrations.yaml): только своя база
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: auth-migrate
+  namespace: freelance-service
+spec:
+  podSelector:
+    matchLabels:
+      app: auth-migrate
+  policyTypes:
+  - Egress
+  egress:
+  - to:
+    - podSelector:
+        matchLabels:
+          app: auth-db
+    ports:
+    - protocol: TCP
+      port: 5432
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: task-migrate
+  namespace: freelance-service
+spec:
+  podSelector:
+    matchLabels:
+      app: task-migrate
+  policyTypes:
+  - Egress
+  egress:
+  - to:
+    - podSelector:
+        matchLabels:
+          app: task-db
+    ports:
+    - protocol: TCP
+      port: 5432
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: time-migrate
+  namespace: freelance-service
+spec:
+  podSelector:
+    matchLabels:
+      app: time-migrate
+  policyTypes:
+  - Egress
+  egress:
+  - to:
+    - podSelector:
+        matchLabels:
+          app: time-db
+    ports:
+    - protocol: TCP
+      port: 5432

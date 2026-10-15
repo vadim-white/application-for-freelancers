@@ -217,7 +217,20 @@ Postgres дополнительно получает `fsGroup: 70` — для д
 
 Probes приложений: `startupProbe` `GET /` раз в 2 с, до 30 попыток (до 60 с на старт; холодный старт Python-сервиса с лимитом CPU 200m, пока узел поднимает базы и миграции, занимает 20–30 с), после первого ответа — `livenessProbe` (10 с) и `readinessProbe` (5 с) без `initialDelaySeconds`. У баз — `pg_isready -U … -d …`.
 
-Манифесты в процессе переделки (этап 1.4). Известный сбой, который уходит в следующем шаге: DNS в namespace закрыт NetworkPolicy (шаг 1.4.7; пока `k8s-deploy.sh` удаляет политику из кластера после каждого `apply` и пишет об этом предупреждение). Имя namespace — в [k8s/base/namespace.yaml](k8s/base/namespace.yaml).
+Сетевые политики (NetworkPolicy). В namespace по умолчанию запрещено всё: политика `default-deny-all` закрывает вход и выход каждому поду. Дальше открыты только нужные связи (порты — порты контейнеров):
+- DNS: все поды → kube-dns в `kube-system`, UDP и TCP 53;
+- вход: поды прокси Envoy нашего Gateway `entry` (namespace `envoy-gateway-system`) → `ser-frontend:8080` и `ser-gateway:8000`;
+- `ser-frontend` → `ser-gateway:8000`; `ser-gateway` → `ser-auth:8001`, `ser-task:8002`, `ser-time:8003`; `ser-task` → `ser-time:8003`;
+- каждый сервис и его Job миграций → своя база `:5432`; `auth-seed` → `auth-db:5432`.
+
+Всё остальное запрещено. Сервис не достанет до чужой базы, фронт — до сервисов в обход gateway, базы и сервисы — до интернета. Под без меток или из другого namespace не подключится ни к чему. Запрещённое соединение не отвергается, а молча обрывается по таймауту, поэтому ошибка в политике выглядит как зависание, а не как `connection refused`. Одна политика описывает один под: всё, что он принимает и куда ходит сам. У каждой связи две стороны: egress у источника и ingress у получателя. Namespace выбираются по метке `kubernetes.io/metadata.name`: её ставит API-сервер. Политики лежат в [k8s/base/network-policy.yaml](k8s/base/network-policy.yaml). Вход от Envoy описан в overlay ([k8s/overlays/local/network-policy-entry.yaml](k8s/overlays/local/network-policy-entry.yaml)): откуда приходит трафик входа, зависит от реализации Gateway. Связь seed → база описана рядом с Job seed ([k8s/overlays/local-seed/network-policy-seed.yaml](k8s/overlays/local-seed/network-policy-seed.yaml)). Пробы kubelet (HTTP с узла) политики не ограничивают: kindnet пропускает трафик, который узел создаёт сам. `pg_isready` в exec-пробе идёт через unix-сокет, сеть ему не нужна. Посмотреть политики:
+
+```bash
+kubectl --context kind-freelance -n freelance-service get networkpolicy            # 17 политик, POD-SELECTOR — кого касается
+kubectl --context kind-freelance -n freelance-service describe networkpolicy ser-task
+```
+
+Имя namespace — в [k8s/base/namespace.yaml](k8s/base/namespace.yaml).
 
 Статическая проверка — на выводе `kubectl kustomize k8s/overlays/local` (и `local-seed`), а не на каталоге `k8s/` (там лежит `kind-config.yaml`, не манифест). kubeconform (`-strict`) не знает схем CRD, поэтому четыре ресурса входа пропускаются явно (`-skip Gateway,GatewayClass,HTTPRoute,EnvoyProxy`, а не `-ignore-missing-schemas`, который скрыл бы и опечатку в `kind` любого ресурса), а проверяет их API-сервер с установленными CRD:
 
@@ -322,7 +335,8 @@ curl -X POST http://localhost:8000/api/auth/login \
 - Проекты хранятся только в task-service: дубль проектов в time-service (`/api/time/projects`) удалён, фронтенд создаёт проект одним запросом. `user_id` записи времени обязателен (NOT NULL), фронтенд его не отправляет: сервер берёт `user_id` из токена
 - Автотесты (pytest) есть у всех бэкенд-сервисов (gateway 45, auth 34, task 51, time 25), CI нет.
 - Фронтенд в Docker собирается multi-stage (`npm ci`, `vite build`) и раздаётся nginx без root (`nginx-unprivileged`, слушает 8080): долгий кэш для `/assets/`, `index.html` без кэша, gzip, SPA-роуты отдают `index.html`. Запросы `/api/` nginx проксирует на gateway, поэтому браузер ходит на один адрес и CORS для фронтенда не нужен. В Kubernetes фронтенд описан под этот образ: порт 8080, `GATEWAY_URL` из ConfigMap, startup/liveness/readiness `GET /`, Service `ClusterIP`
-- В Kubernetes вход один — Gateway API (Envoy Gateway v1.9.2) на `http://127.0.0.1:8080`: `/api` → gateway, остальное → фронтенд; `LoadBalancer` и `NodePort` в namespace приложения нет, все сервисы `ClusterIP`. Автомасштабирования нет, у всех сервисов одна реплика. Локальный кластер kind (`./scripts/kind-up.sh`, ставит и Envoy Gateway) готов, манифесты собираются kustomize (`base` + `overlays/local`), деплой с миграциями и seed — `./scripts/k8s-deploy.sh`; оставшийся сбой (NetworkPolicy закрывает DNS) описан в разделе «Kubernetes» (этап 1.4 в процессе). Базы в кластере проверяются `pg_isready -U … -d …`, `PGDATA` лежит в подпапке тома
+- В Kubernetes вход один — Gateway API (Envoy Gateway v1.9.2) на `http://127.0.0.1:8080`: `/api` → gateway, остальное → фронтенд; `LoadBalancer` и `NodePort` в namespace приложения нет, все сервисы `ClusterIP`. Автомасштабирования нет, у всех сервисов одна реплика. Локальный кластер kind (`./scripts/kind-up.sh`, ставит и Envoy Gateway) готов, манифесты собираются kustomize (`base` + `overlays/local`), деплой с миграциями и seed — `./scripts/k8s-deploy.sh` (этап 1.4 в процессе). Базы в кластере проверяются `pg_isready -U … -d …`, `PGDATA` лежит в подпапке тома
+- В Kubernetes сетевые политики по умолчанию запрещают всё: открыты только DNS, вход от Envoy к фронту и gateway, фронт → gateway, gateway → auth, task, time, task → time и каждый сервис со своими Job → своя база. Сервис не достанет до чужой базы, базы и сервисы не выходят в интернет (раздел «Kubernetes»)
 - Нет пагинации, фильтрации и сортировки задач
 - В Docker Compose наружу опубликованы только frontend (5173) и gateway (8000), по умолчанию на `127.0.0.1` (`BIND_ADDR`); auth, task, time и базы доступны только внутри сети compose
 - Секреты и пароли баз в Docker Compose генерирует `scripts/init-env.sh` (в `.env`, не в git); в Kubernetes секреты лежат в `k8s/overlays/local/app.env` и `db.env` (генерирует `scripts/init-k8s-env.sh`, не в git), пароли в манифестах не зашиты
@@ -332,7 +346,7 @@ curl -X POST http://localhost:8000/api/auth/login \
 - Переход на uv (`pyproject.toml` + `uv.lock`)
 - Серверное состояние таймера: запуск, пауза и остановка на бэкенде, защита от параллельных таймеров
 - CI: тесты, линтер, сборка фронтенда, сквозной smoke-прогон через gateway
-- Kubernetes: NetworkPolicy, две реплики, HPA; readiness на `/ready` с проверкой БД
+- Kubernetes: две реплики, HPA; readiness на `/ready` с проверкой БД
 - Отчёты по времени и экспорт
 - Лимиты запросов, логирование, метрики
 

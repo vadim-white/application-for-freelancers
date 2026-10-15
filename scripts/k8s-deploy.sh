@@ -21,8 +21,6 @@ JOB_TIMEOUT="${JOB_TIMEOUT:-300}"
 ROLLOUT_TIMEOUT="${ROLLOUT_TIMEOUT:-180s}"
 ENTRY_GATEWAY="entry"
 ENTRY_URL="http://127.0.0.1:8080"
-# ВРЕМЕННО, убрать в 1.4.7: политика закрывает DNS (kube-dns в kube-system), Job и сервисы не резолвят имена
-BROKEN_NETPOL="freelance-service-netpol"
 
 k() { kubectl --context "$CONTEXT" "$@"; }
 die() { echo "ОШИБКА: $*" >&2; exit 1; }
@@ -60,14 +58,6 @@ wait_jobs() {
   done
 }
 
-# ВРЕМЕННО, убрать в 1.4.7. Вызывается после каждого apply: оба apply создают политику заново
-drop_broken_netpol() {
-  if k -n "$NS" get networkpolicy "$BROKEN_NETPOL" >/dev/null 2>&1; then
-    echo "ВНИМАНИЕ: удаляю NetworkPolicy $BROKEN_NETPOL — она закрывает DNS (временно, исправляется в шаге 1.4.7)" >&2
-    k -n "$NS" delete networkpolicy "$BROKEN_NETPOL"
-  fi
-}
-
 # 1. старые Job: тот же манифест после пересборки образа нужно выполнить заново, а изменённый — не применить
 if k get namespace "$NS" >/dev/null 2>&1; then
   k -n "$NS" delete job -l 'app.kubernetes.io/component in (migration,seed)' --ignore-not-found --wait=true
@@ -76,15 +66,12 @@ fi
 # 2. манифесты
 k apply -k "$OVERLAY"
 
-drop_broken_netpol
-
 # 3. миграции (поды Job, стартовавшие до готовности БД, повторяются по backoffLimit)
 # shellcheck disable=SC2086
 wait_jobs $MIGRATIONS
 
 # 4. тестовые пользователи: после миграций auth, отдельным apply (в одном apply порядка нет)
 k apply -k "$SEED"
-drop_broken_netpol
 wait_jobs auth-seed
 
 # 5. базы и сервисы

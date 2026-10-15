@@ -11,3 +11,5 @@ namespace: freelance-service
 resources:
   - ../local
   - auth-seed.yaml
+  # сеть seed → auth-db (обе стороны; остальное закрыто политиками base)
+  - network-policy-seed.yaml

@@ -1,0 +1,60 @@
+# Вход к фронту и gateway — только от прокси Envoy нашего Gateway "entry". Здесь, а не в base:
+# откуда приходит трафик входа, зависит от реализации GatewayClass (gatewayclass.yaml). Envoy Gateway
+# создаёт прокси в своём namespace envoy-gateway-system; облачная реализация пришла бы из другого места.
+# Остальные политики (default deny, DNS, связи сервисов и баз) — в k8s/base/network-policy.yaml.
+# Две политики, а не одна на оба пода: порты в правиле относятся ко всем выбранным подам,
+# одна открыла бы фронту 8000, а gateway — 8080.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: entry-to-ser-frontend
+  namespace: freelance-service
+  labels:
+    app.kubernetes.io/part-of: freelance-service
+spec:
+  podSelector:
+    matchLabels:
+      app: ser-frontend
+  policyTypes:
+  - Ingress
+  ingress:
+  - from:
+    # один элемент с обоими селекторами — «И»: поды прокси именно в этом namespace
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: envoy-gateway-system
+      podSelector:
+        matchLabels:
+          app.kubernetes.io/component: proxy
+          gateway.envoyproxy.io/owning-gateway-name: entry
+          gateway.envoyproxy.io/owning-gateway-namespace: freelance-service
+    ports:
+    - protocol: TCP
+      port: 8080
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: entry-to-ser-gateway
+  namespace: freelance-service
+  labels:
+    app.kubernetes.io/part-of: freelance-service
+spec:
+  podSelector:
+    matchLabels:
+      app: ser-gateway
+  policyTypes:
+  - Ingress
+  ingress:
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: envoy-gateway-system
+      podSelector:
+        matchLabels:
+          app.kubernetes.io/component: proxy
+          gateway.envoyproxy.io/owning-gateway-name: entry
+          gateway.envoyproxy.io/owning-gateway-namespace: freelance-service
+    ports:
+    - protocol: TCP
+      port: 8000
