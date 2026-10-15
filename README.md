@@ -164,18 +164,21 @@ docker compose run --rm --no-deps --user "$(id -u):$(id -g)" \
 ```bash
 brew install kind                # проверено на v0.33.0
 ./scripts/kind-up.sh             # кластер freelance + сборка и загрузка образов ser-*:latest
-kubectl config get-contexts      # контекст kind-freelance
+./scripts/init-k8s-env.sh        # k8s/overlays/local/app.env и db.env со случайными секретами
+kubectl --context kind-freelance apply -k k8s/overlays/local
 ```
 
 `kind-up.sh` создаёт кластер по [k8s/kind-config.yaml](k8s/kind-config.yaml) (один узел `kindest/node` v1.35.8, имя `freelance`), собирает образы через `docker compose build` и загружает пять образов `ser-auth`, `ser-task`, `ser-time`, `ser-gateway`, `ser-frontend` (`:latest`) в узел. Повторный запуск кластер не пересоздаёт, образы обновляет. Секреты для него не нужны. Вход в кластер появится на `http://127.0.0.1:8080` с шага 1.4.5; порт узла 30080 на него уже проброшен, но пока никто не слушает.
 
-Манифесты в [k8s/](k8s/) в процессе переделки (этап 1.4), поэтому `kubectl --context kind-freelance apply -f k8s/` пока даёт известные сбои: пароли баз зашиты, фронт не стартует (манифест описывает dev-сервер на 5173 без `GATEWAY_URL`), DNS в namespace закрыт NetworkPolicy, миграции в initContainer не доходят до баз, оба `LoadBalancer` без адреса. Ещё `apply -f k8s/` ругается на `kind-config.yaml` (это не манифест); после перехода на kustomize (1.4.2) проблема уйдёт. Имя namespace — в [k8s/00-namespace.yaml](k8s/00-namespace.yaml).
+Манифесты собирает kustomize: [k8s/base](k8s/base) — без локальных допущений, [k8s/overlays/local](k8s/overlays/local) — для kind: Secret'ы через `secretGenerator` и `imagePullPolicy: Never` (образы загружены в узел через `kind load`). `app-secrets` (`SECRET_KEY`) собирается из `app.env`, `db-credentials` (три пароля баз) — из `db.env`. Имена Secret'ов получают хеш содержимого: при смене секрета перезапускаются только поды, которые на него ссылаются (смена `SECRET_KEY` базы не трогает). Без этих файлов `kubectl kustomize` падает с ошибкой «no such file». Файлы создаёт `./scripts/init-k8s-env.sh` по образцу `init-env.sh` (шаблоны — [app.env.example](k8s/overlays/local/app.env.example) и [db.env.example](k8s/overlays/local/db.env.example)): идемпотентно, значения не печатает, права 600; в git файлы не попадают, секреты кластера независимы от `.env` compose. Пароль БД применяется при создании тома: после смены нужно удалить namespace (`kubectl --context kind-freelance delete namespace freelance-service`, вместе с ним удалятся PVC).
+
+Манифесты в процессе переделки (этап 1.4). Известные сбои, которые уходят в следующих шагах: фронт не стартует (манифест описывает dev-сервер на 5173 без `GATEWAY_URL`, шаг 1.4.4), DNS в namespace закрыт NetworkPolicy (шаг 1.4.7: пока политику нужно удалить из кластера, `kubectl --context kind-freelance -n freelance-service delete networkpolicy freelance-service-netpol`, иначе миграции в initContainer не резолвят имена баз), оба `LoadBalancer` без адреса (шаг 1.4.5). Достучаться до gateway можно через `kubectl --context kind-freelance -n freelance-service port-forward svc/ser-gateway 8000`. Имя namespace — в [k8s/base/namespace.yaml](k8s/base/namespace.yaml). Проверять манифесты статически нужно на выводе `kubectl kustomize k8s/overlays/local`, а не на каталоге `k8s/` (там лежит `kind-config.yaml`, не манифест).
 
 В кластере seed пока не запускается: он будет Job в `overlays/local` (шаг 1.4.3), тогда появятся тестовые пользователи. Сейчас можно зарегистрироваться через `/api/auth/register` (роль `user`). См. [Планы](#планы).
 
 ## Конфигурация
 
-Основные переменные окружения. Для Docker Compose общие переменные (`SECRET_KEY`, `ALGORITHM`, `ACCESS_TOKEN_EXPIRE_MINUTES`, пароли баз, `BIND_ADDR`, `CORS_ORIGINS`, `SEED_TEST_USERS`) задаются в корневом `.env`: шаблон — [.env.example](.env.example), создаёт файл `./scripts/init-env.sh`, в git `.env` не попадает. Остальное (адреса сервисов, `GATEWAY_URL` фронтенда, `DATABASE_URL`, который собирается из паролей в `.env`) задано в `docker-compose.yml`. Для запуска без Docker все переменные с описанием собраны в файлах `.env.example` в папке каждого сервиса и в `frontend/login_page`.
+Основные переменные окружения. Для Docker Compose общие переменные (`SECRET_KEY`, `ALGORITHM`, `ACCESS_TOKEN_EXPIRE_MINUTES`, пароли баз, `BIND_ADDR`, `CORS_ORIGINS`, `SEED_TEST_USERS`) задаются в корневом `.env`: шаблон — [.env.example](.env.example), создаёт файл `./scripts/init-env.sh`, в git `.env` не попадает. Остальное (адреса сервисов, `GATEWAY_URL` фронтенда, `DATABASE_URL`, который собирается из паролей в `.env`) задано в `docker-compose.yml`. В Kubernetes `SECRET_KEY` берётся из `k8s/overlays/local/app.env` (Secret `app-secrets`), пароли баз — из `db.env` (Secret `db-credentials`), `DATABASE_URL` собирается в манифесте подстановкой `$(DB_PASSWORD)`, а несекретное (`ALGORITHM`, `ACCESS_TOKEN_EXPIRE_MINUTES`, адреса сервисов) лежит в ConfigMap `service-config`. Для запуска без Docker все переменные с описанием собраны в файлах `.env.example` в папке каждого сервиса и в `frontend/login_page`.
 
 | Переменная | Где используется | Описание |
 |------------|------------------|----------|
@@ -237,12 +240,13 @@ curl -X POST http://localhost:8000/api/auth/login \
 ├── gateway-service/     API Gateway
 ├── frontend/login_page/ клиентское приложение (Vue 3)
 ├── frontend/nginx/      шаблон конфига nginx фронтенда (статика и прокси /api)
-├── k8s/                 манифесты Kubernetes
+├── k8s/                 Kubernetes
+│   ├── base/            манифесты без локальных допущений (kustomize)
+│   ├── overlays/local/  overlay для kind: секреты из app.env и db.env, imagePullPolicy
 │   └── kind-config.yaml конфиг локального кластера kind
-├── scripts/             вспомогательные скрипты (init-env.sh — генерация .env, kind-up.sh — кластер kind и образы)
+├── scripts/             вспомогательные скрипты (init-env.sh — .env, init-k8s-env.sh — секреты кластера, kind-up.sh — кластер kind и образы)
 ├── .env.example         шаблон общих переменных для Docker Compose
-├── docker-compose.yml
-└── helm-values.yaml
+└── docker-compose.yml
 ```
 
 ## Текущее состояние
@@ -264,17 +268,17 @@ curl -X POST http://localhost:8000/api/auth/login \
 - Проекты хранятся только в task-service: дубль проектов в time-service (`/api/time/projects`) удалён, фронтенд создаёт проект одним запросом. `user_id` записи времени обязателен (NOT NULL), фронтенд его не отправляет: сервер берёт `user_id` из токена
 - Автотесты (pytest) есть у всех бэкенд-сервисов (gateway 45, auth 34, task 51, time 25), CI нет.
 - Фронтенд в Docker собирается multi-stage (`npm ci`, `vite build`) и раздаётся nginx без root (`nginx-unprivileged`, слушает 8080): долгий кэш для `/assets/`, `index.html` без кэша, gzip, SPA-роуты отдают `index.html`. Запросы `/api/` nginx проксирует на gateway, поэтому браузер ходит на один адрес и CORS для фронтенда не нужен. Манифест Kubernetes фронтенда под новый образ ещё не обновлён (этап 1.4)
-- В Kubernetes нет Ingress и автомасштабирования, у всех сервисов одна реплика. Локальный кластер kind (`./scripts/kind-up.sh`) готов, манифесты ещё не исправлены, известные сбои описаны в разделе «Kubernetes» (этап 1.4 в процессе)
+- В Kubernetes нет Ingress и автомасштабирования, у всех сервисов одна реплика. Локальный кластер kind (`./scripts/kind-up.sh`) готов, манифесты собираются kustomize (`base` + `overlays/local`); остальные сбои (фронт, NetworkPolicy, `LoadBalancer`) описаны в разделе «Kubernetes» (этап 1.4 в процессе). Базы в кластере проверяются `pg_isready -U … -d …`, `PGDATA` лежит в подпапке тома
 - Нет пагинации, фильтрации и сортировки задач
 - В Docker Compose наружу опубликованы только frontend (5173) и gateway (8000), по умолчанию на `127.0.0.1` (`BIND_ADDR`); auth, task, time и базы доступны только внутри сети compose
-- Секреты и пароли баз в Docker Compose генерирует `scripts/init-env.sh` (в `.env`, не в git); в манифестах Kubernetes пароли пока зашиты (этап 1.4)
+- Секреты и пароли баз в Docker Compose генерирует `scripts/init-env.sh` (в `.env`, не в git); в Kubernetes секреты лежат в `k8s/overlays/local/app.env` и `db.env` (генерирует `scripts/init-k8s-env.sh`, не в git), пароли в манифестах не зашиты
 
 ## Планы
 
 - Переход на uv (`pyproject.toml` + `uv.lock`)
 - Серверное состояние таймера: запуск, пауза и остановка на бэкенде, защита от параллельных таймеров
 - CI: тесты, линтер, сборка фронтенда, сквозной smoke-прогон через gateway
-- Kubernetes: секреты вместо зашитых паролей, манифест фронтенда под nginx-образ, Ingress, HPA, health и readiness probes, миграции отдельным Job вместо initContainer
+- Kubernetes: манифест фронтенда под nginx-образ, Ingress, HPA, health и readiness probes, миграции отдельным Job вместо initContainer
 - Отчёты по времени и экспорт
 - Лимиты запросов, логирование, метрики
 

@@ -1,0 +1,15 @@
+# База без локальных допущений: секреты, imagePullPolicy и способ входа задаёт overlay.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: freelance-service
+labels:
+  - pairs:
+      app.kubernetes.io/part-of: freelance-service
+resources:
+  - namespace.yaml
+  - configmap.yaml
+  - pvc.yaml
+  - databases.yaml
+  - services.yaml
+  - gateway-frontend.yaml
+  - network-policy.yaml

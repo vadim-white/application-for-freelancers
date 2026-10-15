@@ -17,7 +17,6 @@ spec:
       containers:
       - name: ser-gateway
         image: ser-gateway:latest
-        imagePullPolicy: Never
         ports:
         - containerPort: 8000
           name: http
@@ -41,11 +40,11 @@ spec:
           valueFrom:
             secretKeyRef:
               name: app-secrets
-              key: secret-key
+              key: SECRET_KEY
         - name: ALGORITHM
           valueFrom:
-            secretKeyRef:
-              name: app-secrets
+            configMapKeyRef:
+              name: service-config
               key: algorithm
         livenessProbe:
           httpGet:
@@ -101,7 +100,6 @@ spec:
       containers:
       - name: ser-frontend
         image: ser-frontend:latest
-        imagePullPolicy: Never
         ports:
         - containerPort: 5173
           name: http

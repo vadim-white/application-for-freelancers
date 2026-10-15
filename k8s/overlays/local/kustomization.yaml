@@ -1,0 +1,32 @@
+# Локальный кластер kind. Секреты — из app.env и db.env (создаёт scripts/init-k8s-env.sh, в git не попадают).
+# Применять: kubectl --context kind-freelance apply -k k8s/overlays/local
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: freelance-service
+resources:
+  - ../../base
+# Два файла, а не один: envs переносит в Secret все ключи файла. Раздельно — в каждом Secret только свои
+# ключи, и смена SECRET_KEY меняет хеш только у app-secrets (базы не перезапускаются).
+secretGenerator:
+  - name: app-secrets
+    envs:
+      - app.env
+  - name: db-credentials
+    envs:
+      - db.env
+patches:
+  # образы ser-*:latest загружаются в узел через kind load (scripts/kind-up.sh), из реестра их не тянем
+  - target:
+      kind: Deployment
+    patch: |-
+      - op: add
+        path: /spec/template/spec/containers/0/imagePullPolicy
+        value: Never
+  # initContainer миграций (уйдёт в 1.4.3 вместе с этим патчем)
+  - target:
+      kind: Deployment
+      name: ser-(auth|task|time)
+    patch: |-
+      - op: add
+        path: /spec/template/spec/initContainers/0/imagePullPolicy
+        value: Never

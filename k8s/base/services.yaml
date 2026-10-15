@@ -15,74 +15,62 @@ spec:
         app: ser-auth
     spec:
       # Миграции до старта приложения: тот же образ и env, что у ser-auth (env.py читает настройки сервиса).
-      # Временное решение, в 1.4 заменяется на Job
+      # Временное решение, в 1.4.3 заменяется на Job
       initContainers:
       - name: migrate
         image: ser-auth:latest
-        imagePullPolicy: Never
         command: ["alembic", "upgrade", "head"]
         env:
-        - name: AUTH_USER
+        - name: DB_PASSWORD
           valueFrom:
             secretKeyRef:
               name: db-credentials
-              key: auth-user
-        - name: AUTH_PASSWORD
-          valueFrom:
-            secretKeyRef:
-              name: db-credentials
-              key: auth-password
+              key: AUTH_DB_PASSWORD
         - name: DATABASE_URL
-          value: "postgresql+psycopg://auth_user:auth_password@auth-db:5432/auth_db"
+          value: "postgresql+psycopg://auth_user:$(DB_PASSWORD)@auth-db:5432/auth_db"
         - name: SECRET_KEY
           valueFrom:
             secretKeyRef:
               name: app-secrets
-              key: secret-key
+              key: SECRET_KEY
         - name: ALGORITHM
           valueFrom:
-            secretKeyRef:
-              name: app-secrets
+            configMapKeyRef:
+              name: service-config
               key: algorithm
         - name: ACCESS_TOKEN_EXPIRE_MINUTES
           valueFrom:
-            secretKeyRef:
-              name: app-secrets
+            configMapKeyRef:
+              name: service-config
               key: access-token-expire-minutes
       containers:
       - name: ser-auth
         image: ser-auth:latest
-        imagePullPolicy: Never
         ports:
         - containerPort: 8001
           name: http
         env:
-        - name: AUTH_USER
+        - name: DB_PASSWORD
           valueFrom:
             secretKeyRef:
               name: db-credentials
-              key: auth-user
-        - name: AUTH_PASSWORD
-          valueFrom:
-            secretKeyRef:
-              name: db-credentials
-              key: auth-password
+              key: AUTH_DB_PASSWORD
         - name: DATABASE_URL
-          value: "postgresql+psycopg://auth_user:auth_password@auth-db:5432/auth_db"
+          value: "postgresql+psycopg://auth_user:$(DB_PASSWORD)@auth-db:5432/auth_db"
         - name: SECRET_KEY
           valueFrom:
             secretKeyRef:
               name: app-secrets
-              key: secret-key
+              key: SECRET_KEY
         - name: ALGORITHM
           valueFrom:
-            secretKeyRef:
-              name: app-secrets
+            configMapKeyRef:
+              name: service-config
               key: algorithm
         - name: ACCESS_TOKEN_EXPIRE_MINUTES
           valueFrom:
-            secretKeyRef:
-              name: app-secrets
+            configMapKeyRef:
+              name: service-config
               key: access-token-expire-minutes
         livenessProbe:
           httpGet:
@@ -136,25 +124,19 @@ spec:
         app: ser-task
     spec:
       # Миграции до старта приложения: тот же образ и env, что у ser-task (env.py читает настройки сервиса).
-      # Временное решение, в 1.4 заменяется на Job
+      # Временное решение, в 1.4.3 заменяется на Job
       initContainers:
       - name: migrate
         image: ser-task:latest
-        imagePullPolicy: Never
         command: ["alembic", "upgrade", "head"]
         env:
-        - name: TASK_USER
+        - name: DB_PASSWORD
           valueFrom:
             secretKeyRef:
               name: db-credentials
-              key: task-user
-        - name: TASK_PASSWORD
-          valueFrom:
-            secretKeyRef:
-              name: db-credentials
-              key: task-password
+              key: TASK_DB_PASSWORD
         - name: DATABASE_URL
-          value: "postgresql+psycopg://task_user:task_password@task-db:5432/task_db"
+          value: "postgresql+psycopg://task_user:$(DB_PASSWORD)@task-db:5432/task_db"
         - name: TIME_SERVICE_URL
           valueFrom:
             configMapKeyRef:
@@ -164,32 +146,26 @@ spec:
           valueFrom:
             secretKeyRef:
               name: app-secrets
-              key: secret-key
+              key: SECRET_KEY
         - name: ALGORITHM
           valueFrom:
-            secretKeyRef:
-              name: app-secrets
+            configMapKeyRef:
+              name: service-config
               key: algorithm
       containers:
       - name: ser-task
         image: ser-task:latest
-        imagePullPolicy: Never
         ports:
         - containerPort: 8002
           name: http
         env:
-        - name: TASK_USER
+        - name: DB_PASSWORD
           valueFrom:
             secretKeyRef:
               name: db-credentials
-              key: task-user
-        - name: TASK_PASSWORD
-          valueFrom:
-            secretKeyRef:
-              name: db-credentials
-              key: task-password
+              key: TASK_DB_PASSWORD
         - name: DATABASE_URL
-          value: "postgresql+psycopg://task_user:task_password@task-db:5432/task_db"
+          value: "postgresql+psycopg://task_user:$(DB_PASSWORD)@task-db:5432/task_db"
         - name: TIME_SERVICE_URL
           valueFrom:
             configMapKeyRef:
@@ -199,11 +175,11 @@ spec:
           valueFrom:
             secretKeyRef:
               name: app-secrets
-              key: secret-key
+              key: SECRET_KEY
         - name: ALGORITHM
           valueFrom:
-            secretKeyRef:
-              name: app-secrets
+            configMapKeyRef:
+              name: service-config
               key: algorithm
         livenessProbe:
           httpGet:
@@ -257,64 +233,52 @@ spec:
         app: ser-time
     spec:
       # Миграции до старта приложения: тот же образ и env, что у ser-time (env.py читает настройки сервиса).
-      # Временное решение, в 1.4 заменяется на Job
+      # Временное решение, в 1.4.3 заменяется на Job
       initContainers:
       - name: migrate
         image: ser-time:latest
-        imagePullPolicy: Never
         command: ["alembic", "upgrade", "head"]
         env:
-        - name: TIME_USER
+        - name: DB_PASSWORD
           valueFrom:
             secretKeyRef:
               name: db-credentials
-              key: time-user
-        - name: TIME_PASSWORD
-          valueFrom:
-            secretKeyRef:
-              name: db-credentials
-              key: time-password
+              key: TIME_DB_PASSWORD
         - name: DATABASE_URL
-          value: "postgresql+psycopg://time_user:time_password@time-db:5432/time_db"
+          value: "postgresql+psycopg://time_user:$(DB_PASSWORD)@time-db:5432/time_db"
         - name: SECRET_KEY
           valueFrom:
             secretKeyRef:
               name: app-secrets
-              key: secret-key
+              key: SECRET_KEY
         - name: ALGORITHM
           valueFrom:
-            secretKeyRef:
-              name: app-secrets
+            configMapKeyRef:
+              name: service-config
               key: algorithm
       containers:
       - name: ser-time
         image: ser-time:latest
-        imagePullPolicy: Never
         ports:
         - containerPort: 8003
           name: http
         env:
-        - name: TIME_USER
+        - name: DB_PASSWORD
           valueFrom:
             secretKeyRef:
               name: db-credentials
-              key: time-user
-        - name: TIME_PASSWORD
-          valueFrom:
-            secretKeyRef:
-              name: db-credentials
-              key: time-password
+              key: TIME_DB_PASSWORD
         - name: DATABASE_URL
-          value: "postgresql+psycopg://time_user:time_password@time-db:5432/time_db"
+          value: "postgresql+psycopg://time_user:$(DB_PASSWORD)@time-db:5432/time_db"
         - name: SECRET_KEY
           valueFrom:
             secretKeyRef:
               name: app-secrets
-              key: secret-key
+              key: SECRET_KEY
         - name: ALGORITHM
           valueFrom:
-            secretKeyRef:
-              name: app-secrets
+            configMapKeyRef:
+              name: service-config
               key: algorithm
         livenessProbe:
           httpGet:

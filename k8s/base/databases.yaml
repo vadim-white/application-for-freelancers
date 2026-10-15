@@ -25,15 +25,15 @@ spec:
         - name: POSTGRES_DB
           value: "auth_db"
         - name: POSTGRES_USER
-          valueFrom:
-            secretKeyRef:
-              name: db-credentials
-              key: auth-user
+          value: "auth_user"
         - name: POSTGRES_PASSWORD
           valueFrom:
             secretKeyRef:
               name: db-credentials
-              key: auth-password
+              key: AUTH_DB_PASSWORD
+        # Подпапка тома: на облачных дисках в корне тома лежит lost+found, initdb в непустой каталог не пишет
+        - name: PGDATA
+          value: /var/lib/postgresql/data/pgdata
         volumeMounts:
         - name: auth-db-storage
           mountPath: /var/lib/postgresql/data
@@ -42,7 +42,7 @@ spec:
             command:
             - /bin/sh
             - -c
-            - pg_isready -U $POSTGRES_USER
+            - pg_isready -U $POSTGRES_USER -d $POSTGRES_DB
           initialDelaySeconds: 30
           periodSeconds: 10
         readinessProbe:
@@ -50,7 +50,7 @@ spec:
             command:
             - /bin/sh
             - -c
-            - pg_isready -U $POSTGRES_USER
+            - pg_isready -U $POSTGRES_USER -d $POSTGRES_DB
           initialDelaySeconds: 5
           periodSeconds: 10
         resources:
@@ -106,15 +106,15 @@ spec:
         - name: POSTGRES_DB
           value: "task_db"
         - name: POSTGRES_USER
-          valueFrom:
-            secretKeyRef:
-              name: db-credentials
-              key: task-user
+          value: "task_user"
         - name: POSTGRES_PASSWORD
           valueFrom:
             secretKeyRef:
               name: db-credentials
-              key: task-password
+              key: TASK_DB_PASSWORD
+        # Подпапка тома: на облачных дисках в корне тома лежит lost+found, initdb в непустой каталог не пишет
+        - name: PGDATA
+          value: /var/lib/postgresql/data/pgdata
         volumeMounts:
         - name: task-db-storage
           mountPath: /var/lib/postgresql/data
@@ -123,7 +123,7 @@ spec:
             command:
             - /bin/sh
             - -c
-            - pg_isready -U $POSTGRES_USER
+            - pg_isready -U $POSTGRES_USER -d $POSTGRES_DB
           initialDelaySeconds: 30
           periodSeconds: 10
         readinessProbe:
@@ -131,7 +131,7 @@ spec:
             command:
             - /bin/sh
             - -c
-            - pg_isready -U $POSTGRES_USER
+            - pg_isready -U $POSTGRES_USER -d $POSTGRES_DB
           initialDelaySeconds: 5
           periodSeconds: 10
         resources:
@@ -187,15 +187,15 @@ spec:
         - name: POSTGRES_DB
           value: "time_db"
         - name: POSTGRES_USER
-          valueFrom:
-            secretKeyRef:
-              name: db-credentials
-              key: time-user
+          value: "time_user"
         - name: POSTGRES_PASSWORD
           valueFrom:
             secretKeyRef:
               name: db-credentials
-              key: time-password
+              key: TIME_DB_PASSWORD
+        # Подпапка тома: на облачных дисках в корне тома лежит lost+found, initdb в непустой каталог не пишет
+        - name: PGDATA
+          value: /var/lib/postgresql/data/pgdata
         volumeMounts:
         - name: time-db-storage
           mountPath: /var/lib/postgresql/data
@@ -204,7 +204,7 @@ spec:
             command:
             - /bin/sh
             - -c
-            - pg_isready -U $POSTGRES_USER
+            - pg_isready -U $POSTGRES_USER -d $POSTGRES_DB
           initialDelaySeconds: 30
           periodSeconds: 10
         readinessProbe:
@@ -212,7 +212,7 @@ spec:
             command:
             - /bin/sh
             - -c
-            - pg_isready -U $POSTGRES_USER
+            - pg_isready -U $POSTGRES_USER -d $POSTGRES_DB
           initialDelaySeconds: 5
           periodSeconds: 10
         resources:

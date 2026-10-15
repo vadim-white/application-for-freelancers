@@ -1,0 +1,70 @@
+#!/usr/bin/env bash
+# Создаёт секреты локального кластера: k8s/overlays/local/app.env и db.env из шаблонов
+# *.env.example и подставляет случайные значения.
+# Идемпотентен: существующие файлы не перезаписываются, дописываются только отсутствующие
+# или пустые ключи. Значения секретов не печатаются.
+# Совместим с macOS bash 3.2 (без sed -i, без ассоциативных массивов).
+set -eu
+
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+DIR="$ROOT/k8s/overlays/local"
+# все ключи шаблонов — секреты, значения генерируются
+FILES="app.env db.env"
+
+gen_secret() {
+  if command -v python3 >/dev/null 2>&1; then
+    python3 -c 'import secrets; print(secrets.token_urlsafe(32))'
+  elif command -v openssl >/dev/null 2>&1; then
+    openssl rand -base64 48 | tr '+/' '-_' | tr -d '=\n'
+  else
+    echo "Нужен python3 или openssl для генерации секретов" >&2
+    exit 1
+  fi
+}
+
+# fill_env <шаблон> <файл>: создать файл или дописать недостающие и пустые ключи
+fill_env() {
+  example="$1"
+  env_file="$2"
+  name="$(basename "$env_file")"
+
+  [ -f "$example" ] || { echo "Нет файла $example" >&2; exit 1; }
+
+  if [ ! -f "$env_file" ]; then
+    (umask 077; : > "$env_file")
+    created=1
+  else
+    created=0
+  fi
+  chmod 600 "$env_file"
+
+  added=""
+  for key in $(grep -E '^[A-Za-z_][A-Za-z0-9_]*=' "$example" | cut -d= -f1); do
+    if grep -q "^$key=" "$env_file"; then
+      [ -n "$(grep "^$key=" "$env_file" | tail -n 1 | cut -d= -f2-)" ] && continue
+      # ключ есть, но пуст: пересобираем файл без этой строки (без sed -i)
+      tmp="$(mktemp "$DIR/.$name.tmp.XXXXXX")"
+      grep -v "^$key=" "$env_file" > "$tmp" || true
+      chmod 600 "$tmp"
+      mv "$tmp" "$env_file"
+    fi
+    printf '%s=%s\n' "$key" "$(gen_secret)" >> "$env_file"
+    added="$added $key"
+  done
+
+  if [ "$created" = 1 ]; then
+    echo "$name создан. Ключи:$added"
+  elif [ -n "$added" ]; then
+    echo "$name дополнен. Добавлены ключи:$added"
+  else
+    echo "$name уже полный, ничего не изменено"
+  fi
+}
+
+for f in $FILES; do
+  fill_env "$DIR/$f.example" "$DIR/$f"
+done
+
+if [ -f "$DIR/secrets.env" ]; then
+  echo "Найден устаревший $DIR/secrets.env (до разделения на app.env и db.env) — больше не используется, его можно удалить" >&2
+fi

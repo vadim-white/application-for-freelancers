@@ -11,6 +11,8 @@ env/
 .env
 .env.*
 !.env.example
+k8s/overlays/local/app.env
+k8s/overlays/local/db.env
 
 # Node
 node_modules/
