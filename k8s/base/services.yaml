@@ -5,7 +5,7 @@ metadata:
   name: ser-auth
   namespace: freelance-service
 spec:
-  replicas: 1
+  replicas: 2
   selector:
     matchLabels:
       app: ser-auth
@@ -104,7 +104,7 @@ metadata:
   name: ser-task
   namespace: freelance-service
 spec:
-  replicas: 1
+  replicas: 2
   selector:
     matchLabels:
       app: ser-task
@@ -203,7 +203,7 @@ metadata:
   name: ser-time
   namespace: freelance-service
 spec:
-  replicas: 1
+  replicas: 2
   selector:
     matchLabels:
       app: ser-time

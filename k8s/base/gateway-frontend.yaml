@@ -5,7 +5,7 @@ metadata:
   name: ser-gateway
   namespace: freelance-service
 spec:
-  replicas: 1
+  replicas: 2
   selector:
     matchLabels:
       app: ser-gateway
@@ -112,7 +112,7 @@ metadata:
   name: ser-frontend
   namespace: freelance-service
 spec:
-  replicas: 1
+  replicas: 2
   selector:
     matchLabels:
       app: ser-frontend

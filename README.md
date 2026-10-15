@@ -198,6 +198,8 @@ kubectl --context kind-freelance -n envoy-gateway-system get pods,svc         # 
 
 Перед `apply` скрипт проверяет, что в кластере есть Envoy Gateway (CRD Gateway API и контроллер), иначе просит запустить `kind-up.sh`.
 
+Реплики: у `ser-auth`, `ser-task`, `ser-time`, `ser-gateway` и `ser-frontend` по две (`replicas: 2` в base), у баз (StatefulSet) — одна. Состояния в памяти процесса у сервисов нет, поэтому запросы можно отдавать любой реплике. Схему БД не создают сами реплики: миграции и seed выполняют Job, один под на Job за деплой, а не по разу в каждой реплике. Обновление — rolling update по умолчанию (новый под поднимается до остановки старого). Остановка старого пода пока не плавная: при `kubectl rollout restart` под нагрузкой бывают единичные 502/503 (план — `preStop`, этап 1.6). Реплики ограничены одним узлом kind (anti-affinity, PodDisruptionBudget и HPA не настроены).
+
 Повторный запуск безопасен: миграции и seed идемпотентны, пользователи не дублируются. **Голый `kubectl apply -k` поверх существующих Job не используйте:** Job неизменяем, и apply изменённого Job падает (`spec.template: … field is immutable`), а неизменённый не перезапускается, то есть миграции из нового образа не выполнятся. Посмотреть Job и их логи:
 
 ```bash
@@ -335,7 +337,7 @@ curl -X POST http://localhost:8000/api/auth/login \
 - Проекты хранятся только в task-service: дубль проектов в time-service (`/api/time/projects`) удалён, фронтенд создаёт проект одним запросом. `user_id` записи времени обязателен (NOT NULL), фронтенд его не отправляет: сервер берёт `user_id` из токена
 - Автотесты (pytest) есть у всех бэкенд-сервисов (gateway 45, auth 34, task 51, time 25), CI нет.
 - Фронтенд в Docker собирается multi-stage (`npm ci`, `vite build`) и раздаётся nginx без root (`nginx-unprivileged`, слушает 8080): долгий кэш для `/assets/`, `index.html` без кэша, gzip, SPA-роуты отдают `index.html`. Запросы `/api/` nginx проксирует на gateway, поэтому браузер ходит на один адрес и CORS для фронтенда не нужен. В Kubernetes фронтенд описан под этот образ: порт 8080, `GATEWAY_URL` из ConfigMap, startup/liveness/readiness `GET /`, Service `ClusterIP`
-- В Kubernetes вход один — Gateway API (Envoy Gateway v1.9.2) на `http://127.0.0.1:8080`: `/api` → gateway, остальное → фронтенд; `LoadBalancer` и `NodePort` в namespace приложения нет, все сервисы `ClusterIP`. Автомасштабирования нет, у всех сервисов одна реплика. Локальный кластер kind (`./scripts/kind-up.sh`, ставит и Envoy Gateway) готов, манифесты собираются kustomize (`base` + `overlays/local`), деплой с миграциями и seed — `./scripts/k8s-deploy.sh` (этап 1.4 в процессе). Базы в кластере проверяются `pg_isready -U … -d …`, `PGDATA` лежит в подпапке тома
+- В Kubernetes вход один — Gateway API (Envoy Gateway v1.9.2) на `http://127.0.0.1:8080`: `/api` → gateway, остальное → фронтенд; `LoadBalancer` и `NodePort` в namespace приложения нет, все сервисы `ClusterIP`. Автомасштабирования нет: у stateless-сервисов (auth, task, time, gateway, frontend) по две реплики, базы — по одной. При `rollout restart` под нагрузкой возможны единичные 502/503 в момент остановки старого пода (graceful shutdown — в планах). Локальный кластер kind (`./scripts/kind-up.sh`, ставит и Envoy Gateway) готов, манифесты собираются kustomize (`base` + `overlays/local`), деплой с миграциями и seed — `./scripts/k8s-deploy.sh` (этап 1.4 в процессе). Базы в кластере проверяются `pg_isready -U … -d …`, `PGDATA` лежит в подпапке тома
 - В Kubernetes сетевые политики по умолчанию запрещают всё: открыты только DNS, вход от Envoy к фронту и gateway, фронт → gateway, gateway → auth, task, time, task → time и каждый сервис со своими Job → своя база. Сервис не достанет до чужой базы, базы и сервисы не выходят в интернет (раздел «Kubernetes»)
 - Нет пагинации, фильтрации и сортировки задач
 - В Docker Compose наружу опубликованы только frontend (5173) и gateway (8000), по умолчанию на `127.0.0.1` (`BIND_ADDR`); auth, task, time и базы доступны только внутри сети compose
@@ -346,7 +348,7 @@ curl -X POST http://localhost:8000/api/auth/login \
 - Переход на uv (`pyproject.toml` + `uv.lock`)
 - Серверное состояние таймера: запуск, пауза и остановка на бэкенде, защита от параллельных таймеров
 - CI: тесты, линтер, сборка фронтенда, сквозной smoke-прогон через gateway
-- Kubernetes: две реплики, HPA; readiness на `/ready` с проверкой БД
+- Kubernetes: HPA, graceful shutdown (`preStop`) для rollout без 502/503; readiness на `/ready` с проверкой БД
 - Отчёты по времени и экспорт
 - Лимиты запросов, логирование, метрики
 
