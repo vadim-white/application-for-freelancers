@@ -18,9 +18,21 @@ spec:
         app.kubernetes.io/component: seed
     spec:
       restartPolicy: Never
+      # как у сервисов (k8s/base/services.yaml): PSA restricted
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        seccompProfile:
+          type: RuntimeDefault
       containers:
       - name: seed
         image: ser-auth:latest
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop: ["ALL"]
         # образ загружен в узел через kind load (патч overlay local на этот Job не действует)
         imagePullPolicy: Never
         command: ["python", "-m", "app.init_users"]

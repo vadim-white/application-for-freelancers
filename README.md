@@ -207,6 +207,16 @@ kubectl --context kind-freelance -n freelance-service logs job/auth-migrate   # 
 
 Первая попытка Job миграций на чистом кластере обычно падает (`Name or service not known`: БД ещё не готова), Job повторяет её сам (`backoffLimit: 6`). Сквозной прогон против кластера — `SMOKE_MODE=k8s bash docs/archive/smoke_1.2.9.sh` (114 проверок, через вход `http://127.0.0.1:8080`, port-forward не нужен).
 
+Безопасность подов. На namespace `freelance-service` включён Pod Security Admission с профилем `restricted` (метки в [k8s/base/namespace.yaml](k8s/base/namespace.yaml)): API-сервер не создаёт под, который запускается от root, может повысить привилегии, оставляет capabilities или работает без seccomp. `enforce` закреплён на версии правил `v1.35` (обновление кластера не начнёт внезапно отклонять поды), `warn` и `audit` идут по последней версии, чтобы новые требования были видны заранее. Envoy (namespace `envoy-gateway-system`) под эти метки не попадает. У всех подов приложения, Job миграций и seed и баз задано:
+- `runAsNonRoot: true` и числовой `runAsUser`: 10001 у Python-сервисов (в образе `USER 10001`: kubelet проверяет `runAsNonRoot` только по числу, с `USER app` под не запустился бы), 101 у фронта (nginx-unprivileged), 70 у postgres (пользователь `postgres` в alpine-образе; postgres стартует сразу от него, а не от root с понижением в entrypoint);
+- `allowPrivilegeEscalation: false`, `capabilities.drop: [ALL]`, `seccompProfile: RuntimeDefault`;
+- `readOnlyRootFilesystem: true`. Python-сервисы на диск не пишут (`PYTHONDONTWRITEBYTECODE=1`, временных файлов нет), им тома не нужны. nginx фронта пишет pid и временные файлы в `/tmp`, а конфиг из шаблона (envsubst при старте) — в `/etc/nginx/conf.d`: там два `emptyDir`. Postgres пишет данные в том, сокет и lock — в `/var/run/postgresql`, утилиты — в `/tmp`: тоже `emptyDir`;
+- `automountServiceAccountToken: false`: приложению API Kubernetes не нужен, токена в поде нет.
+
+Postgres дополнительно получает `fsGroup: 70` — для дисков, где драйвер меняет группу тома. На `local-path` в kind (hostPath) `fsGroup` не применяется, но provisioner создаёт каталог тома с правами `0777`, поэтому postgres пишет в него и под `restricted` (проверено на чистом томе). В логе базы при старте есть безвредное `chmod: /var/run/postgresql: Operation not permitted`: entrypoint пытается сменить права каталога, которым владеет root, и игнорирует ошибку.
+
+Probes приложений: `startupProbe` `GET /` раз в 2 с, до 30 попыток (до 60 с на старт; холодный старт Python-сервиса с лимитом CPU 200m, пока узел поднимает базы и миграции, занимает 20–30 с), после первого ответа — `livenessProbe` (10 с) и `readinessProbe` (5 с) без `initialDelaySeconds`. У баз — `pg_isready -U … -d …`.
+
 Манифесты в процессе переделки (этап 1.4). Известный сбой, который уходит в следующем шаге: DNS в namespace закрыт NetworkPolicy (шаг 1.4.7; пока `k8s-deploy.sh` удаляет политику из кластера после каждого `apply` и пишет об этом предупреждение). Имя namespace — в [k8s/base/namespace.yaml](k8s/base/namespace.yaml).
 
 Статическая проверка — на выводе `kubectl kustomize k8s/overlays/local` (и `local-seed`), а не на каталоге `k8s/` (там лежит `kind-config.yaml`, не манифест). kubeconform (`-strict`) не знает схем CRD, поэтому четыре ресурса входа пропускаются явно (`-skip Gateway,GatewayClass,HTTPRoute,EnvoyProxy`, а не `-ignore-missing-schemas`, который скрыл бы и опечатку в `kind` любого ресурса), а проверяет их API-сервер с установленными CRD:
@@ -300,7 +310,8 @@ curl -X POST http://localhost:8000/api/auth/login \
 - task-service и time-service сами проверяют access-токен так же, как gateway (подпись, `exp`, тип `access`), и не доверяют заголовкам `X-User-*`: без токена 401, в том числе при обращении в обход gateway. Статистика по пользователям только для admin; task-service при сборе статистики передаёт в time-service токен пользователя. В time-service `user_id` записи берётся только из токена (поле `user_id` в теле игнорируется), пользователь видит только свои записи, admin — все
 - У проектов и задач есть владелец (`owner_id`, NOT NULL): при создании он берётся из токена, задача в проекте получает владельца проекта. Проекты создают все пользователи. Пользователь видит, меняет и удаляет только свои проекты и задачи (на чужие — 404), admin — все; задача не может оказаться в проекте другого владельца. time-service пока не проверяет, что `task_id` записи времени принадлежит пользователю
 - auth-service: роль в access-токене берётся из БД и при входе, и при обновлении токена; отключённый (`is_active=false`) или удалённый пользователь не может войти, обновить токен и получить `/api/auth/me`. Ключ `SECRET_KEY` обязателен. Тестовых пользователей сервис при старте не создаёт: это делает отдельная команда `python -m app.init_users` (в compose — контейнер `ser-auth-seed`) и только при `SEED_TEST_USERS=true`, вывод идёт через logging и виден в `docker logs ser-auth-seed`; в локальном кластере то же делает Job `auth-seed` (`k8s/overlays/local-seed`, в base его нет)
-- Python-сервисы в образах работают не от root (пользователь `app`, UID 10001), код в образе доступен только на чтение
+- Python-сервисы в образах работают не от root (пользователь `app`, в Dockerfile `USER 10001` числом — так его проверяет Kubernetes), код в образе доступен только на чтение
+- В Kubernetes на namespace приложения включён Pod Security Admission `restricted`: все поды (сервисы, Job, базы) работают не от root (10001 / 101 / 70), без повышения привилегий и capabilities, с seccomp `RuntimeDefault`, корневой файловой системой только на чтение (nginx и postgres пишут в `emptyDir`) и без токена ServiceAccount. Под с нарушением API-сервер не создаёт
 - В Docker Compose у auth, task, time и gateway есть healthcheck (`GET /`), у frontend — `GET /` nginx, у баз — `pg_isready` по своей базе, порядок старта задан через `depends_on: service_healthy`: task ждёт time, gateway — три сервиса, frontend — gateway. Полные `/health` и `/ready` с проверкой БД — в планах
 - `.dockerignore` исключает `.env`, `*.db`, `.venv`, `node_modules` во всех папках, локальные настройки и базы больше не попадают в образы
 - `SECRET_KEY` обязателен во всех сервисах, `DATABASE_URL` обязателен в auth, task и time: значений по умолчанию (в том числе SQLite-файла) нет, без них сервис не стартует. CORS настроен только в gateway и разрешает лишь адреса из `CORS_ORIGINS`
@@ -321,7 +332,7 @@ curl -X POST http://localhost:8000/api/auth/login \
 - Переход на uv (`pyproject.toml` + `uv.lock`)
 - Серверное состояние таймера: запуск, пауза и остановка на бэкенде, защита от параллельных таймеров
 - CI: тесты, линтер, сборка фронтенда, сквозной smoke-прогон через gateway
-- Kubernetes: securityContext и Pod Security, NetworkPolicy, две реплики, HPA; readiness на `/ready` с проверкой БД
+- Kubernetes: NetworkPolicy, две реплики, HPA; readiness на `/ready` с проверкой БД
 - Отчёты по времени и экспорт
 - Лимиты запросов, логирование, метрики
 

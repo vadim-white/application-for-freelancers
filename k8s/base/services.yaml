@@ -15,9 +15,21 @@ spec:
         app: ser-auth
     spec:
       # схему БД создаёт Job auth-migrate (migrations.yaml), сервис его не ждёт: порядок задаёт k8s-deploy.sh
+      # PSA restricted: не root (USER 10001 в образе), без токена API k8s, только чтение корня
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        seccompProfile:
+          type: RuntimeDefault
       containers:
       - name: ser-auth
         image: ser-auth:latest
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop: ["ALL"]
         ports:
         - containerPort: 8001
           name: http
@@ -44,17 +56,23 @@ spec:
             configMapKeyRef:
               name: service-config
               key: access-token-expire-minutes
+        # startupProbe: до 60 с на старт (холодный старт с лимитом CPU 200m под нагрузкой узла дольше 30 с);
+        # liveness/readiness включаются после первого ответа, initialDelaySeconds не нужен
+        startupProbe:
+          httpGet:
+            path: /
+            port: 8001
+          periodSeconds: 2
+          failureThreshold: 30
         livenessProbe:
           httpGet:
             path: /
             port: 8001
-          initialDelaySeconds: 30
           periodSeconds: 10
         readinessProbe:
           httpGet:
             path: /
             port: 8001
-          initialDelaySeconds: 10
           periodSeconds: 5
         resources:
           requests:
@@ -96,9 +114,21 @@ spec:
         app: ser-task
     spec:
       # схему БД создаёт Job task-migrate (migrations.yaml), сервис его не ждёт: порядок задаёт k8s-deploy.sh
+      # PSA restricted: не root (USER 10001 в образе), без токена API k8s, только чтение корня
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        seccompProfile:
+          type: RuntimeDefault
       containers:
       - name: ser-task
         image: ser-task:latest
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop: ["ALL"]
         ports:
         - containerPort: 8002
           name: http
@@ -125,17 +155,23 @@ spec:
             configMapKeyRef:
               name: service-config
               key: algorithm
+        # startupProbe: до 60 с на старт (холодный старт с лимитом CPU 200m под нагрузкой узла дольше 30 с);
+        # liveness/readiness включаются после первого ответа, initialDelaySeconds не нужен
+        startupProbe:
+          httpGet:
+            path: /
+            port: 8002
+          periodSeconds: 2
+          failureThreshold: 30
         livenessProbe:
           httpGet:
             path: /
             port: 8002
-          initialDelaySeconds: 30
           periodSeconds: 10
         readinessProbe:
           httpGet:
             path: /
             port: 8002
-          initialDelaySeconds: 10
           periodSeconds: 5
         resources:
           requests:
@@ -177,9 +213,21 @@ spec:
         app: ser-time
     spec:
       # схему БД создаёт Job time-migrate (migrations.yaml), сервис его не ждёт: порядок задаёт k8s-deploy.sh
+      # PSA restricted: не root (USER 10001 в образе), без токена API k8s, только чтение корня
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        seccompProfile:
+          type: RuntimeDefault
       containers:
       - name: ser-time
         image: ser-time:latest
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop: ["ALL"]
         ports:
         - containerPort: 8003
           name: http
@@ -201,17 +249,23 @@ spec:
             configMapKeyRef:
               name: service-config
               key: algorithm
+        # startupProbe: до 60 с на старт (холодный старт с лимитом CPU 200m под нагрузкой узла дольше 30 с);
+        # liveness/readiness включаются после первого ответа, initialDelaySeconds не нужен
+        startupProbe:
+          httpGet:
+            path: /
+            port: 8003
+          periodSeconds: 2
+          failureThreshold: 30
         livenessProbe:
           httpGet:
             path: /
             port: 8003
-          initialDelaySeconds: 30
           periodSeconds: 10
         readinessProbe:
           httpGet:
             path: /
             port: 8003
-          initialDelaySeconds: 10
           periodSeconds: 5
         resources:
           requests:

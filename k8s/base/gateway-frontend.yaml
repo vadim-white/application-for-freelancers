@@ -14,9 +14,21 @@ spec:
       labels:
         app: ser-gateway
     spec:
+      # PSA restricted: не root (USER 10001 в образе), без токена API k8s, только чтение корня
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        seccompProfile:
+          type: RuntimeDefault
       containers:
       - name: ser-gateway
         image: ser-gateway:latest
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop: ["ALL"]
         ports:
         - containerPort: 8000
           name: http
@@ -51,17 +63,23 @@ spec:
             configMapKeyRef:
               name: service-config
               key: cors-origins
+        # startupProbe: до 60 с на старт (холодный старт с лимитом CPU 200m под нагрузкой узла дольше 30 с);
+        # liveness/readiness включаются после первого ответа, initialDelaySeconds не нужен
+        startupProbe:
+          httpGet:
+            path: /
+            port: 8000
+          periodSeconds: 2
+          failureThreshold: 30
         livenessProbe:
           httpGet:
             path: /
             port: 8000
-          initialDelaySeconds: 30
           periodSeconds: 10
         readinessProbe:
           httpGet:
             path: /
             port: 8000
-          initialDelaySeconds: 10
           periodSeconds: 5
         resources:
           requests:
@@ -103,9 +121,22 @@ spec:
       labels:
         app: ser-frontend
     spec:
+      # PSA restricted: nginx-unprivileged (uid 101), корень только на чтение; пишет nginx только в emptyDir ниже
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 101
+        runAsGroup: 101
+        seccompProfile:
+          type: RuntimeDefault
       containers:
       - name: ser-frontend
         image: ser-frontend:latest
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop: ["ALL"]
         ports:
         - containerPort: 8080
           name: http
@@ -132,6 +163,13 @@ spec:
             path: /
             port: 8080
           periodSeconds: 5
+        volumeMounts:
+        # pid и *_temp_path nginx-unprivileged
+        - name: tmp
+          mountPath: /tmp
+        # 20-envsubst-on-templates.sh кладёт сюда default.conf из шаблона при старте
+        - name: nginx-conf
+          mountPath: /etc/nginx/conf.d
         resources:
           requests:
             memory: "32Mi"
@@ -139,6 +177,13 @@ spec:
           limits:
             memory: "64Mi"
             cpu: "200m"
+      volumes:
+      - name: tmp
+        emptyDir:
+          sizeLimit: 64Mi
+      - name: nginx-conf
+        emptyDir:
+          sizeLimit: 1Mi
 ---
 apiVersion: v1
 kind: Service

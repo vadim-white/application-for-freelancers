@@ -12,9 +12,10 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Копирование приложения
 COPY task-service .
 
-# Непривилегированный пользователь; код принадлежит root и процессу доступен только на чтение
+# Непривилегированный пользователь; код принадлежит root и процессу доступен только на чтение.
+# USER числом, а не именем: kubelet проверяет runAsNonRoot только по числовому UID (имя не резолвит)
 RUN useradd --system --uid 10001 --no-create-home app
-USER app
+USER 10001
 
 # Запуск сервиса
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8002"]

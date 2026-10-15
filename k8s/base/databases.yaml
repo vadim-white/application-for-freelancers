@@ -15,9 +15,24 @@ spec:
       labels:
         app: auth-db
     spec:
+      # PSA restricted: postgres сразу от uid 70 (postgres в alpine), а не root с понижением в entrypoint;
+      # fsGroup — группа 70 на томах, где драйвер это поддерживает (local-path/hostPath — нет, там каталог 0777)
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 70
+        runAsGroup: 70
+        fsGroup: 70
+        seccompProfile:
+          type: RuntimeDefault
       containers:
       - name: postgres
         image: postgres:15-alpine
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop: ["ALL"]
         ports:
         - containerPort: 5432
           name: postgres
@@ -37,6 +52,11 @@ spec:
         volumeMounts:
         - name: auth-db-storage
           mountPath: /var/lib/postgresql/data
+        # корень только на чтение: сокет и lock-файл — в /var/run/postgresql, временные файлы утилит (psql, initdb) — в /tmp
+        - name: run
+          mountPath: /var/run/postgresql
+        - name: tmp
+          mountPath: /tmp
         livenessProbe:
           exec:
             command:
@@ -64,6 +84,12 @@ spec:
       - name: auth-db-storage
         persistentVolumeClaim:
           claimName: auth-db-pvc
+      - name: run
+        emptyDir:
+          sizeLimit: 1Mi
+      - name: tmp
+        emptyDir:
+          sizeLimit: 64Mi
 ---
 apiVersion: v1
 kind: Service
@@ -96,9 +122,24 @@ spec:
       labels:
         app: task-db
     spec:
+      # PSA restricted: postgres сразу от uid 70 (postgres в alpine), а не root с понижением в entrypoint;
+      # fsGroup — группа 70 на томах, где драйвер это поддерживает (local-path/hostPath — нет, там каталог 0777)
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 70
+        runAsGroup: 70
+        fsGroup: 70
+        seccompProfile:
+          type: RuntimeDefault
       containers:
       - name: postgres
         image: postgres:15-alpine
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop: ["ALL"]
         ports:
         - containerPort: 5432
           name: postgres
@@ -118,6 +159,11 @@ spec:
         volumeMounts:
         - name: task-db-storage
           mountPath: /var/lib/postgresql/data
+        # корень только на чтение: сокет и lock-файл — в /var/run/postgresql, временные файлы утилит (psql, initdb) — в /tmp
+        - name: run
+          mountPath: /var/run/postgresql
+        - name: tmp
+          mountPath: /tmp
         livenessProbe:
           exec:
             command:
@@ -145,6 +191,12 @@ spec:
       - name: task-db-storage
         persistentVolumeClaim:
           claimName: task-db-pvc
+      - name: run
+        emptyDir:
+          sizeLimit: 1Mi
+      - name: tmp
+        emptyDir:
+          sizeLimit: 64Mi
 ---
 apiVersion: v1
 kind: Service
@@ -177,9 +229,24 @@ spec:
       labels:
         app: time-db
     spec:
+      # PSA restricted: postgres сразу от uid 70 (postgres в alpine), а не root с понижением в entrypoint;
+      # fsGroup — группа 70 на томах, где драйвер это поддерживает (local-path/hostPath — нет, там каталог 0777)
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 70
+        runAsGroup: 70
+        fsGroup: 70
+        seccompProfile:
+          type: RuntimeDefault
       containers:
       - name: postgres
         image: postgres:15-alpine
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop: ["ALL"]
         ports:
         - containerPort: 5432
           name: postgres
@@ -199,6 +266,11 @@ spec:
         volumeMounts:
         - name: time-db-storage
           mountPath: /var/lib/postgresql/data
+        # корень только на чтение: сокет и lock-файл — в /var/run/postgresql, временные файлы утилит (psql, initdb) — в /tmp
+        - name: run
+          mountPath: /var/run/postgresql
+        - name: tmp
+          mountPath: /tmp
         livenessProbe:
           exec:
             command:
@@ -226,6 +298,12 @@ spec:
       - name: time-db-storage
         persistentVolumeClaim:
           claimName: time-db-pvc
+      - name: run
+        emptyDir:
+          sizeLimit: 1Mi
+      - name: tmp
+        emptyDir:
+          sizeLimit: 64Mi
 ---
 apiVersion: v1
 kind: Service

@@ -20,9 +20,21 @@ spec:
         app.kubernetes.io/component: migration
     spec:
       restartPolicy: Never
+      # как у сервисов (services.yaml): PSA restricted
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        seccompProfile:
+          type: RuntimeDefault
       containers:
       - name: migrate
         image: ser-auth:latest
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop: ["ALL"]
         command: ["alembic", "upgrade", "head"]
         env:
         - name: DB_PASSWORD
@@ -71,9 +83,21 @@ spec:
         app.kubernetes.io/component: migration
     spec:
       restartPolicy: Never
+      # как у сервисов (services.yaml): PSA restricted
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        seccompProfile:
+          type: RuntimeDefault
       containers:
       - name: migrate
         image: ser-task:latest
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop: ["ALL"]
         command: ["alembic", "upgrade", "head"]
         env:
         - name: DB_PASSWORD
@@ -122,9 +146,21 @@ spec:
         app.kubernetes.io/component: migration
     spec:
       restartPolicy: Never
+      # как у сервисов (services.yaml): PSA restricted
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        seccompProfile:
+          type: RuntimeDefault
       containers:
       - name: migrate
         image: ser-time:latest
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop: ["ALL"]
         command: ["alembic", "upgrade", "head"]
         env:
         - name: DB_PASSWORD
