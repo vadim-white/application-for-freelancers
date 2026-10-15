@@ -7,5 +7,7 @@ data:
   auth-url: "http://ser-auth:8001"
   task-url: "http://ser-task:8002"
   time-url: "http://ser-time:8003"
+  # фронт (nginx): полное имя, resolver nginx не применяет search-домены из resolv.conf
+  gateway-url: "http://ser-gateway.freelance-service.svc.cluster.local:8000"
   algorithm: "HS256"
   access-token-expire-minutes: "15"

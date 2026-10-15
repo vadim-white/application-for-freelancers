@@ -101,26 +101,38 @@ spec:
       - name: ser-frontend
         image: ser-frontend:latest
         ports:
-        - containerPort: 5173
+        - containerPort: 8080
           name: http
         env:
-        - name: VITE_API_URL
-          value: "http://ser-gateway:8000"
+        # полное имя: resolver nginx не применяет search-домены из resolv.conf (короткое имя даёт 502)
+        - name: GATEWAY_URL
+          valueFrom:
+            configMapKeyRef:
+              name: service-config
+              key: gateway-url
+        startupProbe:
+          httpGet:
+            path: /
+            port: 8080
+          periodSeconds: 2
+          failureThreshold: 30
         livenessProbe:
           httpGet:
             path: /
-            port: 5173
-          initialDelaySeconds: 120
-          periodSeconds: 30
-          timeoutSeconds: 10
-          failureThreshold: 5
+            port: 8080
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /
+            port: 8080
+          periodSeconds: 5
         resources:
           requests:
-            memory: "256Mi"
-            cpu: "100m"
+            memory: "32Mi"
+            cpu: "25m"
           limits:
-            memory: "512Mi"
-            cpu: "500m"
+            memory: "64Mi"
+            cpu: "200m"
 ---
 apiVersion: v1
 kind: Service
@@ -131,8 +143,8 @@ spec:
   selector:
     app: ser-frontend
   ports:
-  - port: 5173
-    targetPort: 5173
+  - port: 8080
+    targetPort: 8080
     protocol: TCP
     name: http
-  type: LoadBalancer
+  type: ClusterIP

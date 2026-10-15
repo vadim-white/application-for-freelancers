@@ -18,8 +18,6 @@ SEED="$ROOT/k8s/overlays/local-seed"
 MIGRATIONS="auth-migrate task-migrate time-migrate"
 JOB_TIMEOUT="${JOB_TIMEOUT:-300}"
 ROLLOUT_TIMEOUT="${ROLLOUT_TIMEOUT:-180s}"
-# ВРЕМЕННО, убрать в 1.4.4: фронт не стартует, пока манифест не переведён на nginx-образ
-SKIP_ROLLOUT="ser-frontend"
 # ВРЕМЕННО, убрать в 1.4.7: политика закрывает DNS (kube-dns в kube-system), Job и сервисы не резолвят имена
 BROKEN_NETPOL="freelance-service-netpol"
 
@@ -90,11 +88,6 @@ for sts in $statefulsets; do
   k -n "$NS" rollout status "$sts" --timeout="$ROLLOUT_TIMEOUT"
 done
 for deploy in $deployments; do
-  case " $SKIP_ROLLOUT " in
-    *" ${deploy#deployment.apps/} "*)
-      echo "ВНИМАНИЕ: ${deploy#deployment.apps/} не жду (манифест чинится в шаге 1.4.4)" >&2
-      continue ;;
-  esac
   k -n "$NS" rollout status "$deploy" --timeout="$ROLLOUT_TIMEOUT"
 done
 
