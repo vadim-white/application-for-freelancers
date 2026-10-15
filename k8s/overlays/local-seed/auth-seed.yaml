@@ -1,0 +1,58 @@
+# Тестовые пользователи admin@example.com, user1@example.com, user2@example.com (пароль password123),
+# аналог ser-auth-seed в compose. Только для разработки, в base его нет.
+# Идемпотентен: существующих пользователей init_users не трогает.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: auth-seed
+  namespace: freelance-service
+  labels:
+    app.kubernetes.io/part-of: freelance-service
+    app.kubernetes.io/component: seed
+spec:
+  backoffLimit: 2
+  template:
+    metadata:
+      labels:
+        app: auth-seed
+        app.kubernetes.io/component: seed
+    spec:
+      restartPolicy: Never
+      containers:
+      - name: seed
+        image: ser-auth:latest
+        # образ загружен в узел через kind load (патч overlay local на этот Job не действует)
+        imagePullPolicy: Never
+        command: ["python", "-m", "app.init_users"]
+        env:
+        - name: DB_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: db-credentials
+              key: AUTH_DB_PASSWORD
+        - name: DATABASE_URL
+          value: "postgresql+psycopg://auth_user:$(DB_PASSWORD)@auth-db:5432/auth_db"
+        - name: SECRET_KEY
+          valueFrom:
+            secretKeyRef:
+              name: app-secrets
+              key: SECRET_KEY
+        - name: ALGORITHM
+          valueFrom:
+            configMapKeyRef:
+              name: service-config
+              key: algorithm
+        - name: ACCESS_TOKEN_EXPIRE_MINUTES
+          valueFrom:
+            configMapKeyRef:
+              name: service-config
+              key: access-token-expire-minutes
+        - name: SEED_TEST_USERS
+          value: "true"
+        resources:
+          requests:
+            memory: "128Mi"
+            cpu: "50m"
+          limits:
+            memory: "256Mi"
+            cpu: "200m"

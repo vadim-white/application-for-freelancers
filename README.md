@@ -140,7 +140,7 @@ docker run --rm -v "$PWD/<service>":/src:ro python:3.14-slim sh -c \
 
 ### Миграции
 
-Схему БД auth-service, task-service и time-service ведёт Alembic (`<service>/migrations/`). Применяются они отдельно от приложения: `alembic upgrade head` (в compose — сервисы `ser-*-migrate`). Новая миграция создаётся автогенерацией по изменённым моделям (`<service>` — `auth`, `task` или `time`, нужен запущенный стек, у которого база уже на последней ревизии):
+Схему БД auth-service, task-service и time-service ведёт Alembic (`<service>/migrations/`). Применяются они отдельно от приложения: `alembic upgrade head` (в compose — сервисы `ser-*-migrate`, в Kubernetes — Job `*-migrate`). Новая миграция создаётся автогенерацией по изменённым моделям (`<service>` — `auth`, `task` или `time`, нужен запущенный стек, у которого база уже на последней ревизии):
 
 ```bash
 docker compose run --rm --no-deps --user "$(id -u):$(id -g)" \
@@ -165,16 +165,30 @@ docker compose run --rm --no-deps --user "$(id -u):$(id -g)" \
 brew install kind                # проверено на v0.33.0
 ./scripts/kind-up.sh             # кластер freelance + сборка и загрузка образов ser-*:latest
 ./scripts/init-k8s-env.sh        # k8s/overlays/local/app.env и db.env со случайными секретами
-kubectl --context kind-freelance apply -k k8s/overlays/local
+./scripts/k8s-deploy.sh          # манифесты, миграции, тестовые пользователи, ожидание готовности
 ```
 
 `kind-up.sh` создаёт кластер по [k8s/kind-config.yaml](k8s/kind-config.yaml) (один узел `kindest/node` v1.35.8, имя `freelance`), собирает образы через `docker compose build` и загружает пять образов `ser-auth`, `ser-task`, `ser-time`, `ser-gateway`, `ser-frontend` (`:latest`) в узел. Повторный запуск кластер не пересоздаёт, образы обновляет. Секреты для него не нужны. Вход в кластер появится на `http://127.0.0.1:8080` с шага 1.4.5; порт узла 30080 на него уже проброшен, но пока никто не слушает.
 
 Манифесты собирает kustomize: [k8s/base](k8s/base) — без локальных допущений, [k8s/overlays/local](k8s/overlays/local) — для kind: Secret'ы через `secretGenerator` и `imagePullPolicy: Never` (образы загружены в узел через `kind load`). `app-secrets` (`SECRET_KEY`) собирается из `app.env`, `db-credentials` (три пароля баз) — из `db.env`. Имена Secret'ов получают хеш содержимого: при смене секрета перезапускаются только поды, которые на него ссылаются (смена `SECRET_KEY` базы не трогает). Без этих файлов `kubectl kustomize` падает с ошибкой «no such file». Файлы создаёт `./scripts/init-k8s-env.sh` по образцу `init-env.sh` (шаблоны — [app.env.example](k8s/overlays/local/app.env.example) и [db.env.example](k8s/overlays/local/db.env.example)): идемпотентно, значения не печатает, права 600; в git файлы не попадают, секреты кластера независимы от `.env` compose. Пароль БД применяется при создании тома: после смены нужно удалить namespace (`kubectl --context kind-freelance delete namespace freelance-service`, вместе с ним удалятся PVC).
 
-Манифесты в процессе переделки (этап 1.4). Известные сбои, которые уходят в следующих шагах: фронт не стартует (манифест описывает dev-сервер на 5173 без `GATEWAY_URL`, шаг 1.4.4), DNS в namespace закрыт NetworkPolicy (шаг 1.4.7: пока политику нужно удалить из кластера, `kubectl --context kind-freelance -n freelance-service delete networkpolicy freelance-service-netpol`, иначе миграции в initContainer не резолвят имена баз), оба `LoadBalancer` без адреса (шаг 1.4.5). Достучаться до gateway можно через `kubectl --context kind-freelance -n freelance-service port-forward svc/ser-gateway 8000`. Имя namespace — в [k8s/base/namespace.yaml](k8s/base/namespace.yaml). Проверять манифесты статически нужно на выводе `kubectl kustomize k8s/overlays/local`, а не на каталоге `k8s/` (там лежит `kind-config.yaml`, не манифест).
+Деплоить нужно через `./scripts/k8s-deploy.sh` (аналог `docker compose up --wait`), он работает только с контекстом `kind-freelance` и падает с кодом ≠ 0 при любом сбое:
+1. удаляет старые Job миграций и seed (по метке `app.kubernetes.io/component`);
+2. `kubectl apply -k k8s/overlays/local`;
+3. ждёт Job `auth-migrate`, `task-migrate`, `time-migrate` (`alembic upgrade head`, [k8s/base/migrations.yaml](k8s/base/migrations.yaml)); при `Failed` печатает лог Job и выходит;
+4. применяет [k8s/overlays/local-seed](k8s/overlays/local-seed) и ждёт Job `auth-seed` (`python -m app.init_users`, `SEED_TEST_USERS=true`): пользователи `admin@example.com`, `user1@example.com`, `user2@example.com`, пароль `password123`. Seed есть только в локальном кластере и идёт отдельным `apply`, потому что в одном `apply` порядка нет и он стартовал бы раньше миграций;
+5. ждёт `rollout status` баз и сервисов.
 
-В кластере seed пока не запускается: он будет Job в `overlays/local` (шаг 1.4.3), тогда появятся тестовые пользователи. Сейчас можно зарегистрироваться через `/api/auth/register` (роль `user`). См. [Планы](#планы).
+Повторный запуск безопасен: миграции и seed идемпотентны, пользователи не дублируются. **Голый `kubectl apply -k` поверх существующих Job не используйте:** Job неизменяем, и apply изменённого Job падает (`spec.template: … field is immutable`), а неизменённый не перезапускается, то есть миграции из нового образа не выполнятся. Посмотреть Job и их логи:
+
+```bash
+kubectl --context kind-freelance -n freelance-service get jobs
+kubectl --context kind-freelance -n freelance-service logs job/auth-migrate   # task-migrate, time-migrate, auth-seed
+```
+
+Первая попытка Job миграций на чистом кластере обычно падает (`Name or service not known`: БД ещё не готова), Job повторяет её сам (`backoffLimit: 6`). Достучаться до gateway: `kubectl --context kind-freelance -n freelance-service port-forward svc/ser-gateway 18000:8000`. Сквозной прогон против кластера — `SMOKE_MODE=k8s bash docs/archive/smoke_1.2.9.sh` (112 проверок, port-forward поднимает сам).
+
+Манифесты в процессе переделки (этап 1.4). Известные сбои, которые уходят в следующих шагах: фронт не стартует (манифест описывает dev-сервер на 5173 без `GATEWAY_URL`, шаг 1.4.4; `k8s-deploy.sh` его готовности не ждёт), DNS в namespace закрыт NetworkPolicy (шаг 1.4.7; пока `k8s-deploy.sh` удаляет политику из кластера после каждого `apply` и пишет об этом предупреждение), оба `LoadBalancer` без адреса (шаг 1.4.5). Имя namespace — в [k8s/base/namespace.yaml](k8s/base/namespace.yaml). Проверять манифесты статически нужно на выводе `kubectl kustomize k8s/overlays/local`, а не на каталоге `k8s/` (там лежит `kind-config.yaml`, не манифест).
 
 ## Конфигурация
 
@@ -243,8 +257,9 @@ curl -X POST http://localhost:8000/api/auth/login \
 ├── k8s/                 Kubernetes
 │   ├── base/            манифесты без локальных допущений (kustomize)
 │   ├── overlays/local/  overlay для kind: секреты из app.env и db.env, imagePullPolicy
+│   ├── overlays/local-seed/ overlay local + Job auth-seed (тестовые пользователи, применяет k8s-deploy.sh)
 │   └── kind-config.yaml конфиг локального кластера kind
-├── scripts/             вспомогательные скрипты (init-env.sh — .env, init-k8s-env.sh — секреты кластера, kind-up.sh — кластер kind и образы)
+├── scripts/             вспомогательные скрипты (init-env.sh — .env, init-k8s-env.sh — секреты кластера, kind-up.sh — кластер kind и образы, k8s-deploy.sh — деплой в кластер)
 ├── .env.example         шаблон общих переменных для Docker Compose
 └── docker-compose.yml
 ```
@@ -256,7 +271,7 @@ curl -X POST http://localhost:8000/api/auth/login \
 - Gateway проверяет Bearer access-токен (подпись, срок `exp`, тип `access`) для всех путей, кроме `/api/auth/register`, `/api/auth/login`, `/api/auth/refresh`, `/health` и `/`. Без токена или с неверным токеном ответ 401, неизвестные пути 404. Клиентские заголовки `X-User-*` затираются, gateway ставит свои `X-User-Id` и `X-User-Role` из токена
 - task-service и time-service сами проверяют access-токен так же, как gateway (подпись, `exp`, тип `access`), и не доверяют заголовкам `X-User-*`: без токена 401, в том числе при обращении в обход gateway. Статистика по пользователям только для admin; task-service при сборе статистики передаёт в time-service токен пользователя. В time-service `user_id` записи берётся только из токена (поле `user_id` в теле игнорируется), пользователь видит только свои записи, admin — все
 - У проектов и задач есть владелец (`owner_id`, NOT NULL): при создании он берётся из токена, задача в проекте получает владельца проекта. Проекты создают все пользователи. Пользователь видит, меняет и удаляет только свои проекты и задачи (на чужие — 404), admin — все; задача не может оказаться в проекте другого владельца. time-service пока не проверяет, что `task_id` записи времени принадлежит пользователю
-- auth-service: роль в access-токене берётся из БД и при входе, и при обновлении токена; отключённый (`is_active=false`) или удалённый пользователь не может войти, обновить токен и получить `/api/auth/me`. Ключ `SECRET_KEY` обязателен. Тестовых пользователей сервис при старте не создаёт: это делает отдельная команда `python -m app.init_users` (в compose — контейнер `ser-auth-seed`) и только при `SEED_TEST_USERS=true`, вывод идёт через logging и виден в `docker logs ser-auth-seed`
+- auth-service: роль в access-токене берётся из БД и при входе, и при обновлении токена; отключённый (`is_active=false`) или удалённый пользователь не может войти, обновить токен и получить `/api/auth/me`. Ключ `SECRET_KEY` обязателен. Тестовых пользователей сервис при старте не создаёт: это делает отдельная команда `python -m app.init_users` (в compose — контейнер `ser-auth-seed`) и только при `SEED_TEST_USERS=true`, вывод идёт через logging и виден в `docker logs ser-auth-seed`; в локальном кластере то же делает Job `auth-seed` (`k8s/overlays/local-seed`, в base его нет)
 - Python-сервисы в образах работают не от root (пользователь `app`, UID 10001), код в образе доступен только на чтение
 - В Docker Compose у auth, task, time и gateway есть healthcheck (`GET /`), у frontend — `GET /` nginx, у баз — `pg_isready` по своей базе, порядок старта задан через `depends_on: service_healthy`: task ждёт time, gateway — три сервиса, frontend — gateway. Полные `/health` и `/ready` с проверкой БД — в планах
 - `.dockerignore` исключает `.env`, `*.db`, `.venv`, `node_modules` во всех папках, локальные настройки и базы больше не попадают в образы
@@ -264,11 +279,11 @@ curl -X POST http://localhost:8000/api/auth/login \
 - Фронтенд сам обновляет access-токен: на ответ 401 он один раз запрашивает `/api/auth/refresh` (параллельные запросы ждут один общий refresh) и повторяет запрос. Если refresh не удался, токены удаляются и открывается страница входа. Refresh-токен живёт 7 дней и не обновляется, после этого нужно войти заново
 - Кнопка «Выполнено» в списке задач проекта ставит статус `done`, а не удаляет задачу. Выполненные задачи показываются отдельным сворачиваемым блоком под текущими
 - Python 3.14 во всех образах. В Docker Compose и Kubernetes сервисы работают с PostgreSQL через psycopg 3 (`postgresql+psycopg://`). Все прямые зависимости бэкенда закреплены точными версиями (`==`), общие пакеты одинаковы во всех сервисах; `pytest` и `httpx` для тестов вынесены в `requirements-dev.txt`
-- Схема БД auth-service, task-service и time-service управляется миграциями Alembic (`<service>/migrations/`): в Docker Compose их применяют сервисы `ser-auth-migrate`, `ser-task-migrate` и `ser-time-migrate` до старта своего сервиса, в Kubernetes — initContainer `migrate`. Тест в каждом из них проверяет, что миграции совпадают с моделями
+- Схема БД auth-service, task-service и time-service управляется миграциями Alembic (`<service>/migrations/`): в Docker Compose их применяют сервисы `ser-auth-migrate`, `ser-task-migrate` и `ser-time-migrate` до старта своего сервиса, в Kubernetes — Job `auth-migrate`, `task-migrate`, `time-migrate` (один раз на деплой, порядок задаёт `scripts/k8s-deploy.sh`). Тест в каждом из них проверяет, что миграции совпадают с моделями
 - Проекты хранятся только в task-service: дубль проектов в time-service (`/api/time/projects`) удалён, фронтенд создаёт проект одним запросом. `user_id` записи времени обязателен (NOT NULL), фронтенд его не отправляет: сервер берёт `user_id` из токена
 - Автотесты (pytest) есть у всех бэкенд-сервисов (gateway 45, auth 34, task 51, time 25), CI нет.
 - Фронтенд в Docker собирается multi-stage (`npm ci`, `vite build`) и раздаётся nginx без root (`nginx-unprivileged`, слушает 8080): долгий кэш для `/assets/`, `index.html` без кэша, gzip, SPA-роуты отдают `index.html`. Запросы `/api/` nginx проксирует на gateway, поэтому браузер ходит на один адрес и CORS для фронтенда не нужен. Манифест Kubernetes фронтенда под новый образ ещё не обновлён (этап 1.4)
-- В Kubernetes нет Ingress и автомасштабирования, у всех сервисов одна реплика. Локальный кластер kind (`./scripts/kind-up.sh`) готов, манифесты собираются kustomize (`base` + `overlays/local`); остальные сбои (фронт, NetworkPolicy, `LoadBalancer`) описаны в разделе «Kubernetes» (этап 1.4 в процессе). Базы в кластере проверяются `pg_isready -U … -d …`, `PGDATA` лежит в подпапке тома
+- В Kubernetes нет Ingress и автомасштабирования, у всех сервисов одна реплика. Локальный кластер kind (`./scripts/kind-up.sh`) готов, манифесты собираются kustomize (`base` + `overlays/local`), деплой с миграциями и seed — `./scripts/k8s-deploy.sh`; остальные сбои (фронт, NetworkPolicy, `LoadBalancer`) описаны в разделе «Kubernetes» (этап 1.4 в процессе). Базы в кластере проверяются `pg_isready -U … -d …`, `PGDATA` лежит в подпапке тома
 - Нет пагинации, фильтрации и сортировки задач
 - В Docker Compose наружу опубликованы только frontend (5173) и gateway (8000), по умолчанию на `127.0.0.1` (`BIND_ADDR`); auth, task, time и базы доступны только внутри сети compose
 - Секреты и пароли баз в Docker Compose генерирует `scripts/init-env.sh` (в `.env`, не в git); в Kubernetes секреты лежат в `k8s/overlays/local/app.env` и `db.env` (генерирует `scripts/init-k8s-env.sh`, не в git), пароли в манифестах не зашиты
@@ -278,7 +293,7 @@ curl -X POST http://localhost:8000/api/auth/login \
 - Переход на uv (`pyproject.toml` + `uv.lock`)
 - Серверное состояние таймера: запуск, пауза и остановка на бэкенде, защита от параллельных таймеров
 - CI: тесты, линтер, сборка фронтенда, сквозной smoke-прогон через gateway
-- Kubernetes: манифест фронтенда под nginx-образ, Ingress, HPA, health и readiness probes, миграции отдельным Job вместо initContainer
+- Kubernetes: манифест фронтенда под nginx-образ, Ingress, HPA, health и readiness probes
 - Отчёты по времени и экспорт
 - Лимиты запросов, логирование, метрики
 

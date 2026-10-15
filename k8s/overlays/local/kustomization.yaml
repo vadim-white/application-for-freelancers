@@ -1,5 +1,6 @@
 # Локальный кластер kind. Секреты — из app.env и db.env (создаёт scripts/init-k8s-env.sh, в git не попадают).
-# Применять: kubectl --context kind-freelance apply -k k8s/overlays/local
+# Применять через scripts/k8s-deploy.sh: он удаляет старые Job (неизменяемы), ждёт миграций и
+# затем применяет ../local-seed (тестовые пользователи). Голый apply -k второй раз падает на изменённых Job.
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 namespace: freelance-service
@@ -22,11 +23,10 @@ patches:
       - op: add
         path: /spec/template/spec/containers/0/imagePullPolicy
         value: Never
-  # initContainer миграций (уйдёт в 1.4.3 вместе с этим патчем)
+  # Job миграций (k8s/base/migrations.yaml) — те же образы ser-*:latest
   - target:
-      kind: Deployment
-      name: ser-(auth|task|time)
+      kind: Job
     patch: |-
       - op: add
-        path: /spec/template/spec/initContainers/0/imagePullPolicy
+        path: /spec/template/spec/containers/0/imagePullPolicy
         value: Never

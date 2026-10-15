@@ -14,35 +14,7 @@ spec:
       labels:
         app: ser-auth
     spec:
-      # Миграции до старта приложения: тот же образ и env, что у ser-auth (env.py читает настройки сервиса).
-      # Временное решение, в 1.4.3 заменяется на Job
-      initContainers:
-      - name: migrate
-        image: ser-auth:latest
-        command: ["alembic", "upgrade", "head"]
-        env:
-        - name: DB_PASSWORD
-          valueFrom:
-            secretKeyRef:
-              name: db-credentials
-              key: AUTH_DB_PASSWORD
-        - name: DATABASE_URL
-          value: "postgresql+psycopg://auth_user:$(DB_PASSWORD)@auth-db:5432/auth_db"
-        - name: SECRET_KEY
-          valueFrom:
-            secretKeyRef:
-              name: app-secrets
-              key: SECRET_KEY
-        - name: ALGORITHM
-          valueFrom:
-            configMapKeyRef:
-              name: service-config
-              key: algorithm
-        - name: ACCESS_TOKEN_EXPIRE_MINUTES
-          valueFrom:
-            configMapKeyRef:
-              name: service-config
-              key: access-token-expire-minutes
+      # схему БД создаёт Job auth-migrate (migrations.yaml), сервис его не ждёт: порядок задаёт k8s-deploy.sh
       containers:
       - name: ser-auth
         image: ser-auth:latest
@@ -123,35 +95,7 @@ spec:
       labels:
         app: ser-task
     spec:
-      # Миграции до старта приложения: тот же образ и env, что у ser-task (env.py читает настройки сервиса).
-      # Временное решение, в 1.4.3 заменяется на Job
-      initContainers:
-      - name: migrate
-        image: ser-task:latest
-        command: ["alembic", "upgrade", "head"]
-        env:
-        - name: DB_PASSWORD
-          valueFrom:
-            secretKeyRef:
-              name: db-credentials
-              key: TASK_DB_PASSWORD
-        - name: DATABASE_URL
-          value: "postgresql+psycopg://task_user:$(DB_PASSWORD)@task-db:5432/task_db"
-        - name: TIME_SERVICE_URL
-          valueFrom:
-            configMapKeyRef:
-              name: service-config
-              key: time-url
-        - name: SECRET_KEY
-          valueFrom:
-            secretKeyRef:
-              name: app-secrets
-              key: SECRET_KEY
-        - name: ALGORITHM
-          valueFrom:
-            configMapKeyRef:
-              name: service-config
-              key: algorithm
+      # схему БД создаёт Job task-migrate (migrations.yaml), сервис его не ждёт: порядок задаёт k8s-deploy.sh
       containers:
       - name: ser-task
         image: ser-task:latest
@@ -232,30 +176,7 @@ spec:
       labels:
         app: ser-time
     spec:
-      # Миграции до старта приложения: тот же образ и env, что у ser-time (env.py читает настройки сервиса).
-      # Временное решение, в 1.4.3 заменяется на Job
-      initContainers:
-      - name: migrate
-        image: ser-time:latest
-        command: ["alembic", "upgrade", "head"]
-        env:
-        - name: DB_PASSWORD
-          valueFrom:
-            secretKeyRef:
-              name: db-credentials
-              key: TIME_DB_PASSWORD
-        - name: DATABASE_URL
-          value: "postgresql+psycopg://time_user:$(DB_PASSWORD)@time-db:5432/time_db"
-        - name: SECRET_KEY
-          valueFrom:
-            secretKeyRef:
-              name: app-secrets
-              key: SECRET_KEY
-        - name: ALGORITHM
-          valueFrom:
-            configMapKeyRef:
-              name: service-config
-              key: algorithm
+      # схему БД создаёт Job time-migrate (migrations.yaml), сервис его не ждёт: порядок задаёт k8s-deploy.sh
       containers:
       - name: ser-time
         image: ser-time:latest

@@ -1,0 +1,13 @@
+# Тестовые пользователи (только локальный кластер): Job auth-seed поверх overlay local.
+# Применяет scripts/k8s-deploy.sh после завершения Job auth-migrate: в одном apply с миграциями
+# seed стартовал бы до появления таблиц (depends_on у Job нет).
+# Соседний каталог, а не local/seed: kustomize запрещает подкаталогу ссылаться на родителя (cycle detected).
+# Весь overlay local подключён ресурсом, а не скопирован: Secret'ы собирает тот же secretGenerator
+# из тех же app.env и db.env, поэтому имя с хешем совпадает с уже применённым, и kustomize сам
+# подставляет его в Job. Повторное применение остальных ресурсов ничего не меняет.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: freelance-service
+resources:
+  - ../local
+  - auth-seed.yaml

@@ -1,0 +1,153 @@
+# Миграции схемы БД: Job на каждый сервис (alembic upgrade head), аналог ser-*-migrate в compose.
+# Тот же образ и env, что у сервиса (env.py читает настройки сервиса). Выполняются один раз
+# на деплой, а не в каждой реплике. Job неизменяем (spec.template не обновить через apply),
+# поэтому деплой — через scripts/k8s-deploy.sh: удаляет старые Job по метке, применяет
+# манифесты и ждёт завершения миграций до rollout сервисов.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: auth-migrate
+  namespace: freelance-service
+  labels:
+    app.kubernetes.io/component: migration
+spec:
+  # БД может ещё подниматься: неудачные попытки повторяются с нарастающей паузой (10 с, 20 с, …)
+  backoffLimit: 6
+  template:
+    metadata:
+      labels:
+        app: auth-migrate
+        app.kubernetes.io/component: migration
+    spec:
+      restartPolicy: Never
+      containers:
+      - name: migrate
+        image: ser-auth:latest
+        command: ["alembic", "upgrade", "head"]
+        env:
+        - name: DB_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: db-credentials
+              key: AUTH_DB_PASSWORD
+        - name: DATABASE_URL
+          value: "postgresql+psycopg://auth_user:$(DB_PASSWORD)@auth-db:5432/auth_db"
+        - name: SECRET_KEY
+          valueFrom:
+            secretKeyRef:
+              name: app-secrets
+              key: SECRET_KEY
+        - name: ALGORITHM
+          valueFrom:
+            configMapKeyRef:
+              name: service-config
+              key: algorithm
+        - name: ACCESS_TOKEN_EXPIRE_MINUTES
+          valueFrom:
+            configMapKeyRef:
+              name: service-config
+              key: access-token-expire-minutes
+        resources:
+          requests:
+            memory: "128Mi"
+            cpu: "50m"
+          limits:
+            memory: "256Mi"
+            cpu: "200m"
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: task-migrate
+  namespace: freelance-service
+  labels:
+    app.kubernetes.io/component: migration
+spec:
+  backoffLimit: 6
+  template:
+    metadata:
+      labels:
+        app: task-migrate
+        app.kubernetes.io/component: migration
+    spec:
+      restartPolicy: Never
+      containers:
+      - name: migrate
+        image: ser-task:latest
+        command: ["alembic", "upgrade", "head"]
+        env:
+        - name: DB_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: db-credentials
+              key: TASK_DB_PASSWORD
+        - name: DATABASE_URL
+          value: "postgresql+psycopg://task_user:$(DB_PASSWORD)@task-db:5432/task_db"
+        - name: TIME_SERVICE_URL
+          valueFrom:
+            configMapKeyRef:
+              name: service-config
+              key: time-url
+        - name: SECRET_KEY
+          valueFrom:
+            secretKeyRef:
+              name: app-secrets
+              key: SECRET_KEY
+        - name: ALGORITHM
+          valueFrom:
+            configMapKeyRef:
+              name: service-config
+              key: algorithm
+        resources:
+          requests:
+            memory: "128Mi"
+            cpu: "50m"
+          limits:
+            memory: "256Mi"
+            cpu: "200m"
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: time-migrate
+  namespace: freelance-service
+  labels:
+    app.kubernetes.io/component: migration
+spec:
+  backoffLimit: 6
+  template:
+    metadata:
+      labels:
+        app: time-migrate
+        app.kubernetes.io/component: migration
+    spec:
+      restartPolicy: Never
+      containers:
+      - name: migrate
+        image: ser-time:latest
+        command: ["alembic", "upgrade", "head"]
+        env:
+        - name: DB_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: db-credentials
+              key: TIME_DB_PASSWORD
+        - name: DATABASE_URL
+          value: "postgresql+psycopg://time_user:$(DB_PASSWORD)@time-db:5432/time_db"
+        - name: SECRET_KEY
+          valueFrom:
+            secretKeyRef:
+              name: app-secrets
+              key: SECRET_KEY
+        - name: ALGORITHM
+          valueFrom:
+            configMapKeyRef:
+              name: service-config
+              key: algorithm
+        resources:
+          requests:
+            memory: "128Mi"
+            cpu: "50m"
+          limits:
+            memory: "256Mi"
+            cpu: "200m"
