@@ -46,6 +46,11 @@ spec:
             configMapKeyRef:
               name: service-config
               key: algorithm
+        - name: CORS_ORIGINS
+          valueFrom:
+            configMapKeyRef:
+              name: service-config
+              key: cors-origins
         livenessProbe:
           httpGet:
             path: /
@@ -79,7 +84,8 @@ spec:
     targetPort: 8000
     protocol: TCP
     name: http
-  type: LoadBalancer
+  # наружу не публикуется: вход — Gateway (entrypoint.yaml)
+  type: ClusterIP
 ---
 # Frontend
 apiVersion: apps/v1

@@ -1,0 +1,34 @@
+# Класс входа для kind: контроллер Envoy Gateway (ставит scripts/kind-up.sh), параметры прокси — EnvoyProxy ниже.
+# Поды и Service Envoy создаются в envoy-gateway-system (namespace контроллера), а не в freelance-service.
+apiVersion: gateway.networking.k8s.io/v1
+kind: GatewayClass
+metadata:
+  name: freelance
+spec:
+  controllerName: gateway.envoyproxy.io/gatewayclass-controller
+  parametersRef:
+    group: gateway.envoyproxy.io
+    kind: EnvoyProxy
+    name: kind-nodeport
+    namespace: freelance-service
+---
+# В kind нет балансировщика: сервис Envoy — NodePort с фиксированным 30080, который
+# k8s/kind-config.yaml пробрасывает на 127.0.0.1:8080 хоста. Порт 80 — порт listener'а Gateway.
+apiVersion: gateway.envoyproxy.io/v1alpha1
+kind: EnvoyProxy
+metadata:
+  name: kind-nodeport
+  namespace: freelance-service
+spec:
+  provider:
+    type: Kubernetes
+    kubernetes:
+      envoyService:
+        type: NodePort
+        patch:
+          type: StrategicMerge
+          value:
+            spec:
+              ports:
+              - port: 80
+                nodePort: 30080

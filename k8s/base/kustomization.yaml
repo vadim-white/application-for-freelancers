@@ -13,4 +13,5 @@ resources:
   - migrations.yaml
   - services.yaml
   - gateway-frontend.yaml
+  - entrypoint.yaml
   - network-policy.yaml

@@ -1,0 +1,43 @@
+# Вход в кластер через Gateway API: один адрес для браузера, /api -> ser-gateway, остальное -> фронт.
+# GatewayClass с этим именем задаёт overlay (local: Envoy Gateway, сервис Envoy — NodePort 30080 для kind).
+# Не путать с ser-gateway: это API Gateway приложения (FastAPI), а Gateway здесь — ресурс Kubernetes.
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: entry
+  namespace: freelance-service
+spec:
+  gatewayClassName: freelance
+  listeners:
+  - name: http
+    protocol: HTTP
+    port: 80
+    allowedRoutes:
+      namespaces:
+        from: Same
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: entry-routes
+  namespace: freelance-service
+spec:
+  parentRefs:
+  - name: entry
+    sectionName: http
+  rules:
+  # PathPrefix сравнивает по сегментам: /api и /api/..., но не /apix; более длинный префикс важнее "/"
+  - matches:
+    - path:
+        type: PathPrefix
+        value: /api
+    backendRefs:
+    - name: ser-gateway
+      port: 8000
+  - matches:
+    - path:
+        type: PathPrefix
+        value: /
+    backendRefs:
+    - name: ser-frontend
+      port: 8080

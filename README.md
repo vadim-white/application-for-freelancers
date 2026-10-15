@@ -37,6 +37,14 @@
 
 У каждого сервиса своя база данных, сервисы не ходят в чужие таблицы. Task Service обращается к Time Service по HTTP, когда собирает статистику.
 
+В Kubernetes вход в кластер один — Gateway API (контроллер Envoy Gateway) на `http://127.0.0.1:8080`: `/api` уходит в API Gateway, всё остальное — во фронтенд. Сервисы приложения наружу не публикуются (все `ClusterIP`):
+
+```
+   Браузер → 127.0.0.1:8080 → Envoy (Gateway "entry", HTTPRoute "entry-routes")
+                                 /api/*  → ser-gateway:8000 → auth, task, time
+                                 /*      → ser-frontend:8080 (статика; его /api/ тоже проксируется на gateway)
+```
+
 ## Стек
 
 - Python 3.14, FastAPI, SQLAlchemy 2.0, Pydantic 2, драйвер PostgreSQL psycopg 3
@@ -163,12 +171,20 @@ docker compose run --rm --no-deps --user "$(id -u):$(id -g)" \
 
 ```bash
 brew install kind                # проверено на v0.33.0
-./scripts/kind-up.sh             # кластер freelance + сборка и загрузка образов ser-*:latest
+./scripts/kind-up.sh             # кластер freelance + Envoy Gateway + сборка и загрузка образов ser-*:latest
 ./scripts/init-k8s-env.sh        # k8s/overlays/local/app.env и db.env со случайными секретами
 ./scripts/k8s-deploy.sh          # манифесты, миграции, тестовые пользователи, ожидание готовности
+open http://127.0.0.1:8080       # приложение (вход admin@example.com / password123)
 ```
 
-`kind-up.sh` создаёт кластер по [k8s/kind-config.yaml](k8s/kind-config.yaml) (один узел `kindest/node` v1.35.8, имя `freelance`), собирает образы через `docker compose build` и загружает пять образов `ser-auth`, `ser-task`, `ser-time`, `ser-gateway`, `ser-frontend` (`:latest`) в узел. Повторный запуск кластер не пересоздаёт, образы обновляет. Секреты для него не нужны. Вход в кластер появится на `http://127.0.0.1:8080` с шага 1.4.5; порт узла 30080 на него уже проброшен, но пока никто не слушает.
+`kind-up.sh` создаёт кластер по [k8s/kind-config.yaml](k8s/kind-config.yaml) (один узел `kindest/node` v1.35.8, имя `freelance`), ставит в него [Envoy Gateway](https://gateway.envoyproxy.io/) v1.9.2 и загружает в узел пять образов `ser-auth`, `ser-task`, `ser-time`, `ser-gateway`, `ser-frontend` (`:latest`), собранных через `docker compose build`. Envoy Gateway ставится из `install.yaml` релиза (`kubectl apply --server-side`), sha256 файла закреплён в скрипте. В файле CRD Gateway API v1.6.1 из того же релиза, CRD Envoy Gateway и контроллер в namespace `envoy-gateway-system`. Скрипт ждёт `Available` контроллера. Повторный запуск кластер не пересоздаёт, Envoy Gateway применяет без изменений, образы обновляет. Секреты для него не нужны.
+
+Вход в кластер — Gateway API ([k8s/base/entrypoint.yaml](k8s/base/entrypoint.yaml)): `Gateway` `entry` (listener HTTP :80) и `HTTPRoute` `entry-routes`: `/api` → `ser-gateway:8000`, `/` → `ser-frontend:8080`. Класс `freelance` задаёт overlay ([k8s/overlays/local/gatewayclass.yaml](k8s/overlays/local/gatewayclass.yaml)): `GatewayClass` контроллера Envoy Gateway и `EnvoyProxy`, у которого сервис Envoy — `NodePort` 30080. `kind-config.yaml` пробрасывает этот порт узла на `127.0.0.1:8080` хоста. Под и Service Envoy создаёт контроллер в `envoy-gateway-system`. В `freelance-service` все сервисы `ClusterIP`. Envoy нормализует путь до маршрутизации (`/api/tasks/../auth/me` → `/api/auth/me`), поэтому маршрут и авторизация gateway всегда видят один и тот же путь. Статус входа:
+
+```bash
+kubectl --context kind-freelance -n freelance-service get gateway,httproute   # PROGRAMMED True
+kubectl --context kind-freelance -n envoy-gateway-system get pods,svc         # envoy-freelance-service-entry-…, NodePort 80:30080
+```
 
 Манифесты собирает kustomize: [k8s/base](k8s/base) — без локальных допущений, [k8s/overlays/local](k8s/overlays/local) — для kind: Secret'ы через `secretGenerator` и `imagePullPolicy: Never` (образы загружены в узел через `kind load`). `app-secrets` (`SECRET_KEY`) собирается из `app.env`, `db-credentials` (три пароля баз) — из `db.env`. Имена Secret'ов получают хеш содержимого: при смене секрета перезапускаются только поды, которые на него ссылаются (смена `SECRET_KEY` базы не трогает). Без этих файлов `kubectl kustomize` падает с ошибкой «no such file». Файлы создаёт `./scripts/init-k8s-env.sh` по образцу `init-env.sh` (шаблоны — [app.env.example](k8s/overlays/local/app.env.example) и [db.env.example](k8s/overlays/local/db.env.example)): идемпотентно, значения не печатает, права 600; в git файлы не попадают, секреты кластера независимы от `.env` compose. Пароль БД применяется при создании тома: после смены нужно удалить namespace (`kubectl --context kind-freelance delete namespace freelance-service`, вместе с ним удалятся PVC).
 
@@ -177,7 +193,10 @@ brew install kind                # проверено на v0.33.0
 2. `kubectl apply -k k8s/overlays/local`;
 3. ждёт Job `auth-migrate`, `task-migrate`, `time-migrate` (`alembic upgrade head`, [k8s/base/migrations.yaml](k8s/base/migrations.yaml)); при `Failed` печатает лог Job и выходит;
 4. применяет [k8s/overlays/local-seed](k8s/overlays/local-seed) и ждёт Job `auth-seed` (`python -m app.init_users`, `SEED_TEST_USERS=true`): пользователи `admin@example.com`, `user1@example.com`, `user2@example.com`, пароль `password123`. Seed есть только в локальном кластере и идёт отдельным `apply`, потому что в одном `apply` порядка нет и он стартовал бы раньше миграций;
-5. ждёт `rollout status` баз и сервисов.
+5. ждёт `rollout status` баз и сервисов;
+6. ждёт `Programmed` у Gateway `entry` (Envoy получил маршруты, вход на `127.0.0.1:8080` работает).
+
+Перед `apply` скрипт проверяет, что в кластере есть Envoy Gateway (CRD Gateway API и контроллер), иначе просит запустить `kind-up.sh`.
 
 Повторный запуск безопасен: миграции и seed идемпотентны, пользователи не дублируются. **Голый `kubectl apply -k` поверх существующих Job не используйте:** Job неизменяем, и apply изменённого Job падает (`spec.template: … field is immutable`), а неизменённый не перезапускается, то есть миграции из нового образа не выполнятся. Посмотреть Job и их логи:
 
@@ -186,9 +205,18 @@ kubectl --context kind-freelance -n freelance-service get jobs
 kubectl --context kind-freelance -n freelance-service logs job/auth-migrate   # task-migrate, time-migrate, auth-seed
 ```
 
-Первая попытка Job миграций на чистом кластере обычно падает (`Name or service not known`: БД ещё не готова), Job повторяет её сам (`backoffLimit: 6`). Достучаться до gateway: `kubectl --context kind-freelance -n freelance-service port-forward svc/ser-gateway 18000:8000`. Сквозной прогон против кластера — `SMOKE_MODE=k8s bash docs/archive/smoke_1.2.9.sh` (112 проверок, port-forward поднимает сам).
+Первая попытка Job миграций на чистом кластере обычно падает (`Name or service not known`: БД ещё не готова), Job повторяет её сам (`backoffLimit: 6`). Сквозной прогон против кластера — `SMOKE_MODE=k8s bash docs/archive/smoke_1.2.9.sh` (114 проверок, через вход `http://127.0.0.1:8080`, port-forward не нужен).
 
-Манифесты в процессе переделки (этап 1.4). Известные сбои, которые уходят в следующих шагах: DNS в namespace закрыт NetworkPolicy (шаг 1.4.7; пока `k8s-deploy.sh` удаляет политику из кластера после каждого `apply` и пишет об этом предупреждение), `LoadBalancer` у `ser-gateway` без адреса (шаг 1.4.5). Фронтенд (nginx на 8080, `ClusterIP`) `k8s-deploy.sh` ждёт, как и остальные сервисы; до появления входа (1.4.5) открыть его можно пробросом порта: `kubectl --context kind-freelance -n freelance-service port-forward svc/ser-frontend 18080:8080` и `http://127.0.0.1:18080` (порт 8080 на хосте занят пробросом kind). Имя namespace — в [k8s/base/namespace.yaml](k8s/base/namespace.yaml). Проверять манифесты статически нужно на выводе `kubectl kustomize k8s/overlays/local`, а не на каталоге `k8s/` (там лежит `kind-config.yaml`, не манифест).
+Манифесты в процессе переделки (этап 1.4). Известный сбой, который уходит в следующем шаге: DNS в namespace закрыт NetworkPolicy (шаг 1.4.7; пока `k8s-deploy.sh` удаляет политику из кластера после каждого `apply` и пишет об этом предупреждение). Имя namespace — в [k8s/base/namespace.yaml](k8s/base/namespace.yaml).
+
+Статическая проверка — на выводе `kubectl kustomize k8s/overlays/local` (и `local-seed`), а не на каталоге `k8s/` (там лежит `kind-config.yaml`, не манифест). kubeconform (`-strict`) не знает схем CRD, поэтому четыре ресурса входа пропускаются явно (`-skip Gateway,GatewayClass,HTTPRoute,EnvoyProxy`, а не `-ignore-missing-schemas`, который скрыл бы и опечатку в `kind` любого ресурса), а проверяет их API-сервер с установленными CRD:
+
+```bash
+kubectl kustomize k8s/overlays/local | docker run --rm -i ghcr.io/yannh/kubeconform:v0.8.0 -strict -summary -skip Gateway,GatewayClass,HTTPRoute,EnvoyProxy -
+kubectl kustomize k8s/overlays/local | kubectl --context kind-freelance apply --dry-run=server -f -
+```
+
+У `GatewayClass` (кластерный ресурс) в выводе kustomize стоит `namespace: freelance-service`: kustomize не знает, что CRD кластерный. kubectl это поле у кластерных объектов отбрасывает. `httproute … configured` при каждом `apply` — пустой патч (у CRD нет strategic merge), объект не меняется (`kubectl diff` пуст).
 
 ## Конфигурация
 
@@ -204,7 +232,7 @@ kubectl --context kind-freelance -n freelance-service logs job/auth-migrate   # 
 | `SEED_TEST_USERS` | auth (`python -m app.init_users`) | `true` — команда seed создаёт тестовых пользователей, иначе пропускает их создание. Только для разработки. По умолчанию `false`; в compose задаётся только у `ser-auth-seed`: из `.env` (`true` в шаблоне) или из окружения, дефолт тоже `true` |
 | `AUTH_URL`, `TASK_URL`, `TIME_URL` | gateway | Адреса внутренних сервисов |
 | `BIND_ADDR` | compose (`ports` у frontend и gateway) | Адрес хоста, на котором публикуются 5173 и 8000. По умолчанию `127.0.0.1` (только эта машина), `0.0.0.0` — все интерфейсы |
-| `CORS_ORIGINS` | gateway | Адреса фронтенда, которым разрешены запросы из браузера, через запятую. По умолчанию `http://localhost:5173,http://127.0.0.1:5173`. Внутренние сервисы CORS не настраивают: браузер обращается только к gateway |
+| `CORS_ORIGINS` | gateway | Адреса фронтенда, которым разрешены запросы из браузера, через запятую. По умолчанию `http://localhost:5173,http://127.0.0.1:5173`. В Kubernetes — ключ `cors-origins` ConfigMap `service-config`: `http://localhost:8080,http://127.0.0.1:8080` (адрес входа; браузер ходит на один origin, значение нужно для явности и проверки preflight). Внутренние сервисы CORS не настраивают: браузер обращается только к gateway |
 | `TIME_SERVICE_URL` | task | Адрес Time Service для сбора статистики |
 | `GATEWAY_URL` | frontend (nginx, при запуске контейнера) | Адрес gateway без пути, куда nginx проксирует `/api/`. В compose — `http://ser-gateway:8000`. Имя резолвится при запросах (DNS Docker), поэтому пересоздание gateway не требует перезапуска фронтенда. В Kubernetes — ключ `gateway-url` ConfigMap `service-config`, значение `http://ser-gateway.freelance-service.svc.cluster.local:8000` (полное имя): `resolver` nginx не применяет search-домены из `/etc/resolv.conf`, и короткое `ser-gateway` даёт 502 (`could not be resolved`) |
 | `VITE_API_BASE` | frontend (на этапе сборки) | Необязательна. Пусто или не задана — запросы идут на тот же адрес по пути `/api` (в Docker их проксирует nginx, в `npm run dev` — Vite). В образе не задаётся, один образ годится для любого окружения |
@@ -255,8 +283,8 @@ curl -X POST http://localhost:8000/api/auth/login \
 ├── frontend/login_page/ клиентское приложение (Vue 3)
 ├── frontend/nginx/      шаблон конфига nginx фронтенда (статика и прокси /api)
 ├── k8s/                 Kubernetes
-│   ├── base/            манифесты без локальных допущений (kustomize)
-│   ├── overlays/local/  overlay для kind: секреты из app.env и db.env, imagePullPolicy
+│   ├── base/            манифесты без локальных допущений (kustomize); entrypoint.yaml — вход Gateway + HTTPRoute
+│   ├── overlays/local/  overlay для kind: секреты из app.env и db.env, imagePullPolicy, GatewayClass + EnvoyProxy (NodePort 30080)
 │   ├── overlays/local-seed/ overlay local + Job auth-seed (тестовые пользователи, применяет k8s-deploy.sh)
 │   └── kind-config.yaml конфиг локального кластера kind
 ├── scripts/             вспомогательные скрипты (init-env.sh — .env, init-k8s-env.sh — секреты кластера, kind-up.sh — кластер kind и образы, k8s-deploy.sh — деплой в кластер)
@@ -283,7 +311,7 @@ curl -X POST http://localhost:8000/api/auth/login \
 - Проекты хранятся только в task-service: дубль проектов в time-service (`/api/time/projects`) удалён, фронтенд создаёт проект одним запросом. `user_id` записи времени обязателен (NOT NULL), фронтенд его не отправляет: сервер берёт `user_id` из токена
 - Автотесты (pytest) есть у всех бэкенд-сервисов (gateway 45, auth 34, task 51, time 25), CI нет.
 - Фронтенд в Docker собирается multi-stage (`npm ci`, `vite build`) и раздаётся nginx без root (`nginx-unprivileged`, слушает 8080): долгий кэш для `/assets/`, `index.html` без кэша, gzip, SPA-роуты отдают `index.html`. Запросы `/api/` nginx проксирует на gateway, поэтому браузер ходит на один адрес и CORS для фронтенда не нужен. В Kubernetes фронтенд описан под этот образ: порт 8080, `GATEWAY_URL` из ConfigMap, startup/liveness/readiness `GET /`, Service `ClusterIP`
-- В Kubernetes нет Ingress и автомасштабирования, у всех сервисов одна реплика. Локальный кластер kind (`./scripts/kind-up.sh`) готов, манифесты собираются kustomize (`base` + `overlays/local`), деплой с миграциями и seed — `./scripts/k8s-deploy.sh`; остальные сбои (NetworkPolicy, `LoadBalancer` у gateway) описаны в разделе «Kubernetes» (этап 1.4 в процессе). Базы в кластере проверяются `pg_isready -U … -d …`, `PGDATA` лежит в подпапке тома
+- В Kubernetes вход один — Gateway API (Envoy Gateway v1.9.2) на `http://127.0.0.1:8080`: `/api` → gateway, остальное → фронтенд; `LoadBalancer` и `NodePort` в namespace приложения нет, все сервисы `ClusterIP`. Автомасштабирования нет, у всех сервисов одна реплика. Локальный кластер kind (`./scripts/kind-up.sh`, ставит и Envoy Gateway) готов, манифесты собираются kustomize (`base` + `overlays/local`), деплой с миграциями и seed — `./scripts/k8s-deploy.sh`; оставшийся сбой (NetworkPolicy закрывает DNS) описан в разделе «Kubernetes» (этап 1.4 в процессе). Базы в кластере проверяются `pg_isready -U … -d …`, `PGDATA` лежит в подпапке тома
 - Нет пагинации, фильтрации и сортировки задач
 - В Docker Compose наружу опубликованы только frontend (5173) и gateway (8000), по умолчанию на `127.0.0.1` (`BIND_ADDR`); auth, task, time и базы доступны только внутри сети compose
 - Секреты и пароли баз в Docker Compose генерирует `scripts/init-env.sh` (в `.env`, не в git); в Kubernetes секреты лежат в `k8s/overlays/local/app.env` и `db.env` (генерирует `scripts/init-k8s-env.sh`, не в git), пароли в манифестах не зашиты
@@ -293,7 +321,7 @@ curl -X POST http://localhost:8000/api/auth/login \
 - Переход на uv (`pyproject.toml` + `uv.lock`)
 - Серверное состояние таймера: запуск, пауза и остановка на бэкенде, защита от параллельных таймеров
 - CI: тесты, линтер, сборка фронтенда, сквозной smoke-прогон через gateway
-- Kubernetes: Ingress, HPA, health и readiness probes
+- Kubernetes: securityContext и Pod Security, NetworkPolicy, две реплики, HPA; readiness на `/ready` с проверкой БД
 - Отчёты по времени и экспорт
 - Лимиты запросов, логирование, метрики
 

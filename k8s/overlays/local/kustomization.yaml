@@ -6,6 +6,8 @@ kind: Kustomization
 namespace: freelance-service
 resources:
   - ../../base
+  # вход: GatewayClass "freelance" (Envoy Gateway) + EnvoyProxy с NodePort 30080 под kind-config.yaml
+  - gatewayclass.yaml
 # Два файла, а не один: envs переносит в Secret все ключи файла. Раздельно — в каждом Secret только свои
 # ключи, и смена SECRET_KEY меняет хеш только у app-secrets (базы не перезапускаются).
 secretGenerator:

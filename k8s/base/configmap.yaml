@@ -9,5 +9,7 @@ data:
   time-url: "http://ser-time:8003"
   # фронт (nginx): полное имя, resolver nginx не применяет search-домены из resolv.conf
   gateway-url: "http://ser-gateway.freelance-service.svc.cluster.local:8000"
+  # браузер ходит на один адрес входа (Gateway), CORS ему не нужен; значение — для явности и проверки preflight
+  cors-origins: "http://localhost:8080,http://127.0.0.1:8080"
   algorithm: "HS256"
   access-token-expire-minutes: "15"
