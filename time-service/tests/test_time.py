@@ -6,6 +6,9 @@ from datetime import timedelta
 
 import pytest
 
+from app import api, crud, schemas
+from app.db import SessionLocal
+
 from .conftest import auth, make_token
 
 SERVICE_ROOT = pathlib.Path(__file__).resolve().parent.parent
@@ -107,6 +110,41 @@ def test_statistics_admin_only(client, user1, admin):
     assert r.status_code == 200
     [row] = r.json()
     assert (row["user_id"], row["task_count"], row["avg_minutes"]) == (1, 2, 15)
+
+
+def test_create_maps_crud_value_error_to_400(client, user1, monkeypatch):
+    def fail(db, entry_in, user_id):
+        raise ValueError("Invalid minutes value; must be > 0")
+
+    monkeypatch.setattr(api.crud, "create_time_entry", fail)
+    r = client.post("/api/time/time-entries", json={"task_id": 1, "minutes": 5}, headers=user1)
+    assert r.status_code == 400
+    assert r.json() == {"detail": "Invalid minutes value; must be > 0"}
+
+
+@pytest.mark.parametrize("minutes", [0, -5, None])
+def test_crud_rejects_non_positive_minutes(minutes):
+    # схема не пропускает такие значения до crud: проверяем вторую линию защиты напрямую
+    entry = schemas.TimeEntryCreate.model_construct(task_id=1, minutes=minutes)
+    with SessionLocal() as db, pytest.raises(ValueError, match="must be > 0"):
+        crud.create_time_entry(db, entry, user_id=1)
+
+
+def test_statistics_db_error_returns_500(client, admin):
+    class BrokenSession:
+        def query(self, *args):
+            raise RuntimeError("db down")
+
+        def close(self):
+            pass
+
+    client.app.dependency_overrides[api.get_db] = BrokenSession
+    try:
+        r = client.get("/api/time/statistics/users", headers=admin)
+    finally:
+        client.app.dependency_overrides.pop(api.get_db)
+    assert r.status_code == 500
+    assert r.json() == {"detail": "Failed to get statistics"}
 
 
 # --- Проекты удалены из time (проекты живут в task-service) ---

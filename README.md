@@ -136,7 +136,7 @@ npm run dev
 
 ### Тесты
 
-Тесты есть у gateway, auth-service, task-service и time-service. Им не нужны запущенные сервисы: внешние HTTP-вызовы (gateway → сервисы, task → time) подменяются в тестах, базы — временная SQLite. Запуск в папке сервиса (`<service>` — `gateway-service`, `auth-service`, `task-service` или `time-service`):
+Тесты есть у gateway, auth-service, task-service и time-service. Им не нужны запущенные сервисы: внешние HTTP-вызовы (gateway → сервисы, task → time) подменяются в тестах, базы — временная SQLite (тест миграций дополнительно идёт на PostgreSQL, см. ниже). Запуск в папке сервиса (`<service>` — `gateway-service`, `auth-service`, `task-service` или `time-service`):
 
 ```bash
 cd <service>
@@ -144,6 +144,25 @@ uv run pytest -q
 ```
 
 uv сам поставит Python 3.14 и зависимости из `uv.lock` вместе с dev-группой (`pytest`, `httpx2` — клиент для `TestClient` Starlette, `pytest-cov`). Покрытие: `uv run pytest --cov=app`.
+
+#### Тест миграций на PostgreSQL
+
+Тест миграций (`tests/test_migrations.py` в auth, task и time: `upgrade head` → `alembic check` → `downgrade base` → `upgrade head`) идёт на двух базах: SQLite (всегда) и PostgreSQL 15 (если задана `TEST_POSTGRES_URL`). Без переменной тесты PostgreSQL помечаются `skipped` с причиной. На PostgreSQL проверяется то, чего не видно на SQLite: после `downgrade base` не остаётся ни таблиц, ни типов enum (`downgrade` вручную удаляет enum, PostgreSQL сам этого не делает), а в task внешний ключ `tasks.project_id` действует: задача с несуществующим проектом даёт `IntegrityError`.
+
+Каждый тест работает в собственной схеме (`CREATE SCHEMA mig_…` / `DROP SCHEMA … CASCADE` после теста), поэтому база может быть общей для трёх сервисов; важно только, чтобы это была тестовая база, а не база стека. Локально:
+
+```bash
+docker run --rm -d --name pg-test -p 127.0.0.1:55432:5432 -e POSTGRES_PASSWORD=test postgres:15-alpine
+cd task-service                          # или auth-service, time-service
+TEST_POSTGRES_URL=postgresql+psycopg://postgres:test@127.0.0.1:55432/postgres uv run pytest -q -rs
+docker stop pg-test
+```
+
+Тесты в контейнере (рецепт Docker выше) подключаются к PostgreSQL по имени в общей сети: `docker network create t15`, `docker run -d --rm --network t15 --name pg -e POSTGRES_PASSWORD=test postgres:15-alpine`, затем в команду тестов добавить `--network t15 -e TEST_POSTGRES_URL=postgresql+psycopg://postgres:test@pg:5432/postgres`. После проверки: `docker stop pg && docker network rm t15`.
+
+#### Покрытие
+
+`uv run pytest --cov=app --cov-report=term-missing` печатает покрытие и непокрытые строки. Порог — `[tool.coverage.report] fail_under` в `pyproject.toml` сервиса (gateway 98 %, auth 91 %, task 95 %, time 97 %, чуть ниже фактического 100 / 93 / 97 / 99 %); он срабатывает только при запуске с `--cov`. В `addopts` `--cov` не добавлен: обычный `uv run pytest` и прогон одного файла от порога не зависят. Порог защищает от падения покрытия, гнаться за 100 % не нужно.
 
 Без uv на машине — в Docker, в официальном образе uv с Python 3.14 на том же Debian, что и `python:3.14-slim` у сервисов:
 
@@ -301,7 +320,7 @@ curl -X POST http://localhost:8000/api/auth/login \
 - Python 3.14 во всех образах. В Docker Compose и Kubernetes сервисы работают с PostgreSQL через psycopg 3 (`postgresql+psycopg://`). Зависимости бэкенда ведёт uv: прямые закреплены точными версиями (`==`) в `pyproject.toml` сервиса, все вместе с транзитивными — в `uv.lock` (версии и хеши), общие пакеты одинаковы во всех сервисах. Образ ставит их `uv sync --locked` (сборка падает, если `uv.lock` не совпадает с `pyproject.toml`) в `/opt/venv`; сам uv в итоговый образ не попадает. `pytest`, `httpx2` и `pytest-cov` — в dev-группе, в образ не ставятся
 - Схема БД auth-service, task-service и time-service управляется миграциями Alembic (`<service>/migrations/`): в Docker Compose их применяют сервисы `ser-auth-migrate`, `ser-task-migrate` и `ser-time-migrate` до старта своего сервиса, в Kubernetes — Job `auth-migrate`, `task-migrate`, `time-migrate` (один раз на деплой, порядок задаёт `scripts/k8s-deploy.sh`). Тест в каждом из них проверяет, что миграции совпадают с моделями
 - Проекты хранятся только в task-service: дубль проектов в time-service (`/api/time/projects`) удалён, фронтенд создаёт проект одним запросом. `user_id` записи времени обязателен (NOT NULL), фронтенд его не отправляет: сервер берёт `user_id` из токена
-- Автотесты (pytest) есть у всех бэкенд-сервисов (gateway 45, auth 34, task 51, time 25), CI нет.
+- Автотесты (pytest) есть у всех бэкенд-сервисов (с PostgreSQL: gateway 51, auth 36, task 54, time 32; без `TEST_POSTGRES_URL` тесты миграций на PostgreSQL пропускаются — 51 / 34 + 2 skipped / 51 + 3 skipped / 30 + 2 skipped), покрытие 100 / 93 / 97 / 99 % с порогом в `pyproject.toml`, CI нет.
 - Фронтенд в Docker собирается multi-stage (`npm ci`, `vite build`) и раздаётся nginx без root (`nginx-unprivileged`, слушает 8080): долгий кэш для `/assets/`, `index.html` без кэша, gzip, SPA-роуты отдают `index.html`. Запросы `/api/` nginx проксирует на gateway, поэтому браузер ходит на один адрес и CORS для фронтенда не нужен. В Kubernetes фронтенд описан под этот образ: порт 8080, `GATEWAY_URL` из ConfigMap, startup/liveness/readiness `GET /`, Service `ClusterIP`
 - В Kubernetes вход один — Gateway API (Envoy Gateway v1.9.2) на `http://127.0.0.1:8080`: `/api` → gateway, остальное → фронтенд; `LoadBalancer` и `NodePort` в namespace приложения нет, все сервисы `ClusterIP`. Автомасштабирования нет: у stateless-сервисов (auth, task, time, gateway, frontend) по две реплики, базы — по одной. При `rollout restart` под нагрузкой возможны единичные 502/503 в момент остановки старого пода (graceful shutdown — в планах). Кластер — только локальный kind (`./scripts/kind-up.sh`, ставит и Envoy Gateway), манифесты собираются kustomize (`base` + `overlays/local`), деплой с миграциями и seed — `./scripts/k8s-deploy.sh`; проверено с нуля (инструкция и ограничения — [k8s/README.md](k8s/README.md)). Облачного overlay (реестр образов, TLS, управляемый Postgres) нет. Базы в кластере проверяются `pg_isready -U … -d …`, `PGDATA` лежит в подпапке тома. Readiness сервисов — публичный `GET /`, без проверки БД
 - В Kubernetes сетевые политики по умолчанию запрещают всё: открыты только DNS, вход от Envoy к фронту и gateway, фронт → gateway, gateway → auth, task, time, task → time и каждый сервис со своими Job → своя база. Сервис не достанет до чужой базы, базы и сервисы не выходят в интернет ([k8s/README.md](k8s/README.md#сетевые-политики))
