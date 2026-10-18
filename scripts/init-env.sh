@@ -48,8 +48,9 @@ else
 fi
 
 added=""
-# ключи шаблона: строки вида KEY=value (комментарии и пустые пропускаем)
-for key in $(grep -E '^[A-Za-z_][A-Za-z0-9_]*=' "$EXAMPLE" | cut -d= -f1); do
+# ключи шаблона: строки вида KEY=value (комментарии и пустые пропускаем).
+# Цикл читает из подстановки процесса, а не из pipe: так он идёт в этом же shell и $added сохраняется
+while read -r key; do
   if is_secret "$key"; then
     if has_key "$key" && [ -n "$(current_value "$key")" ]; then
       continue
@@ -67,7 +68,7 @@ for key in $(grep -E '^[A-Za-z_][A-Za-z0-9_]*=' "$EXAMPLE" | cut -d= -f1); do
     grep "^$key=" "$EXAMPLE" | head -n 1 >> "$ENV_FILE"
   fi
   added="$added $key"
-done
+done < <(grep -E '^[A-Za-z_][A-Za-z0-9_]*=' "$EXAMPLE" | cut -d= -f1)
 
 if [ "$created" = 1 ]; then
   echo ".env создан. Ключи:$added"

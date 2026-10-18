@@ -30,9 +30,10 @@ kubectl config get-contexts -o name 2>/dev/null | grep -qx "$CONTEXT" \
   || die "нет контекста $CONTEXT — создайте кластер: ./scripts/kind-up.sh"
 k get --raw /readyz >/dev/null 2>&1 || die "кластер $CONTEXT не отвечает (запущен ли Docker? ./scripts/kind-up.sh)"
 # Gateway и HTTPRoute — CRD, их ставит Envoy Gateway в kind-up.sh; без них apply упадёт посередине
-k get crd gateways.gateway.networking.k8s.io >/dev/null 2>&1 \
-  && k -n envoy-gateway-system get deployment envoy-gateway >/dev/null 2>&1 \
-  || die "в кластере нет Envoy Gateway — выполните ./scripts/kind-up.sh"
+if ! k get crd gateways.gateway.networking.k8s.io >/dev/null 2>&1 \
+  || ! k -n envoy-gateway-system get deployment envoy-gateway >/dev/null 2>&1; then
+  die "в кластере нет Envoy Gateway — выполните ./scripts/kind-up.sh"
+fi
 for f in app.env db.env; do
   [ -f "$OVERLAY/$f" ] || die "нет k8s/overlays/local/$f — создайте секреты: ./scripts/init-k8s-env.sh"
 done

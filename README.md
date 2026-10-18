@@ -1,5 +1,7 @@
 # Freelance Time Tracker
 
+[![CI](https://github.com/vadim-white/application-for-freelancers/actions/workflows/ci.yml/badge.svg)](https://github.com/vadim-white/application-for-freelancers/actions/workflows/ci.yml)
+
 Трекер задач и рабочего времени на микросервисной архитектуре. Бэкенд написан на FastAPI, фронтенд на Vue 3. Проект задуман как полноценная open-source альтернатива готовым решениям на Django: с раздельными сервисами, единой точкой входа и деплоем в контейнерах и Kubernetes.
 
 Проект находится в активной разработке. Раздел [Текущее состояние](#текущее-состояние) описывает, что уже работает, а что ещё нет.
@@ -225,7 +227,15 @@ uvx ruff@0.17.1 format .             # отформатировать
 
 Отключены `B008` (`Depends()` / `Query()` в значениях по умолчанию — обычный приём FastAPI) и `UP042` (`class X(str, Enum)` → `StrEnum` меняет `str()` у значений). В `tests/conftest.py` импорты приложения стоят после `os.environ[...] = …`: config и engine читают окружение при импорте. Порядок этих строк менять нельзя, а `E402` такие присваивания нарушением не считает. `init_db.py` в проверку не входит. У `tests/e2e/` свой `[tool.ruff]` в `pyproject.toml`: правила из корневого `ruff.toml`, но `target-version = "py312"`. e2e работает на Python 3.12 из образа Playwright, а с py314 `ruff format` переписывает `except (A, B):` в синтаксис 3.14 без скобок.
 
-Массовое переформатирование сделано отдельным коммитом. Чтобы `git blame` его пропускал, хеш коммита записывается в `.git-blame-ignore-revs`, а в своей копии репозитория один раз выполняется `git config blame.ignoreRevsFile .git-blame-ignore-revs`. Файл появится вместе с CI. Пока его нет, настройку не включать: с отсутствующим файлом `git blame` падает с ошибкой `could not open object name list`.
+Массовое переформатирование сделано отдельным коммитом, его хеш записан в [.git-blame-ignore-revs](.git-blame-ignore-revs). GitHub пропускает такие коммиты в blame сам, локально нужно один раз выполнить в своей копии репозитория:
+
+```bash
+git config blame.ignoreRevsFile .git-blame-ignore-revs
+```
+
+Если файла нет (например, в старой ветке до шага 1.5.7), `git blame` с этой настройкой падает с ошибкой `could not open object name list`.
+
+Shell-скрипты в `scripts/` проверяет [shellcheck](https://www.shellcheck.net/) v0.11.0 (в CI, замечаний 0): `docker run --rm -v "$PWD":/mnt:ro -w /mnt koalaman/shellcheck:v0.11.0 scripts/*.sh`. `tests/smoke.sh` пока не проверяется: там много замечаний о кавычках, их исправление запланировано вместе с укреплением smoke.
 
 ### Миграции
 
@@ -267,6 +277,28 @@ open http://127.0.0.1:8080       # приложение (вход admin@example.
 - сквозной прогон против кластера — `SMOKE_MODE=k8s bash tests/smoke.sh` (114 проверок).
 
 Удалить кластер: `kind delete cluster --name freelance`.
+
+### CI
+
+GitHub Actions, workflow [.github/workflows/ci.yml](.github/workflows/ci.yml). Запускается на каждый push в любую ветку, на pull request и вручную (Actions → CI → Run workflow). Новый push в ту же ветку отменяет устаревший прогон (`concurrency`). У каждого job есть `timeout-minutes`, права токена — только `contents: read`. Jobs идут параллельно:
+
+| Job | Что проверяет |
+|---|---|
+| `lint` | `ruff check` и `ruff format --check` (0.17.1), shellcheck `scripts/*.sh`, [actionlint](https://github.com/rhysd/actionlint) по workflow (и shellcheck внутри `run:`), [gitleaks](https://github.com/gitleaks/gitleaks) по всей истории git (найденное печатается скрытым, `--redact`) |
+| `python` (×4: auth, task, time, gateway) | `uv sync --locked`, `uv run pytest --cov=app`: порог покрытия из `pyproject.toml`, тест миграций на PostgreSQL 15 (service container, `TEST_POSTGRES_URL`). Пропущенный тест роняет job: значит, база не подключилась |
+| `frontend` | Node из `.nvmrc` (24), `npm ci`, `npm run typecheck`, `npm run build` |
+| `static` | `docker compose config --quiet` на `.env` от `init-env.sh`, kubeconform v0.8.0 по выводу `kubectl kustomize` обоих overlay (как в [k8s/README.md](k8s/README.md#диагностика)) |
+| `compose` | с чистого раннера: `init-env.sh` → `docker compose up --build -d --wait` → smoke (116) → e2e (`http://127.0.0.1:5173`), в конце `down -v` |
+| `kind` | `kind-up.sh` → `init-k8s-env.sh` → `k8s-deploy.sh` → smoke k8s (114) → e2e через вход (`http://127.0.0.1:8080`) → `kubectl apply --dry-run=server` обоих overlay |
+
+Где смотреть: вкладка **Actions** репозитория, workflow **CI**, бейдж в начале README показывает статус последнего прогона. Если падают compose или kind, отдельный шаг «диагностика» печатает состояние: для compose — `docker compose ps -a` и последние строки логов, для kind — поды и Job, события, `describe gateway entry`, логи подов (и прошлых контейнеров) и контроллера Envoy Gateway. Скриншоты и trace упавших e2e-тестов приходят артефактом прогона (`e2e-compose`, `e2e-kind`, хранятся 7 дней). Повторить job локально можно теми же командами, что в разделах «Тесты», «Линтер» и в [k8s/README.md](k8s/README.md).
+
+Секреты в CI не хранятся: `init-env.sh` и `init-k8s-env.sh` генерируют их заново в каждом прогоне. Сразу после этого workflow регистрирует значения (для k8s — и их base64) через `::add-mask::`, и если значение где-то всплывёт, GitHub заменит его в логе на `***`. Маскирование — только страховка: `docker compose config` запускается только с `--quiet` (без него печатает пароли), вывод `kubectl kustomize` (Secret'ы в base64) идёт только в pipe, `set -x` в workflow и скриптах не включать.
+
+Версии закреплены так же, как локально:
+- actions — полным SHA коммита с версией в комментарии (`actions/checkout@3d3c42e… # v7.0.1`): тег можно перевесить на другой код, SHA — нет. При обновлении берётся SHA из тега релиза, комментарий меняется вместе с ним. actionlint не проверяет входы actions, закреплённых по SHA, поэтому входы сверяются с `action.yml` этой версии вручную;
+- инструменты — образы по digest (shellcheck, actionlint, gitleaks, kubeconform) и бинарники с проверкой sha256: uv 0.13.1 (`checksum` у setup-uv), kubectl v1.35.9 (на раннере kubectl 1.37, а сервер kind — 1.35, это больше допустимой разницы в одну минорную версию). У kind проверяется версия на раннере (v0.33.0): если образ раннера её поменяет, job упадёт с понятной ошибкой;
+- PostgreSQL в job `python` — `postgres:15-alpine`, тот же тег, что в compose и манифестах.
 
 ## Конфигурация
 
@@ -342,7 +374,9 @@ curl -X POST http://localhost:8000/api/auth/login \
 │   ├── smoke.sh         curl-прогон через gateway, режимы compose и k8s
 │   └── e2e/             e2e в браузере (pytest-playwright): авто-refresh, «только свои»; run.sh — запуск в Docker
 ├── scripts/             вспомогательные скрипты (init-env.sh — .env, init-k8s-env.sh — секреты кластера, kind-up.sh — кластер kind и образы, k8s-deploy.sh — деплой в кластер)
+├── .github/workflows/   CI (GitHub Actions): ci.yml
 ├── .env.example         шаблон общих переменных для Docker Compose
+├── .git-blame-ignore-revs коммиты форматирования, которые пропускает git blame
 ├── ruff.toml            настройки линтера и форматтера Python (ruff)
 └── docker-compose.yml
 ```
@@ -365,7 +399,7 @@ curl -X POST http://localhost:8000/api/auth/login \
 - Python 3.14 во всех образах. В Docker Compose и Kubernetes сервисы работают с PostgreSQL через psycopg 3 (`postgresql+psycopg://`). Зависимости бэкенда ведёт uv: прямые закреплены точными версиями (`==`) в `pyproject.toml` сервиса, все вместе с транзитивными — в `uv.lock` (версии и хеши), общие пакеты одинаковы во всех сервисах. Образ ставит их `uv sync --locked` (сборка падает, если `uv.lock` не совпадает с `pyproject.toml`) в `/opt/venv`; сам uv в итоговый образ не попадает. `pytest`, `httpx2` и `pytest-cov` — в dev-группе, в образ не ставятся
 - Схема БД auth-service, task-service и time-service управляется миграциями Alembic (`<service>/migrations/`): в Docker Compose их применяют сервисы `ser-auth-migrate`, `ser-task-migrate` и `ser-time-migrate` до старта своего сервиса, в Kubernetes — Job `auth-migrate`, `task-migrate`, `time-migrate` (один раз на деплой, порядок задаёт `scripts/k8s-deploy.sh`). Тест в каждом из них проверяет, что миграции совпадают с моделями
 - Проекты хранятся только в task-service: дубль проектов в time-service (`/api/time/projects`) удалён, фронтенд создаёт проект одним запросом. `user_id` записи времени обязателен (NOT NULL), фронтенд его не отправляет: сервер берёт `user_id` из токена
-- Автотесты (pytest) есть у всех бэкенд-сервисов (с PostgreSQL: gateway 51, auth 36, task 54, time 32; без `TEST_POSTGRES_URL` тесты миграций на PostgreSQL пропускаются — 51 / 34 + 2 skipped / 51 + 3 skipped / 30 + 2 skipped), покрытие 100 / 93 / 97 / 99 % с порогом в `pyproject.toml`. Python-код проверяет ruff (`ruff.toml`, см. «Линтер»), типы фронтенда — `npm run typecheck` (vue-tsc, 0 ошибок). Сквозные проверки: smoke (`tests/smoke.sh`, compose 116, k8s 114) и e2e в браузере (`tests/e2e/`, 3 теста: авто-refresh, неудачный refresh, «только свои»). CI нет.
+- Автотесты (pytest) есть у всех бэкенд-сервисов (с PostgreSQL: gateway 51, auth 36, task 54, time 32; без `TEST_POSTGRES_URL` тесты миграций на PostgreSQL пропускаются — 51 / 34 + 2 skipped / 51 + 3 skipped / 30 + 2 skipped), покрытие 100 / 93 / 97 / 99 % с порогом в `pyproject.toml`. Python-код проверяет ruff (`ruff.toml`, см. «Линтер»), типы фронтенда — `npm run typecheck` (vue-tsc, 0 ошибок). Сквозные проверки: smoke (`tests/smoke.sh`, compose 116, k8s 114) и e2e в браузере (`tests/e2e/`, 3 теста: авто-refresh, неудачный refresh, «только свои»). Всё это, а также shellcheck, gitleaks, kubeconform и сквозные прогоны в compose и kind с нуля, выполняет CI (GitHub Actions) на каждый push и pull request (см. «CI»)
 - Фронтенд в Docker собирается multi-stage на Node 24 (`npm ci`, `vite build`) и раздаётся nginx без root (`nginx-unprivileged`, слушает 8080): долгий кэш для `/assets/`, `index.html` без кэша, gzip, SPA-роуты отдают `index.html`. Запросы `/api/` nginx проксирует на gateway, поэтому браузер ходит на один адрес и CORS для фронтенда не нужен. В Kubernetes фронтенд описан под этот образ: порт 8080, `GATEWAY_URL` из ConfigMap, startup/liveness/readiness `GET /`, Service `ClusterIP`
 - В Kubernetes вход один — Gateway API (Envoy Gateway v1.9.2) на `http://127.0.0.1:8080`: `/api` → gateway, остальное → фронтенд; `LoadBalancer` и `NodePort` в namespace приложения нет, все сервисы `ClusterIP`. Автомасштабирования нет: у stateless-сервисов (auth, task, time, gateway, frontend) по две реплики, базы — по одной. При `rollout restart` под нагрузкой возможны единичные 502/503 в момент остановки старого пода (graceful shutdown — в планах). Кластер — только локальный kind (`./scripts/kind-up.sh`, ставит и Envoy Gateway), манифесты собираются kustomize (`base` + `overlays/local`), деплой с миграциями и seed — `./scripts/k8s-deploy.sh`; проверено с нуля (инструкция и ограничения — [k8s/README.md](k8s/README.md)). Облачного overlay (реестр образов, TLS, управляемый Postgres) нет. Базы в кластере проверяются `pg_isready -U … -d …`, `PGDATA` лежит в подпапке тома. Readiness сервисов — публичный `GET /`, без проверки БД
 - В Kubernetes сетевые политики по умолчанию запрещают всё: открыты только DNS, вход от Envoy к фронту и gateway, фронт → gateway, gateway → auth, task, time, task → time и каждый сервис со своими Job → своя база. Сервис не достанет до чужой базы, базы и сервисы не выходят в интернет ([k8s/README.md](k8s/README.md#сетевые-политики))
@@ -376,8 +410,7 @@ curl -X POST http://localhost:8000/api/auth/login \
 ## Планы
 
 - Серверное состояние таймера: запуск, пауза и остановка на бэкенде, защита от параллельных таймеров
-- CI: тесты, линтер, сборка фронтенда, сквозной smoke-прогон через gateway и e2e в браузере
-- Kubernetes: graceful shutdown (`preStop`) для rollout без 502/503; readiness на `/ready` с проверкой БД и ревизии схемы; кластер kind в CI; позже — облачный overlay и HPA
+- Kubernetes: graceful shutdown (`preStop`) для rollout без 502/503; readiness на `/ready` с проверкой БД и ревизии схемы; позже — облачный overlay и HPA
 - Отчёты по времени и экспорт
 - Лимиты запросов, логирование, метрики
 

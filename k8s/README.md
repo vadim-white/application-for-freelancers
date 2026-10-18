@@ -11,7 +11,7 @@ Docker Compose и кластер независимы: у них разные п
 | Docker (Docker Desktop) | 28.5, Compose 2.40 | узел kind — контейнер, образы собирает `docker compose build` |
 | Память Docker | 4 ГБ (3,8 ГиБ доступно) | узел kind с приложением занимает 2,1–2,5 ГиБ, compose рядом — ~0,4 ГиБ |
 | kind | v0.33.0 (`brew install kind`) | создание кластера |
-| kubectl | 1.34.1 (kustomize 5.7.1) | версия сервера 1.35, в пределах ±1 минорной |
+| kubectl | 1.34.1 (kustomize 5.7.1); в CI — v1.35.9 | версия сервера 1.35, в пределах ±1 минорной |
 | curl | любая | `kind-up.sh` скачивает `install.yaml` Envoy Gateway |
 | python3 или openssl | любая | `init-k8s-env.sh` генерирует секреты |
 | bash | 3.2+ (подходит системный macOS) | скрипты |
@@ -41,7 +41,7 @@ open http://127.0.0.1:8080
 
 С нуля на Docker Desktop (4 ГБ, 8 CPU) `kind-up.sh` занимает ~1,5 минуты (дольше при первом скачивании образов), `k8s-deploy.sh` — 60–75 с. Каждый скрипт завершается с кодом ≠ 0 при любом сбое.
 
-**`scripts/kind-up.sh`** создаёт кластер `freelance` по [kind-config.yaml](kind-config.yaml) (один узел, контекст kubectl — `kind-freelance`). Затем ставит Envoy Gateway v1.9.2 (`kubectl apply --server-side`; в `install.yaml` есть CRD Gateway API, CRD Envoy Gateway и контроллер в namespace `envoy-gateway-system`) и ждёт `Available` контроллера. После этого собирает пять образов (`ser-auth`, `ser-task`, `ser-time`, `ser-gateway`, `ser-frontend`) через `docker compose build` и загружает их в узел (`kind load docker-image`). Секреты и `.env` ему не нужны. Повторный запуск кластер не пересоздаёт, Envoy Gateway применяет без изменений, образы пересобирает и загружает заново. После изменения кода запустите `kind-up.sh`, затем `k8s-deploy.sh`.
+**`scripts/kind-up.sh`** создаёт кластер `freelance` по [kind-config.yaml](kind-config.yaml) (один узел, контекст kubectl — `kind-freelance`). Затем ставит Envoy Gateway v1.9.2 (`kubectl apply --server-side`; в `install.yaml` есть CRD Gateway API, CRD Envoy Gateway и контроллер в namespace `envoy-gateway-system`) и ждёт `Available` контроллера. После этого собирает пять образов (`ser-auth`, `ser-task`, `ser-time`, `ser-gateway`, `ser-frontend`) через `docker compose build` и загружает их в узел (`kind load docker-image`). Секреты и `.env` ему не нужны. Повторный запуск кластер не пересоздаёт, Envoy Gateway применяет без изменений, образы пересобирает и загружает заново. После изменения кода запустите `kind-up.sh`, затем `k8s-deploy.sh` и `rollout restart` изменённых Deployment (см. «Известные ограничения»).
 
 **`scripts/init-k8s-env.sh`** создаёт `k8s/overlays/local/app.env` (`SECRET_KEY`) и `db.env` (три пароля баз) по шаблонам [app.env.example](overlays/local/app.env.example) и [db.env.example](overlays/local/db.env.example) со случайными значениями, права 600. Повторный запуск дописывает только отсутствующие или пустые ключи, значения не печатает. Файлы в `.gitignore`, с корневым `.env` compose они не связаны.
 
@@ -209,6 +209,20 @@ kind delete cluster --name freelance                                  # весь
 
 Файлы секретов `k8s/overlays/local/app.env` и `db.env` при этом остаются. Чтобы сгенерировать новые, удалите их и запустите `./scripts/init-k8s-env.sh`. Если namespace уже был, удалите его: пароль БД применяется только при создании тома.
 
+## kind в CI
+
+Job `kind` в [.github/workflows/ci.yml](../.github/workflows/ci.yml) (раздел «CI» корневого README) на каждом прогоне поднимает кластер с нуля на раннере `ubuntu-24.04` теми же скриптами, что и локально:
+
+1. kubectl v1.35.9 скачивается с `dl.k8s.io` со сверкой sha256, закреплённой в workflow. Свой kubectl раннера (1.37) к серверу 1.35 не подходит: разница больше одной минорной версии. kind берётся с раннера, но его версия должна быть v0.33.0, иначе job падает;
+2. `./scripts/kind-up.sh` — кластер, Envoy Gateway (sha256 `install.yaml`), сборка и загрузка образов;
+3. `./scripts/init-k8s-env.sh` — новые секреты; workflow сразу маскирует их значения и base64 (`::add-mask::`);
+4. `./scripts/k8s-deploy.sh`, затем `SMOKE_MODE=k8s bash tests/smoke.sh` (114) и e2e через вход `http://127.0.0.1:8080` (на Linux `run.sh` работает с `--network host`);
+5. `kubectl kustomize … | kubectl apply --dry-run=server -f -` для `local` и `local-seed`: в лог попадают только строки `unchanged` / `configured`, содержимое манифестов — нет.
+
+Если что-то упало, шаг «диагностика» печатает `get pods,jobs -o wide`, события, `describe gateway entry`, поды и логи контроллера Envoy Gateway, логи подов приложения (`--all-containers`, хвост, и `--previous`, если контейнер перезапускался). Скриншоты и trace e2e — артефакт `e2e-kind`. Кластер каждый раз новый, поэтому ограничение «`k8s-deploy.sh` не перекатывает поды при новом образе с тем же тегом» (см. ниже) в CI не мешает.
+
+Скрипты в CI запускаются без изменений. В шаге 1.5.7 в них поправлено только то, на что указал shellcheck, поведение прежнее (проверено на копиях в macOS bash 3.2 и Linux bash 5.2): в `init-env.sh` и `init-k8s-env.sh` цикл по ключам шаблона — `while read` из подстановки процесса вместо `for key in $(grep …)`; в `k8s-deploy.sh` проверка Envoy Gateway — `if ! … || ! …; then die` вместо `A && B || die`.
+
 ## Известные ограничения
 
 - **Один узел.** Реплики живут на одном узле kind, PodDisruptionBudget, anti-affinity и HPA не настроены (metrics-server нет). Отказ узла — отказ всего приложения.
@@ -217,5 +231,6 @@ kind delete cluster --name freelance                                  # весь
 - **Probes чувствительны к нагрузке на CPU хоста.** У liveness и readiness таймаут по умолчанию 1 с. Пока рядом с кластером шли `docker compose up --build` и старт compose (около двух минут), пробы всех сервисов и баз получали таймауты, а один под `ser-task` был перезапущен по liveness (завершился штатно, ошибок нет). На время сборки compose кластер лучше не нагружать проверками. Решать вместе с `/ready` (этап 1.6).
 - **Readiness не проверяет БД.** Probes идут на публичный `GET /`: под готов, даже если база недоступна. Кроме того, сервисы стартуют параллельно с Job миграций и могут стать `Ready` до появления таблиц: на чистом кластере в первые ~30 с запросы к API могут получить 500. `k8s-deploy.sh` завершается только после миграций, поэтому после него окна нет. `/ready` с проверкой БД и ревизии схемы — этап 1.6.
 - **Job неизменяемы, деплоить только через `k8s-deploy.sh`.** Голый `kubectl apply -k` поверх существующих Job падает на изменённом Job (`spec.template: … field is immutable`), а неизменённый не перезапускает. Тогда миграции из нового образа не выполнятся.
-- **Gateway однажды не стал `Programmed`.** При `k8s-deploy.sh` поверх уже работающего namespace `k8s-deploy.sh` один раз упал на ожидании `Programmed` у Gateway (`NoResources: Envoy replicas unavailable` при здоровом Envoy). На чистом деплое и на повторе не воспроизводилось. Если повторится, сохраните `k describe gateway entry` и логи `envoy-gateway`, затем удалите namespace и задеплойте заново.
+- **Gateway дважды не стал `Programmed`.** При `k8s-deploy.sh` поверх уже работающего namespace скрипт два раза упал на ожидании `Programmed` у Gateway: `NoResources: Envoy replicas unavailable` (шаг 1.4.8) и `AddressNotAssigned` (1.5.2), оба раза при здоровом Envoy. На чистом деплое и на повторе не воспроизводилось. Если повторится, сохраните `k describe gateway entry` и логи `envoy-gateway` (в CI их печатает шаг «диагностика»), затем удалите namespace и задеплойте заново.
+- **`k8s-deploy.sh` не перекатывает поды при новом образе с тем же тегом.** Манифесты ссылаются на `ser-*:latest` с `imagePullPolicy: Never`. `kind-up.sh` загружает в узел новый образ, но спецификация Deployment не меняется, и после деплоя работают старые поды. Локально после правок кода нужен `k rollout restart deployment` (найдено в 1.5.4).
 - **Образы `:latest` и `imagePullPolicy: Never`.** Образы есть только в узле kind (`kind load`), реестра нет. Облачный overlay (реестр и теги по коммиту, TLS, управляемый Postgres, внешнее хранилище секретов) — будущий этап.

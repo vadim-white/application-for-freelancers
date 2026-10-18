@@ -1,0 +1,286 @@
+# CI: проверки без стека (lint, python, frontend, static) и два сквозных прогона (compose, kind).
+# Всё запускается на каждый push в любую ветку, на pull request и вручную (решение 7 этапа 1.5).
+# Секреты генерируют scripts/init-env.sh и scripts/init-k8s-env.sh в каждом прогоне; сразу после
+# генерации значения маскируются (::add-mask::). Вывод `docker compose config` и `kubectl kustomize`
+# содержит секреты — первый запускается только с --quiet, второй идёт только в pipe. set -x не включать.
+name: CI
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    # bash с -e и -o pipefail: падение kubectl kustomize в pipe роняет шаг
+    shell: bash
+
+env:
+  UV_VERSION: "0.13.1"
+  # sha256 uv-x86_64-unknown-linux-gnu.tar.gz релиза 0.13.1
+  UV_CHECKSUM: eadd9d27c134ab5ac1ffd4473b97a741407f3ea238288f03121fc4deddf90220
+  RUFF_VERSION: "0.17.1"
+  # kubectl в пределах ±1 минорной от сервера kind (v1.35.8); на раннере kubectl 1.37
+  KUBECTL_VERSION: v1.35.9
+  KUBECTL_SHA256: 3cfeaf80be482b435b0aa214aff6e0b2c312ee23c0ff20810c75517b6004c6eb
+  KIND_VERSION: v0.33.0
+  SHELLCHECK_IMAGE: koalaman/shellcheck:v0.11.0@sha256:61862eba1fcf09a484ebcc6feea46f1782532571a34ed51fedf90dd25f925a8d
+  ACTIONLINT_IMAGE: rhysd/actionlint:1.7.12@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667
+  GITLEAKS_IMAGE: ghcr.io/gitleaks/gitleaks:v8.30.1@sha256:c00b6bd0aeb3071cbcb79009cb16a60dd9e0a7c60e2be9ab65d25e6bc8abbb7f
+  KUBECONFORM_IMAGE: ghcr.io/yannh/kubeconform:v0.8.0@sha256:faffaf43f95aa6425306e1ab8d6fcad72acb9049158f38e574c085ea1ec0f64e
+
+jobs:
+  lint:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0 # gitleaks проверяет всю историю
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+        with:
+          version: ${{ env.UV_VERSION }}
+          checksum: ${{ env.UV_CHECKSUM }}
+          enable-cache: false
+      - name: ruff check
+        run: uvx "ruff@$RUFF_VERSION" check .
+      - name: ruff format --check
+        run: uvx "ruff@$RUFF_VERSION" format --check .
+      - name: shellcheck scripts/
+        run: docker run --rm -v "$PWD:/mnt:ro" -w /mnt "$SHELLCHECK_IMAGE" scripts/*.sh
+      - name: actionlint
+        run: docker run --rm -v "$PWD:/repo:ro" -w /repo "$ACTIONLINT_IMAGE" -color
+      - name: gitleaks (вся история)
+        run: docker run --rm -v "$PWD:/repo:ro" "$GITLEAKS_IMAGE" git --redact --no-banner --verbose /repo
+
+  python:
+    name: python (${{ matrix.service }})
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        service: [auth, task, time, gateway]
+    services:
+      # тест миграций на PostgreSQL (auth, task, time; у gateway базы нет, переменная не используется).
+      # Одноразовая база раннера, вход без пароля
+      postgres:
+        image: postgres:15-alpine
+        env:
+          POSTGRES_HOST_AUTH_METHOD: trust
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 2s
+          --health-timeout 5s
+          --health-retries 30
+    env:
+      TEST_POSTGRES_URL: postgresql+psycopg://postgres@127.0.0.1:5432/postgres
+    defaults:
+      run:
+        shell: bash
+        working-directory: ${{ matrix.service }}-service
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+        with:
+          version: ${{ env.UV_VERSION }}
+          checksum: ${{ env.UV_CHECKSUM }}
+          python-version: "3.14"
+          cache-dependency-glob: ${{ matrix.service }}-service/uv.lock
+          cache-suffix: ${{ matrix.service }}
+      - name: uv sync --locked
+        run: uv sync --locked
+      - name: pytest с покрытием (порог fail_under — в pyproject.toml)
+        run: |
+          uv run --locked pytest --cov=app -rs | tee "$RUNNER_TEMP/pytest.txt"
+          # с PostgreSQL ни один тест не должен быть пропущен: skip значит, что база не подключилась
+          if grep -Eq '[0-9]+ skipped' "$RUNNER_TEMP/pytest.txt"; then
+            echo "::error::есть пропущенные тесты, хотя TEST_POSTGRES_URL задана"
+            exit 1
+          fi
+
+  frontend:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    defaults:
+      run:
+        shell: bash
+        working-directory: frontend/login_page
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: frontend/login_page/.nvmrc
+          cache: npm
+          cache-dependency-path: frontend/login_page/package-lock.json
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run build
+
+  static:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: kubectl ${{ env.KUBECTL_VERSION }} (sha256)
+        run: |
+          mkdir -p "$RUNNER_TEMP/bin"
+          curl -fsSL -o "$RUNNER_TEMP/bin/kubectl" "https://dl.k8s.io/release/$KUBECTL_VERSION/bin/linux/amd64/kubectl"
+          echo "$KUBECTL_SHA256  $RUNNER_TEMP/bin/kubectl" | sha256sum -c -
+          chmod 0755 "$RUNNER_TEMP/bin/kubectl"
+          echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
+      - run: kubectl version --client
+      - name: .env (init-env.sh) и маскирование
+        run: |
+          ./scripts/init-env.sh
+          for key in SECRET_KEY AUTH_DB_PASSWORD TASK_DB_PASSWORD TIME_DB_PASSWORD; do
+            value="$(grep "^$key=" .env | tail -n 1 | cut -d= -f2-)"
+            [ -n "$value" ] || { echo "::error::$key в .env пуст"; exit 1; }
+            echo "::add-mask::$value"
+          done
+      - name: docker compose config --quiet
+        run: docker compose config --quiet
+      - name: app.env, db.env (init-k8s-env.sh) и маскирование
+        run: |
+          ./scripts/init-k8s-env.sh
+          while IFS= read -r line; do
+            value="${line#*=}"
+            [ -n "$value" ] || { echo "::error::${line%%=*} в app.env/db.env пуст"; exit 1; }
+            echo "::add-mask::$value"
+            # в Secret значения лежат в base64
+            echo "::add-mask::$(printf '%s' "$value" | base64 -w0)"
+          done < <(grep -hE '^[A-Za-z_][A-Za-z0-9_]*=' k8s/overlays/local/app.env k8s/overlays/local/db.env)
+      - name: kubeconform (оба overlay)
+        run: |
+          for overlay in local local-seed; do
+            echo "== k8s/overlays/$overlay"
+            kubectl kustomize "k8s/overlays/$overlay" \
+              | docker run --rm -i "$KUBECONFORM_IMAGE" \
+                  -strict -summary -skip Gateway,GatewayClass,HTTPRoute,EnvoyProxy -
+          done
+
+  compose:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - run: docker compose version
+      - name: .env (init-env.sh) и маскирование
+        run: |
+          ./scripts/init-env.sh
+          for key in SECRET_KEY AUTH_DB_PASSWORD TASK_DB_PASSWORD TIME_DB_PASSWORD; do
+            value="$(grep "^$key=" .env | tail -n 1 | cut -d= -f2-)"
+            [ -n "$value" ] || { echo "::error::$key в .env пуст"; exit 1; }
+            echo "::add-mask::$value"
+          done
+      - name: docker compose up --build -d --wait
+        run: docker compose up --build -d --wait
+      - name: smoke (116)
+        run: bash tests/smoke.sh
+      - name: e2e (Playwright, http://127.0.0.1:5173)
+        run: bash tests/e2e/run.sh
+      - name: диагностика
+        if: failure()
+        run: |
+          docker compose ps -a
+          docker compose logs --no-color --tail=200
+      - name: артефакты e2e
+        if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: e2e-compose
+          path: tests/e2e/test-results/
+          if-no-files-found: ignore
+          retention-days: 7
+      - name: docker compose down -v
+        if: always()
+        run: docker compose down -v
+
+  kind:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: kubectl ${{ env.KUBECTL_VERSION }} (sha256)
+        run: |
+          mkdir -p "$RUNNER_TEMP/bin"
+          curl -fsSL -o "$RUNNER_TEMP/bin/kubectl" "https://dl.k8s.io/release/$KUBECTL_VERSION/bin/linux/amd64/kubectl"
+          echo "$KUBECTL_SHA256  $RUNNER_TEMP/bin/kubectl" | sha256sum -c -
+          chmod 0755 "$RUNNER_TEMP/bin/kubectl"
+          echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
+      - name: версии kubectl и kind
+        run: |
+          kubectl version --client
+          actual="$(kind version | cut -d' ' -f2)"
+          echo "kind $actual"
+          [ "$actual" = "$KIND_VERSION" ] || { echo "::error::на раннере kind $actual, ожидается $KIND_VERSION"; exit 1; }
+      - name: kind-up.sh (кластер, Envoy Gateway, образы)
+        run: ./scripts/kind-up.sh
+      - name: app.env, db.env (init-k8s-env.sh) и маскирование
+        run: |
+          ./scripts/init-k8s-env.sh
+          while IFS= read -r line; do
+            value="${line#*=}"
+            [ -n "$value" ] || { echo "::error::${line%%=*} в app.env/db.env пуст"; exit 1; }
+            echo "::add-mask::$value"
+            echo "::add-mask::$(printf '%s' "$value" | base64 -w0)"
+          done < <(grep -hE '^[A-Za-z_][A-Za-z0-9_]*=' k8s/overlays/local/app.env k8s/overlays/local/db.env)
+      - name: k8s-deploy.sh
+        run: ./scripts/k8s-deploy.sh
+      - name: smoke k8s (114)
+        run: SMOKE_MODE=k8s bash tests/smoke.sh
+      - name: e2e (Playwright, через вход http://127.0.0.1:8080)
+        run: E2E_BASE_URL=http://127.0.0.1:8080 bash tests/e2e/run.sh
+      - name: apply --dry-run=server (оба overlay)
+        run: |
+          for overlay in local local-seed; do
+            echo "== k8s/overlays/$overlay"
+            kubectl kustomize "k8s/overlays/$overlay" \
+              | kubectl --context kind-freelance apply --dry-run=server -f -
+          done
+      - name: диагностика
+        if: failure()
+        run: |
+          k() { kubectl --context kind-freelance -n freelance-service "$@"; }
+          k get pods,jobs -o wide || true
+          k get events --sort-by=.lastTimestamp || true
+          k describe gateway entry || true
+          kubectl --context kind-freelance -n envoy-gateway-system get pods -o wide || true
+          for pod in $(k get pods -o name 2>/dev/null); do
+            echo "::group::$pod"
+            k logs "$pod" --all-containers --prefix --tail=100 || true
+            k logs "$pod" --all-containers --prefix --tail=50 --previous 2>/dev/null || true
+            echo "::endgroup::"
+          done
+          echo "::group::envoy-gateway"
+          kubectl --context kind-freelance -n envoy-gateway-system logs deploy/envoy-gateway --tail=100 || true
+          echo "::endgroup::"
+      - name: артефакты e2e
+        if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: e2e-kind
+          path: tests/e2e/test-results/
+          if-no-files-found: ignore
+          retention-days: 7

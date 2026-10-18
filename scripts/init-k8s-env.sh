@@ -39,7 +39,8 @@ fill_env() {
   chmod 600 "$env_file"
 
   added=""
-  for key in $(grep -E '^[A-Za-z_][A-Za-z0-9_]*=' "$example" | cut -d= -f1); do
+  # подстановка процесса, а не pipe: цикл идёт в этом же shell, $added сохраняется
+  while read -r key; do
     if grep -q "^$key=" "$env_file"; then
       [ -n "$(grep "^$key=" "$env_file" | tail -n 1 | cut -d= -f2-)" ] && continue
       # ключ есть, но пуст: пересобираем файл без этой строки (без sed -i)
@@ -50,7 +51,7 @@ fill_env() {
     fi
     printf '%s=%s\n' "$key" "$(gen_secret)" >> "$env_file"
     added="$added $key"
-  done
+  done < <(grep -E '^[A-Za-z_][A-Za-z0-9_]*=' "$example" | cut -d= -f1)
 
   if [ "$created" = 1 ]; then
     echo "$name создан. Ключи:$added"
