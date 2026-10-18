@@ -1,8 +1,9 @@
+import logging
+
 import httpx
 from fastapi import Request, Response
-from typing import Dict, Optional
+
 from .core.config import settings
-import logging
 
 logger = logging.getLogger(__name__)
 
@@ -10,7 +11,7 @@ logger = logging.getLogger(__name__)
 USER_HEADER_PREFIX = "x-user-"
 
 
-def resolve_upstream(path: str) -> Optional[str]:
+def resolve_upstream(path: str) -> str | None:
     """Базовый адрес сервиса для пути /api/{auth,tasks,time}/... или None для неизвестного пути."""
     # точечные сегменты не пропускаем: httpx нормализует их и запрос уйдёт не туда, где проверялся
     if any(segment in (".", "..") for segment in path.split("/")):
@@ -26,7 +27,7 @@ def resolve_upstream(path: str) -> Optional[str]:
     return None
 
 
-async def stream_proxy(request: Request, base_url: str, user: Optional[dict]) -> Response:
+async def stream_proxy(request: Request, base_url: str, user: dict | None) -> Response:
     target_url = base_url + request.url.path
     if request.url.query:
         target_url = target_url + "?" + request.url.query
@@ -34,7 +35,7 @@ async def stream_proxy(request: Request, base_url: str, user: Optional[dict]) ->
     logger.info(f"Proxying {request.method} {request.url.path} -> {target_url}")
 
     # build headers to forward (exclude host and client-supplied X-User-*)
-    headers: Dict[str, str] = {}
+    headers: dict[str, str] = {}
     for k, v in request.headers.items():
         lower = k.lower()
         if lower == "host" or lower.startswith(USER_HEADER_PREFIX):

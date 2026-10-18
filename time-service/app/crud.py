@@ -1,13 +1,15 @@
-from sqlalchemy.orm import Session
-from . import models, schemas
 import logging
+
+from sqlalchemy.orm import Session
+
+from . import models, schemas
 
 logger = logging.getLogger(__name__)
 
 def create_time_entry(db: Session, entry_in: schemas.TimeEntryCreate, user_id: int):
     # validate minutes
     logger.info(f"Creating time entry: task_id={entry_in.task_id}, minutes={entry_in.minutes}")
-    
+
     if entry_in.minutes is None or entry_in.minutes <= 0:
         logger.error(f"Invalid minutes value: {entry_in.minutes}")
         raise ValueError("Invalid minutes value; must be > 0")

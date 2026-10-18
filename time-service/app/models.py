@@ -1,5 +1,7 @@
-from sqlalchemy import Column, Integer, String, DateTime, Boolean, func
+from sqlalchemy import Boolean, Column, DateTime, Integer, String, func
+
 from .db import Base
+
 
 class TimeEntry(Base):
     __tablename__ = "time_entries"

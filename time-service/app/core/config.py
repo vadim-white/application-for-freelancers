@@ -1,6 +1,8 @@
+import os
+
 from pydantic import Field
 from pydantic_settings import BaseSettings
-import os
+
 
 class Settings(BaseSettings):
     # Без значения по умолчанию: без строки подключения сервис не стартует

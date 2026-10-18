@@ -1,6 +1,7 @@
+from collections.abc import Generator
+
 from .db import SessionLocal
-from typing import Generator
-from sqlalchemy.orm import Session
+
 
 def get_db() -> Generator:
     db = SessionLocal()

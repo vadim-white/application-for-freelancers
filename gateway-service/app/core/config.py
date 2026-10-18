@@ -1,8 +1,8 @@
-from typing import List
+import os
 
 from pydantic import Field
 from pydantic_settings import BaseSettings
-import os
+
 
 class Settings(BaseSettings):
     # адреса внутренних сервисов (в Docker используются имена контейнеров)
@@ -23,7 +23,7 @@ class Settings(BaseSettings):
 
 
     @property
-    def cors_origins(self) -> List[str]:
+    def cors_origins(self) -> list[str]:
         return [o.strip() for o in self.CORS_ORIGINS.split(",") if o.strip()]
 
     class Config:

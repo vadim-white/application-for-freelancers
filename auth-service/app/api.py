@@ -1,14 +1,14 @@
 from fastapi import APIRouter, Depends, HTTPException, status
+from jose import JWTError
 from sqlalchemy.orm import Session
-from . import schemas, crud
-from .deps import get_db
+
+from . import crud, schemas
 from .core.security import (
-    verify_password,
-    get_password_hash,
     create_tokens_for_user,
     decode_token,
+    verify_password,
 )
-from jose import JWTError
+from .deps import get_db
 
 router = APIRouter()
 
@@ -34,10 +34,11 @@ def refresh_token(data: schemas.TokenRefreshRequest, db: Session = Depends(get_d
     try:
         payload = decode_token(data.refresh_token)
     except JWTError:
-        raise HTTPException(status_code=401, detail="Invalid refresh token")
+        raise HTTPException(status_code=401, detail="Invalid refresh token") from None
     if payload.get("type") != "refresh":
         raise HTTPException(status_code=401, detail="Not a refresh token")
-    # роль берётся из БД: удалённый, отключённый или сменивший роль пользователь не получит старые права
+    # роль берётся из БД: удалённый, отключённый или сменивший роль пользователь
+    # не получит старые права
     user = crud.get_active_user_by_sub(db, payload.get("sub"))
     if not user:
         raise HTTPException(status_code=401, detail="Invalid refresh token")

@@ -7,7 +7,6 @@ from app import health, proxy
 from app.core.config import settings
 from tests.conftest import bearer, make_token
 
-
 # --- публичные пути ---
 
 @pytest.mark.parametrize("path", ["/api/auth/login", "/api/auth/register", "/api/auth/refresh"])
@@ -105,7 +104,8 @@ def test_invalid_tokens_return_401(client, upstream, token):
 
 
 def test_alg_none_token_rejected(client, upstream):
-    import base64, json
+    import base64
+    import json
     def b64(d):
         return base64.urlsafe_b64encode(json.dumps(d).encode()).rstrip(b"=").decode()
     token = b64({"alg": "none", "typ": "JWT"}) + "." + b64({"sub": "1", "type": "access", "role": "admin", "exp": 9999999999}) + "."

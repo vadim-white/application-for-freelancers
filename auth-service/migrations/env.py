@@ -39,7 +39,8 @@ def do_run_migrations(connection) -> None:
 
 
 def run_migrations_online() -> None:
-    # Готовое соединение передают через config.attributes (тесты), иначе подключаемся по DATABASE_URL
+    # Готовое соединение передают через config.attributes (тесты),
+    # иначе подключаемся по DATABASE_URL
     connection = config.attributes.get("connection")
     if connection is not None:
         do_run_migrations(connection)

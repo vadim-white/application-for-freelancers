@@ -1,11 +1,12 @@
-from pydantic import BaseModel, Field, validator
-from typing import Optional
 from datetime import datetime
+
+from pydantic import BaseModel, Field, validator
+
 
 class TimeEntryBase(BaseModel):
     task_id: int
     minutes: int = Field(..., gt=0, description="Количество минут > 0")
-    description: Optional[str] = None
+    description: str | None = None
 
     @validator('minutes')
     def validate_minutes(cls, v):
@@ -23,7 +24,7 @@ class TimeEntryRead(TimeEntryBase):
     date: datetime
     is_active: bool
     created_at: datetime
-    updated_at: Optional[datetime] = None
+    updated_at: datetime | None = None
 
     class Config:
         orm_mode = True

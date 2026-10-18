@@ -2,7 +2,7 @@ import os
 import pathlib
 import subprocess
 import sys
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import pytest
 from fastapi.testclient import TestClient
@@ -31,7 +31,7 @@ def refresh(client, token):
 def make_token(sub, token_type, expires_in=timedelta(minutes=5), **extra):
     payload = {"sub": sub, "type": token_type, **extra}
     if expires_in is not None:
-        payload["exp"] = datetime.now(timezone.utc) + expires_in
+        payload["exp"] = datetime.now(UTC) + expires_in
     return jwt.encode(payload, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
 
 

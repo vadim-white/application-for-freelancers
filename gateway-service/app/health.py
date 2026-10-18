@@ -1,5 +1,6 @@
-from fastapi import APIRouter
 import httpx
+from fastapi import APIRouter
+
 from .core.config import settings
 
 router = APIRouter()

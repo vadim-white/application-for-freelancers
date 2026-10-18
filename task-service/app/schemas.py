@@ -1,7 +1,7 @@
-from pydantic import BaseModel
-from typing import Optional, List
 from datetime import datetime
 from enum import Enum
+
+from pydantic import BaseModel
 
 # Pydantic v2: use from_attributes in Config for ORM models
 
@@ -14,20 +14,20 @@ class TaskStatus(str, Enum):
 # Project schemas
 class ProjectBase(BaseModel):
     name: str
-    description: Optional[str] = None
-    is_active: Optional[bool] = True
+    description: str | None = None
+    is_active: bool | None = True
 
 class ProjectCreate(ProjectBase):
     pass
 
 class ProjectUpdate(ProjectBase):
-    name: Optional[str] = None
+    name: str | None = None
 
 # owner_id только в ответах: владельца задаёт токен, поле в теле запроса игнорируется
 class ProjectRead(ProjectBase):
     id: int
     owner_id: int
-    created_at: Optional[datetime] = None
+    created_at: datetime | None = None
 
     class Config:
         from_attributes = True
@@ -35,29 +35,29 @@ class ProjectRead(ProjectBase):
 # Task schemas
 class TaskBase(BaseModel):
     title: str
-    description: Optional[str] = None
-    status: Optional[TaskStatus] = TaskStatus.todo
-    deadline: Optional[datetime] = None
-    project_id: Optional[int] = None
-    is_active: Optional[bool] = True
+    description: str | None = None
+    status: TaskStatus | None = TaskStatus.todo
+    deadline: datetime | None = None
+    project_id: int | None = None
+    is_active: bool | None = True
 
 class TaskCreate(TaskBase):
     pass
 
 class TaskUpdate(BaseModel):
-    title: Optional[str] = None
-    description: Optional[str] = None
-    status: Optional[TaskStatus] = None
-    deadline: Optional[datetime] = None
-    project_id: Optional[int] = None
-    is_active: Optional[bool] = None
+    title: str | None = None
+    description: str | None = None
+    status: TaskStatus | None = None
+    deadline: datetime | None = None
+    project_id: int | None = None
+    is_active: bool | None = None
 
 class TaskRead(TaskBase):
     id: int
     owner_id: int
-    created_at: Optional[datetime] = None
-    updated_at: Optional[datetime] = None
-    project: Optional[ProjectRead] = None
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
+    project: ProjectRead | None = None
 
     class Config:
         from_attributes = True

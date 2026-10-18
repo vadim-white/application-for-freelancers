@@ -21,7 +21,8 @@ def migrations_db(request, tmp_path):
     """Пустая база для миграций: DATABASE_URL из conftest занят базой остальных тестов.
 
     sqlite — отдельный файл. postgres — своя схема (search_path) в базе из TEST_POSTGRES_URL
-    (postgresql+psycopg://…), она создаётся перед тестом и удаляется после; без переменной тест пропускается.
+    (postgresql+psycopg://…), она создаётся перед тестом и удаляется после;
+    без переменной тест пропускается.
     Соединение передаётся в migrations/env.py через cfg.attributes["connection"].
     """
     schema = None
@@ -104,7 +105,10 @@ def test_task_project_foreign_key_enforced(migrations_db):
     )
     with db.engine.begin() as conn:
         project_id = conn.execute(
-            text("INSERT INTO projects (name, owner_id, is_active) VALUES ('p', 1, true) RETURNING id")
+            text(
+                "INSERT INTO projects (name, owner_id, is_active) "
+                "VALUES ('p', 1, true) RETURNING id"
+            )
         ).scalar_one()
         # задача с существующим проектом вставляется (проверка, что ошибка ниже именно из-за FK)
         conn.execute(insert_task, {"project_id": project_id})

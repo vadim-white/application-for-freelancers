@@ -1,6 +1,8 @@
+
 from sqlalchemy.orm import Session
+
 from . import models, schemas
-from typing import List, Optional
+
 
 # Projects
 def create_project(db: Session, project_in: schemas.ProjectCreate, owner_id: int) -> models.Project:
@@ -15,11 +17,11 @@ def create_project(db: Session, project_in: schemas.ProjectCreate, owner_id: int
     db.refresh(project)
     return project
 
-def get_project(db: Session, project_id: int) -> Optional[models.Project]:
+def get_project(db: Session, project_id: int) -> models.Project | None:
     return db.query(models.Project).filter(models.Project.id == project_id).first()
 
 def list_projects(db: Session, skip: int = 0, limit: int = 100,
-                  owner_id: Optional[int] = None) -> List[models.Project]:
+                  owner_id: int | None = None) -> list[models.Project]:
     q = db.query(models.Project)
     if owner_id is not None:
         q = q.filter(models.Project.owner_id == owner_id)
@@ -58,12 +60,12 @@ def create_task(db: Session, task_in: schemas.TaskCreate, owner_id: int) -> mode
     db.refresh(task)
     return task
 
-def get_task(db: Session, task_id: int) -> Optional[models.Task]:
+def get_task(db: Session, task_id: int) -> models.Task | None:
     return db.query(models.Task).filter(models.Task.id == task_id).first()
 
 def list_tasks(db: Session, skip: int = 0, limit: int = 100,
-               project_id: Optional[int] = None, status: Optional[models.TaskStatus] = None,
-               owner_id: Optional[int] = None) -> List[models.Task]:
+               project_id: int | None = None, status: models.TaskStatus | None = None,
+               owner_id: int | None = None) -> list[models.Task]:
     q = db.query(models.Task)
     if owner_id is not None:
         q = q.filter(models.Task.owner_id == owner_id)

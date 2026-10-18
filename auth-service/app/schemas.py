@@ -1,14 +1,15 @@
+
 from pydantic import BaseModel, EmailStr, field_validator
-from typing import Optional
+
 
 class UserBase(BaseModel):
     email: EmailStr
-    full_name: Optional[str] = None
-    
+    full_name: str | None = None
+
 
 class UserCreate(UserBase):
     password: str
-    
+
     @field_validator('password')
     @classmethod
     def password_length_check(cls, v):
@@ -37,7 +38,7 @@ class UserRead(UserBase):
 class UserAuth(BaseModel):
     email: EmailStr
     password: str
-    
+
     @field_validator('password')
     @classmethod
     def password_length_check(cls, v):

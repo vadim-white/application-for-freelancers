@@ -1,6 +1,8 @@
+import os
+
 from pydantic import Field
 from pydantic_settings import BaseSettings
-import os
+
 
 class Settings(BaseSettings):
     # Без значения по умолчанию: без строки подключения сервис не стартует
@@ -10,7 +12,8 @@ class Settings(BaseSettings):
     ACCESS_TOKEN_EXPIRE_MINUTES: int = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "15"))
     REFRESH_TOKEN_EXPIRE_MINUTES: int = int(os.getenv("REFRESH_TOKEN_EXPIRE_MINUTES", str(60 * 24 * 7)))
     ALGORITHM: str = os.getenv("ALGORITHM", "HS256")
-    # Тестовых пользователей создаёт команда python -m app.init_users, и только при SEED_TEST_USERS=true
+    # Тестовых пользователей создаёт команда python -m app.init_users,
+    # и только при SEED_TEST_USERS=true
     SEED_TEST_USERS: bool = False
 
     class Config:

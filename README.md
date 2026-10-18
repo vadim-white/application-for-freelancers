@@ -185,6 +185,23 @@ SMOKE_MODE=k8s bash tests/smoke.sh       # режим k8s: 114 проверок 
 
 `/health` gateway всегда отвечает 200, а доступность сервисов пишет в теле (`upstreams`), поэтому smoke проверяет тело: `auth`, `task`, `time` — все `true`. В k8s запрос идёт изнутри пода `ser-gateway` (через вход `/health` отдаёт фронт). Код выхода 0 — все проверки пройдены.
 
+### Линтер
+
+Python-код четырёх сервисов (`app/`, `tests/`, `migrations/`) проверяет и форматирует [ruff](https://docs.astral.sh/ruff/) 0.17.1, настройки — [ruff.toml](ruff.toml) в корне: правила `E`, `F`, `W`, `I`, `B`, `UP`, длина строки 100. Версия одна для всех и задаётся в команде, в dev-группы сервисов ruff не добавлен. Запуск из корня репозитория:
+
+```bash
+uvx ruff@0.17.1 check .              # замечания линтера, код 0 — чисто
+uvx ruff@0.17.1 format --check .     # код 0 — форматирование не нужно
+uvx ruff@0.17.1 check --fix .        # исправить то, что ruff умеет сам
+uvx ruff@0.17.1 format .             # отформатировать
+```
+
+Без uv на машине — тот же образ, что для тестов: `docker run --rm -v "$PWD":/repo -w /repo ghcr.io/astral-sh/uv:0.13.1-python3.14-trixie-slim uvx ruff@0.17.1 check --no-cache .` (`--no-cache` — чтобы не появлялся `.ruff_cache`).
+
+Отключены `B008` (`Depends()` / `Query()` в значениях по умолчанию — обычный приём FastAPI) и `UP042` (`class X(str, Enum)` → `StrEnum` меняет `str()` у значений). В `tests/conftest.py` импорты приложения стоят после `os.environ[...] = …`: config и engine читают окружение при импорте. Порядок этих строк менять нельзя, а `E402` такие присваивания нарушением не считает. `init_db.py` в проверку не входит.
+
+Массовое переформатирование сделано отдельным коммитом. Чтобы `git blame` его пропускал, хеш коммита записывается в `.git-blame-ignore-revs`, а в своей копии репозитория один раз выполняется `git config blame.ignoreRevsFile .git-blame-ignore-revs`. Файл появится вместе с CI. Пока его нет, настройку не включать: с отсутствующим файлом `git blame` падает с ошибкой `could not open object name list`.
+
 ### Миграции
 
 Схему БД auth-service, task-service и time-service ведёт Alembic (`<service>/migrations/`). Применяются они отдельно от приложения: `alembic upgrade head` (в compose — сервисы `ser-*-migrate`, в Kubernetes — Job `*-migrate`). Новая миграция создаётся автогенерацией по изменённым моделям (`<service>` — `auth`, `task` или `time`, нужен запущенный стек, у которого база уже на последней ревизии):
@@ -299,6 +316,7 @@ curl -X POST http://localhost:8000/api/auth/login \
 ├── tests/               сквозные проверки всего стека (smoke.sh — curl-прогон через gateway, режимы compose и k8s)
 ├── scripts/             вспомогательные скрипты (init-env.sh — .env, init-k8s-env.sh — секреты кластера, kind-up.sh — кластер kind и образы, k8s-deploy.sh — деплой в кластер)
 ├── .env.example         шаблон общих переменных для Docker Compose
+├── ruff.toml            настройки линтера и форматтера Python (ruff)
 └── docker-compose.yml
 ```
 
@@ -320,7 +338,7 @@ curl -X POST http://localhost:8000/api/auth/login \
 - Python 3.14 во всех образах. В Docker Compose и Kubernetes сервисы работают с PostgreSQL через psycopg 3 (`postgresql+psycopg://`). Зависимости бэкенда ведёт uv: прямые закреплены точными версиями (`==`) в `pyproject.toml` сервиса, все вместе с транзитивными — в `uv.lock` (версии и хеши), общие пакеты одинаковы во всех сервисах. Образ ставит их `uv sync --locked` (сборка падает, если `uv.lock` не совпадает с `pyproject.toml`) в `/opt/venv`; сам uv в итоговый образ не попадает. `pytest`, `httpx2` и `pytest-cov` — в dev-группе, в образ не ставятся
 - Схема БД auth-service, task-service и time-service управляется миграциями Alembic (`<service>/migrations/`): в Docker Compose их применяют сервисы `ser-auth-migrate`, `ser-task-migrate` и `ser-time-migrate` до старта своего сервиса, в Kubernetes — Job `auth-migrate`, `task-migrate`, `time-migrate` (один раз на деплой, порядок задаёт `scripts/k8s-deploy.sh`). Тест в каждом из них проверяет, что миграции совпадают с моделями
 - Проекты хранятся только в task-service: дубль проектов в time-service (`/api/time/projects`) удалён, фронтенд создаёт проект одним запросом. `user_id` записи времени обязателен (NOT NULL), фронтенд его не отправляет: сервер берёт `user_id` из токена
-- Автотесты (pytest) есть у всех бэкенд-сервисов (с PostgreSQL: gateway 51, auth 36, task 54, time 32; без `TEST_POSTGRES_URL` тесты миграций на PostgreSQL пропускаются — 51 / 34 + 2 skipped / 51 + 3 skipped / 30 + 2 skipped), покрытие 100 / 93 / 97 / 99 % с порогом в `pyproject.toml`, CI нет.
+- Автотесты (pytest) есть у всех бэкенд-сервисов (с PostgreSQL: gateway 51, auth 36, task 54, time 32; без `TEST_POSTGRES_URL` тесты миграций на PostgreSQL пропускаются — 51 / 34 + 2 skipped / 51 + 3 skipped / 30 + 2 skipped), покрытие 100 / 93 / 97 / 99 % с порогом в `pyproject.toml`. Python-код проверяет ruff (`ruff.toml`, см. «Линтер»). CI нет.
 - Фронтенд в Docker собирается multi-stage (`npm ci`, `vite build`) и раздаётся nginx без root (`nginx-unprivileged`, слушает 8080): долгий кэш для `/assets/`, `index.html` без кэша, gzip, SPA-роуты отдают `index.html`. Запросы `/api/` nginx проксирует на gateway, поэтому браузер ходит на один адрес и CORS для фронтенда не нужен. В Kubernetes фронтенд описан под этот образ: порт 8080, `GATEWAY_URL` из ConfigMap, startup/liveness/readiness `GET /`, Service `ClusterIP`
 - В Kubernetes вход один — Gateway API (Envoy Gateway v1.9.2) на `http://127.0.0.1:8080`: `/api` → gateway, остальное → фронтенд; `LoadBalancer` и `NodePort` в namespace приложения нет, все сервисы `ClusterIP`. Автомасштабирования нет: у stateless-сервисов (auth, task, time, gateway, frontend) по две реплики, базы — по одной. При `rollout restart` под нагрузкой возможны единичные 502/503 в момент остановки старого пода (graceful shutdown — в планах). Кластер — только локальный kind (`./scripts/kind-up.sh`, ставит и Envoy Gateway), манифесты собираются kustomize (`base` + `overlays/local`), деплой с миграциями и seed — `./scripts/k8s-deploy.sh`; проверено с нуля (инструкция и ограничения — [k8s/README.md](k8s/README.md)). Облачного overlay (реестр образов, TLS, управляемый Postgres) нет. Базы в кластере проверяются `pg_isready -U … -d …`, `PGDATA` лежит в подпапке тома. Readiness сервисов — публичный `GET /`, без проверки БД
 - В Kubernetes сетевые политики по умолчанию запрещают всё: открыты только DNS, вход от Envoy к фронту и gateway, фронт → gateway, gateway → auth, task, time, task → time и каждый сервис со своими Job → своя база. Сервис не достанет до чужой базы, базы и сервисы не выходят в интернет ([k8s/README.md](k8s/README.md#сетевые-политики))

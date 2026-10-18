@@ -1,9 +1,10 @@
-from sqlalchemy import (
-    Column, Integer, String, Text, ForeignKey, Boolean, DateTime, func, Enum
-)
-from sqlalchemy.orm import relationship
-from .db import Base
 import enum
+
+from sqlalchemy import Boolean, Column, DateTime, Enum, ForeignKey, Integer, String, Text, func
+from sqlalchemy.orm import relationship
+
+from .db import Base
+
 
 class TaskStatus(str, enum.Enum):
     todo = "todo"

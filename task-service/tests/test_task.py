@@ -318,7 +318,8 @@ def test_admin_move_task(client, user_headers, other_headers, admin_headers):
     p1b = _project(client, user_headers, "b")
     p2 = _project(client, other_headers)
     tid = _task(client, user_headers, project_id=p1)
-    # в проект другого владельца — 400: иначе задача пользователя 1 окажется в проекте пользователя 2
+    # в проект другого владельца — 400:
+    # иначе задача пользователя 1 окажется в проекте пользователя 2
     r = client.put(f"/api/tasks/tasks/{tid}", json={"project_id": p2}, headers=admin_headers)
     assert r.status_code == 400
     for missing in (0, 99999):

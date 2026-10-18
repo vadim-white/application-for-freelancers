@@ -1,11 +1,12 @@
+import logging
+
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy.orm import Session
 from sqlalchemy import func
-from typing import List, Optional
-from . import schemas, crud
+from sqlalchemy.orm import Session
+
+from . import crud, schemas
 from .core.auth import CurrentUser, get_current_user, require_admin
 from .db import SessionLocal
-import logging
 
 logger = logging.getLogger(__name__)
 
@@ -25,17 +26,20 @@ def get_db():
 def create_entry(entry_in: schemas.TimeEntryCreate, db: Session = Depends(get_db),
                  user: CurrentUser = Depends(get_current_user)):
     """Создает запись о затраченном времени. user_id берётся только из токена."""
-    logger.info(f"Creating time entry: task_id={entry_in.task_id}, minutes={entry_in.minutes}, user_id={user.id}")
+    logger.info(
+        f"Creating time entry: task_id={entry_in.task_id}, minutes={entry_in.minutes}, "
+        f"user_id={user.id}"
+    )
     try:
         result = crud.create_time_entry(db, entry_in, user_id=user.id)
         logger.info(f"Time entry created successfully: id={result.id}")
         return result
     except ValueError as e:
         logger.error(f"Validation error: {e}")
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=str(e)) from e
 
-@router.get("/time-entries", response_model=List[schemas.TimeEntryRead])
-def list_entries(task_id: Optional[int] = None, user_id: Optional[int] = None,
+@router.get("/time-entries", response_model=list[schemas.TimeEntryRead])
+def list_entries(task_id: int | None = None, user_id: int | None = None,
                  db: Session = Depends(get_db), user: CurrentUser = Depends(get_current_user)):
     """Пользователь видит только свои записи, admin — все (с фильтром user_id)."""
     if not user.is_admin:
@@ -54,11 +58,11 @@ def get_users_statistics(db: Session = Depends(get_db), user: CurrentUser = Depe
     - avg_minutes: среднее время на задачу в минутах
     """
     logger.info("Getting users statistics")
-    
+
     try:
         # Группируем по user_id и получаем статистику
         from . import models
-        
+
         stats = db.query(
             models.TimeEntry.user_id,
             func.count(models.TimeEntry.id).label('task_count'),
@@ -66,7 +70,7 @@ def get_users_statistics(db: Session = Depends(get_db), user: CurrentUser = Depe
         ).group_by(
             models.TimeEntry.user_id
         ).all()
-        
+
         # Преобразуем в список словарей
         result = []
         for stat in stats:
@@ -77,10 +81,10 @@ def get_users_statistics(db: Session = Depends(get_db), user: CurrentUser = Depe
                 'task_count': stat.task_count,
                 'avg_minutes': round(float(stat.avg_minutes)) if stat.avg_minutes else 0
             })
-        
+
         logger.info(f"Users statistics retrieved: {len(result)} users")
         return result
-        
+
     except Exception as e:
         logger.error(f"Error getting statistics: {e}")
-        raise HTTPException(status_code=500, detail="Failed to get statistics")
+        raise HTTPException(status_code=500, detail="Failed to get statistics") from e

@@ -20,7 +20,8 @@ def migrations_db(request, tmp_path):
     """Пустая база для миграций: DATABASE_URL из conftest занят базой остальных тестов.
 
     sqlite — отдельный файл. postgres — своя схема (search_path) в базе из TEST_POSTGRES_URL
-    (postgresql+psycopg://…), она создаётся перед тестом и удаляется после; без переменной тест пропускается.
+    (postgresql+psycopg://…), она создаётся перед тестом и удаляется после;
+    без переменной тест пропускается.
     Соединение передаётся в migrations/env.py через cfg.attributes["connection"].
     """
     schema = None

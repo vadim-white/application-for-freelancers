@@ -1,4 +1,3 @@
-from typing import Optional
 
 from fastapi import HTTPException, Request
 from jose import JWTError, jwt
@@ -23,7 +22,7 @@ def _unauthorized(detail: str) -> HTTPException:
     )
 
 
-def authenticate(request: Request) -> Optional[dict]:
+def authenticate(request: Request) -> dict | None:
     """
     Проверяет Bearer access-токен для всех путей, кроме PUBLIC_PATHS.
     Возвращает {"id": str, "role": str} или None для публичного пути.
@@ -48,7 +47,7 @@ def authenticate(request: Request) -> Optional[dict]:
             options={"require_exp": True},
         )
     except JWTError:
-        raise _unauthorized("Invalid or expired token")
+        raise _unauthorized("Invalid or expired token") from None
 
     # refresh-токен подписан тем же ключом, как access его принимать нельзя
     if payload.get("type") != "access":

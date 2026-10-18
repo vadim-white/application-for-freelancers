@@ -50,7 +50,7 @@ def get_current_user(request: Request) -> CurrentUser:
             options={"require_exp": True},
         )
     except JWTError:
-        raise _unauthorized("Invalid or expired token")
+        raise _unauthorized("Invalid or expired token") from None
 
     # refresh-токен подписан тем же ключом, как access его принимать нельзя
     if payload.get("type") != "access":

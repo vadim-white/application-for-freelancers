@@ -7,11 +7,12 @@
 import logging
 
 from sqlalchemy.orm import Session
+
 from . import models
-from .models import UserRole
 from .core.config import settings
 from .core.security import get_password_hash
 from .db import SessionLocal
+from .models import UserRole
 
 logger = logging.getLogger("app.init_users")
 

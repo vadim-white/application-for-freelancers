@@ -1,9 +1,10 @@
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from .proxy import resolve_upstream, stream_proxy
-from .middleware import authenticate
-from .health import router as health_router
+
 from .core.config import settings
+from .health import router as health_router
+from .middleware import authenticate
+from .proxy import resolve_upstream, stream_proxy
 
 app = FastAPI(title="API Gateway")
 

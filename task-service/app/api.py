@@ -1,12 +1,13 @@
-from fastapi import APIRouter, Depends, HTTPException, status, Query
+import logging
+
+import httpx
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
-from . import schemas, crud, models
-from .deps import get_db
+
+from . import crud, models, schemas
 from .core.auth import CurrentUser, get_current_user, require_admin
 from .core.config import settings
-from typing import List, Optional
-import httpx
-import logging
+from .deps import get_db
 
 logger = logging.getLogger(__name__)
 
@@ -17,7 +18,7 @@ router = APIRouter(dependencies=[Depends(get_current_user)])
 # Чужой объект для user неотличим от несуществующего: 404, а не 403,
 # чтобы не раскрывать, что такой id есть
 
-def _owner_scope(user: CurrentUser) -> Optional[int]:
+def _owner_scope(user: CurrentUser) -> int | None:
     """owner_id для фильтра списков: у admin без фильтра."""
     return None if user.is_admin else user.id
 
@@ -41,7 +42,7 @@ def create_project(project_in: schemas.ProjectCreate, db: Session = Depends(get_
     logger.info(f"Project created: id={project.id}, owner_id={project.owner_id}")
     return project
 
-@router.get("/projects", response_model=List[schemas.ProjectRead])
+@router.get("/projects", response_model=list[schemas.ProjectRead])
 def list_projects(skip: int = 0, limit: int = 100, db: Session = Depends(get_db),
                   user: CurrentUser = Depends(get_current_user)):
     return crud.list_projects(db, skip=skip, limit=limit, owner_id=_owner_scope(user))
@@ -79,9 +80,9 @@ def create_task(task_in: schemas.TaskCreate, db: Session = Depends(get_db),
     logger.info(f"Task created: id={task.id}, project_id={task.project_id}, owner_id={task.owner_id}")
     return task
 
-@router.get("/tasks", response_model=List[schemas.TaskRead])
+@router.get("/tasks", response_model=list[schemas.TaskRead])
 def list_tasks(skip: int = 0, limit: int = 100,
-               project_id: Optional[int] = Query(None), status_filter: Optional[models.TaskStatus] = Query(None, alias="status"),
+               project_id: int | None = Query(None), status_filter: models.TaskStatus | None = Query(None, alias="status"),
                db: Session = Depends(get_db), user: CurrentUser = Depends(get_current_user)):
     return crud.list_tasks(db, skip=skip, limit=limit, project_id=project_id, status=status_filter,
                            owner_id=_owner_scope(user))
@@ -128,7 +129,7 @@ def change_status(task_id: int, status_in: dict, db: Session = Depends(get_db),
         t.status = models.TaskStatus(new_status)
     except Exception as e:
         logger.error(f"Invalid status: {new_status}, error: {e}")
-        raise HTTPException(status_code=400, detail="Invalid status")
+        raise HTTPException(status_code=400, detail="Invalid status") from e
     db.add(t)
     db.commit()
     db.refresh(t)
@@ -151,7 +152,7 @@ async def get_users_statistics(user: CurrentUser = Depends(require_admin)):
             )
     except httpx.HTTPError as e:
         logger.error(f"Error getting statistics from time-service: {e}")
-        raise HTTPException(status_code=502, detail="Time service unavailable")
+        raise HTTPException(status_code=502, detail="Time service unavailable") from e
 
     if response.status_code != 200:
         logger.error(f"Failed to get statistics from time-service: {response.status_code}")

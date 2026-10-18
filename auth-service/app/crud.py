@@ -1,11 +1,12 @@
-from sqlalchemy.orm import Session
-from . import models, schemas
-from .core.security import get_password_hash, decode_token
-from fastapi import HTTPException, Depends, Header
-from .db import SessionLocal
-from .core.config import settings
+
+from fastapi import Depends, Header, HTTPException
 from jose import JWTError
-from typing import Optional
+from sqlalchemy.orm import Session
+
+from . import models, schemas
+from .core.security import decode_token, get_password_hash
+from .db import SessionLocal
+
 
 def get_user_by_email(db: Session, email: str):
     return db.query(models.User).filter(models.User.email == email).first()
@@ -29,8 +30,10 @@ def get_db():
     finally:
         db.close()
 
-def get_active_user_by_sub(db: Session, sub) -> Optional[models.User]:
-    """Пользователь по claim `sub` токена; None, если sub некорректен, пользователя нет или он неактивен."""
+def get_active_user_by_sub(db: Session, sub) -> models.User | None:
+    """Пользователь по claim `sub` токена; None, если sub некорректен,
+    пользователя нет или он неактивен.
+    """
     if not isinstance(sub, str) or not sub.isdigit():
         return None
     user = db.query(models.User).filter(models.User.id == int(sub)).first()
@@ -38,7 +41,7 @@ def get_active_user_by_sub(db: Session, sub) -> Optional[models.User]:
         return None
     return user
 
-def get_current_token_user(db: Session = Depends(get_db), authorization: Optional[str] = Header(None)):
+def get_current_token_user(db: Session = Depends(get_db), authorization: str | None = Header(None)):
     """Get current user from Authorization header (Bearer access token)"""
     if not authorization:
         raise HTTPException(status_code=401, detail="Missing authorization header")
@@ -50,7 +53,7 @@ def get_current_token_user(db: Session = Depends(get_db), authorization: Optiona
     try:
         payload = decode_token(parts[1])
     except JWTError:
-        raise HTTPException(status_code=401, detail="Invalid or expired token")
+        raise HTTPException(status_code=401, detail="Invalid or expired token") from None
     if payload.get("type") != "access":
         raise HTTPException(status_code=401, detail="Invalid token type")
 

@@ -1,5 +1,5 @@
 import os
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 # Окружение задаётся до импорта приложения: config и CORS настраиваются при импорте
 os.environ["SECRET_KEY"] = "test-secret"
@@ -56,7 +56,7 @@ def make_token(sub="1", role="user", token_type="access", expires_in=timedelta(m
     if role is not None:
         payload["role"] = role
     if expires_in is not None:
-        payload["exp"] = datetime.now(timezone.utc) + expires_in
+        payload["exp"] = datetime.now(UTC) + expires_in
     return jwt.encode(payload, secret, algorithm="HS256")
 
 
