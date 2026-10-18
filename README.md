@@ -146,6 +146,20 @@ docker run --rm -v "$PWD/<service>":/src:ro python:3.14-slim sh -c \
   "cp -r /src /app && cd /app && rm -rf .env .venv && pip install -q -r requirements.txt -r requirements-dev.txt && python -m pytest -q"
 ```
 
+#### Сквозной прогон
+
+[tests/smoke.sh](tests/smoke.sh) — curl-прогон через gateway: авторизация, доступ «только свои», записи времени, `/health`, CORS. Идемпотентен, проходит на чистой базе и повторно. Готовности стека не ждёт.
+
+```bash
+docker compose up --build -d --wait
+bash tests/smoke.sh                      # режим compose: 116 проверок
+
+./scripts/k8s-deploy.sh                  # кластер kind (см. k8s/README.md)
+SMOKE_MODE=k8s bash tests/smoke.sh       # режим k8s: 114 проверок через http://127.0.0.1:8080
+```
+
+`/health` gateway всегда отвечает 200, а доступность сервисов пишет в теле (`upstreams`), поэтому smoke проверяет тело: `auth`, `task`, `time` — все `true`. В k8s запрос идёт изнутри пода `ser-gateway` (через вход `/health` отдаёт фронт). Код выхода 0 — все проверки пройдены.
+
 ### Миграции
 
 Схему БД auth-service, task-service и time-service ведёт Alembic (`<service>/migrations/`). Применяются они отдельно от приложения: `alembic upgrade head` (в compose — сервисы `ser-*-migrate`, в Kubernetes — Job `*-migrate`). Новая миграция создаётся автогенерацией по изменённым моделям (`<service>` — `auth`, `task` или `time`, нужен запущенный стек, у которого база уже на последней ревизии):
@@ -183,7 +197,7 @@ open http://127.0.0.1:8080       # приложение (вход admin@example.
 - миграции — Job `auth-migrate`, `task-migrate`, `time-migrate`, seed — Job `auth-seed`. Порядок задаёт `k8s-deploy.sh`. Деплоить только через него: Job неизменяемы, голый `kubectl apply -k` поверх старых Job падает или не перезапускает миграции;
 - по две реплики у auth, task, time, gateway и frontend, базы — по одной;
 - Pod Security Admission `restricted` (не root, без привилегий, корень только на чтение), NetworkPolicy по умолчанию запрещают всё, кроме нужных связей;
-- сквозной прогон против кластера — `SMOKE_MODE=k8s bash docs/archive/smoke_1.2.9.sh` (114 проверок).
+- сквозной прогон против кластера — `SMOKE_MODE=k8s bash tests/smoke.sh` (114 проверок).
 
 Удалить кластер: `kind delete cluster --name freelance`.
 
@@ -257,6 +271,7 @@ curl -X POST http://localhost:8000/api/auth/login \
 │   ├── overlays/local/  overlay для kind: секреты из app.env и db.env, imagePullPolicy, GatewayClass + EnvoyProxy (NodePort 30080)
 │   ├── overlays/local-seed/ overlay local + Job auth-seed (тестовые пользователи, применяет k8s-deploy.sh)
 │   └── kind-config.yaml конфиг локального кластера kind
+├── tests/               сквозные проверки всего стека (smoke.sh — curl-прогон через gateway, режимы compose и k8s)
 ├── scripts/             вспомогательные скрипты (init-env.sh — .env, init-k8s-env.sh — секреты кластера, kind-up.sh — кластер kind и образы, k8s-deploy.sh — деплой в кластер)
 ├── .env.example         шаблон общих переменных для Docker Compose
 └── docker-compose.yml

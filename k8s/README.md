@@ -188,7 +188,7 @@ k describe gateway entry                 # условия Accepted / Programmed 
 k describe networkpolicy ser-task
 ```
 
-Сквозной прогон: `SMOKE_MODE=k8s bash docs/archive/smoke_1.2.9.sh` — 114 проверок через `http://127.0.0.1:8080`. Скрипт пока лежит в `docs/`, а этот каталог не в git; перенос в репозиторий запланирован на этап 1.5.
+Сквозной прогон: `SMOKE_MODE=k8s bash tests/smoke.sh` — 114 проверок через `http://127.0.0.1:8080`. `/health` через вход отдаёт фронт, поэтому smoke проверяет его изнутри пода `ser-gateway` (тело: `upstreams.auth/task/time` все `true`).
 
 Статическая проверка — на выводе kustomize, а не на каталоге `k8s/` (там лежит `kind-config.yaml`, не манифест). kubeconform не знает схем CRD, поэтому четыре ресурса входа пропускаются явно, а проверяет их API-сервер:
 
