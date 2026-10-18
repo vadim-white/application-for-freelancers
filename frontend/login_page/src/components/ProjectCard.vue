@@ -76,11 +76,12 @@
 </template>
 
 <script setup lang="ts">
-import { defineProps, defineEmits } from 'vue'
+import { defineProps, defineEmits, type PropType } from 'vue'
+import type { Task } from '../services/tasks'
 
 const props = defineProps({
   project: { type: Object, required: true },
-  tasks: { type: Array, default: () => [] }
+  tasks: { type: Array as PropType<Task[]>, default: () => [] }
 })
 const emit = defineEmits(['open'])
 

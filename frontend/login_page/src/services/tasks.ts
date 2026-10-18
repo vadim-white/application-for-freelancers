@@ -1,6 +1,22 @@
 // src/services/tasks.ts
 import api from './api'
 
+export type TaskStatus = 'todo' | 'in_progress' | 'done' | 'blocked'
+
+// Задача из task-service (схема TaskRead, без вложенного project)
+export interface Task {
+  id: number
+  title: string
+  description: string | null
+  status: TaskStatus
+  deadline: string | null
+  project_id: number | null
+  is_active: boolean
+  owner_id: number
+  created_at: string | null
+  updated_at: string | null
+}
+
 export async function getProjects() {
   const r = await api.get('/api/tasks/projects')
   return r.data
