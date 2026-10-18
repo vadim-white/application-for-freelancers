@@ -1,0 +1,26 @@
+[project]
+name = "e2e"
+version = "0.1.0"
+description = "Сквозные тесты фронта в браузере (Playwright): авто-refresh токена и доступ «только свои»"
+# Python из образа mcr.microsoft.com/playwright/python:v1.63.0-noble (Ubuntu 24.04) — 3.12
+requires-python = "==3.12.*"
+dependencies = [
+    # версия пакета = версии образа Playwright: драйвер пакета и браузеры образа из одного релиза
+    "playwright==1.63.0",
+    "pytest-playwright==0.10.0",
+    "pytest==9.1.1",
+]
+
+# не библиотека: uv ставит только зависимости, сам проект не собирает
+[tool.uv]
+package = false
+
+# правила — из корневого ruff.toml, но код работает на Python 3.12 из образа Playwright: с py314
+# ruff format переписывает except (A, B) в синтаксис 3.14 без скобок (PEP 758)
+[tool.ruff]
+extend = "../../ruff.toml"
+target-version = "py312"
+
+[tool.pytest.ini_options]
+# скриншот и trace сохраняются только для упавших тестов (в test-results/), кэш pytest не пишем
+addopts = "--browser chromium --screenshot only-on-failure --tracing retain-on-failure --output test-results -p no:cacheprovider"

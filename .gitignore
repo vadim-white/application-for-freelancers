@@ -14,6 +14,9 @@ env/
 k8s/overlays/local/app.env
 k8s/overlays/local/db.env
 
+# Артефакты e2e (Playwright): скриншоты и trace упавших тестов
+tests/e2e/test-results/
+
 # Node
 node_modules/
 frontend/login_page/dist/
