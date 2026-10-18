@@ -13,7 +13,7 @@ Docker Compose и кластер независимы: у них разные п
 | kind | v0.33.0 (`brew install kind`) | создание кластера |
 | kubectl | 1.34.1 (kustomize 5.7.1); в CI — v1.35.9 | версия сервера 1.35, в пределах ±1 минорной |
 | curl | любая | `kind-up.sh` скачивает `install.yaml` Envoy Gateway |
-| python3 или openssl | любая | `init-k8s-env.sh` генерирует секреты |
+| python3 или openssl | любая | `init-k8s-env.sh` генерирует секреты; без обоих скрипт завершается с кодом 1 |
 | bash | 3.2+ (подходит системный macOS) | скрипты |
 
 Нужен доступ в интернет: образ узла kind, `install.yaml` Envoy Gateway, образы Envoy и `postgres:15-alpine`. Порт `127.0.0.1:8080` на хосте должен быть свободен.
@@ -43,7 +43,7 @@ open http://127.0.0.1:8080
 
 **`scripts/kind-up.sh`** создаёт кластер `freelance` по [kind-config.yaml](kind-config.yaml) (один узел, контекст kubectl — `kind-freelance`). Затем ставит Envoy Gateway v1.9.2 (`kubectl apply --server-side`; в `install.yaml` есть CRD Gateway API, CRD Envoy Gateway и контроллер в namespace `envoy-gateway-system`) и ждёт `Available` контроллера. После этого собирает пять образов (`ser-auth`, `ser-task`, `ser-time`, `ser-gateway`, `ser-frontend`) через `docker compose build` и загружает их в узел (`kind load docker-image`). Секреты и `.env` ему не нужны. Повторный запуск кластер не пересоздаёт, Envoy Gateway применяет без изменений, образы пересобирает и загружает заново. После изменения кода запустите `kind-up.sh`, затем `k8s-deploy.sh` и `rollout restart` изменённых Deployment (см. «Известные ограничения»).
 
-**`scripts/init-k8s-env.sh`** создаёт `k8s/overlays/local/app.env` (`SECRET_KEY`) и `db.env` (три пароля баз) по шаблонам [app.env.example](overlays/local/app.env.example) и [db.env.example](overlays/local/db.env.example) со случайными значениями, права 600. Повторный запуск дописывает только отсутствующие или пустые ключи, значения не печатает. Файлы в `.gitignore`, с корневым `.env` compose они не связаны.
+**`scripts/init-k8s-env.sh`** создаёт `k8s/overlays/local/app.env` (`SECRET_KEY`) и `db.env` (три пароля баз) по шаблонам [app.env.example](overlays/local/app.env.example) и [db.env.example](overlays/local/db.env.example) со случайными значениями, права 600. Повторный запуск дописывает только отсутствующие или пустые ключи, значения не печатает. Если сгенерировать значение не удалось (нет python3 и openssl), скрипт печатает ошибку и завершается с кодом 1, пустых значений в файлах нет; после установки python3 или openssl повторный запуск допишет недостающее. Файлы в `.gitignore`, с корневым `.env` compose они не связаны.
 
 **`scripts/k8s-deploy.sh`** — аналог `docker compose up --wait`. Работает только с контекстом `kind-freelance` и сначала проверяет, что в кластере есть Envoy Gateway, а в overlay — файлы секретов. Порядок:
 1. удаляет старые Job миграций и seed (по метке `app.kubernetes.io/component`);

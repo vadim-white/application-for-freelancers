@@ -49,7 +49,10 @@ fill_env() {
       chmod 600 "$tmp"
       mv "$tmp" "$env_file"
     fi
-    printf '%s=%s\n' "$key" "$(gen_secret)" >> "$env_file"
+    # сначала в переменную: сбой gen_secret при set -e останавливает скрипт, пустое значение в файл не попадёт
+    value="$(gen_secret)"
+    [ -n "$value" ] || { echo "Не удалось сгенерировать значение для $key" >&2; exit 1; }
+    printf '%s=%s\n' "$key" "$value" >> "$env_file"
     added="$added $key"
   done < <(grep -E '^[A-Za-z_][A-Za-z0-9_]*=' "$example" | cut -d= -f1)
 

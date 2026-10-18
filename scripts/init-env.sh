@@ -62,7 +62,10 @@ while read -r key; do
       chmod 600 "$tmp"
       mv "$tmp" "$ENV_FILE"
     fi
-    printf '%s=%s\n' "$key" "$(gen_secret)" >> "$ENV_FILE"
+    # сначала в переменную: сбой gen_secret при set -e останавливает скрипт, пустое значение в файл не попадёт
+    value="$(gen_secret)"
+    [ -n "$value" ] || { echo "Не удалось сгенерировать значение для $key" >&2; exit 1; }
+    printf '%s=%s\n' "$key" "$value" >> "$ENV_FILE"
   else
     has_key "$key" && continue
     grep "^$key=" "$EXAMPLE" | head -n 1 >> "$ENV_FILE"
