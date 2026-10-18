@@ -189,7 +189,7 @@ bash tests/smoke.sh                      # режим compose: 116 провер�
 SMOKE_MODE=k8s bash tests/smoke.sh       # режим k8s: 114 проверок через http://127.0.0.1:8080
 ```
 
-`/health` gateway всегда отвечает 200, а доступность сервисов пишет в теле (`upstreams`), поэтому smoke проверяет тело: `auth`, `task`, `time` — все `true`. В k8s запрос идёт изнутри пода `ser-gateway` (через вход `/health` отдаёт фронт). Код выхода 0 — все проверки пройдены.
+`/health` gateway всегда отвечает 200, а доступность сервисов пишет в теле (`upstreams`), поэтому smoke проверяет тело: `auth`, `task`, `time` — все `true`. В k8s запрос идёт изнутри пода `ser-gateway` (через вход `/health` отдаёт фронт). Каждый запрос curl ограничен 15 с (`--max-time`), молчащий сервер не повесит прогон. В конце smoke сверяет число пройденных проверок с ожидаемым (116 / 114): пропущенная проверка (например, пустой цикл) не даёт FAIL, но и не даёт PASS, и тогда печатается «пройдено N из ожидаемых M». Код выхода 0 — FAIL нет и пройдено ровно ожидаемое число.
 
 #### e2e в браузере (Playwright)
 
@@ -237,7 +237,7 @@ git config blame.ignoreRevsFile .git-blame-ignore-revs
 
 Если файла нет (например, в старой ветке до шага 1.5.7), `git blame` с этой настройкой падает с ошибкой `could not open object name list`.
 
-Shell-скрипты в `scripts/` проверяет [shellcheck](https://www.shellcheck.net/) v0.11.0 (в CI, замечаний 0): `docker run --rm -v "$PWD":/mnt:ro -w /mnt koalaman/shellcheck:v0.11.0 scripts/*.sh`. `tests/smoke.sh` пока не проверяется: там много замечаний о кавычках, их исправление запланировано вместе с укреплением smoke.
+Shell-скрипты в `scripts/`, `tests/smoke.sh` и `tests/e2e/run.sh` проверяет [shellcheck](https://www.shellcheck.net/) v0.11.0 (в CI, замечаний 0): `docker run --rm -v "$PWD":/mnt:ro -w /mnt koalaman/shellcheck:v0.11.0 scripts/*.sh tests/smoke.sh tests/e2e/run.sh`.
 
 ### Миграции
 
@@ -286,7 +286,7 @@ GitHub Actions, workflow [.github/workflows/ci.yml](.github/workflows/ci.yml). �
 
 | Job | Что проверяет |
 |---|---|
-| `lint` | `ruff check` и `ruff format --check` (0.17.1), shellcheck `scripts/*.sh`, [actionlint](https://github.com/rhysd/actionlint) по workflow (и shellcheck внутри `run:`), [gitleaks](https://github.com/gitleaks/gitleaks) по всей истории git (найденное печатается скрытым, `--redact`) |
+| `lint` | `ruff check` и `ruff format --check` (0.17.1), shellcheck (`scripts/*.sh`, `tests/smoke.sh`, `tests/e2e/run.sh`), [actionlint](https://github.com/rhysd/actionlint) по workflow (и shellcheck внутри `run:`), [gitleaks](https://github.com/gitleaks/gitleaks) по всей истории git (найденное печатается скрытым, `--redact`) |
 | `python` (×4: auth, task, time, gateway) | `uv sync --locked`, `uv run pytest --cov=app`: порог покрытия из `pyproject.toml`, тест миграций на PostgreSQL 15 (service container, `TEST_POSTGRES_URL`). Пропущенный тест роняет job: значит, база не подключилась |
 | `frontend` | Node из `.nvmrc` (24), `npm ci`, `npm run typecheck`, `npm run build` |
 | `static` | `docker compose config --quiet` на `.env` от `init-env.sh`, kubeconform v0.8.0 по выводу `kubectl kustomize` обоих overlay (как в [k8s/README.md](k8s/README.md#диагностика)) |

@@ -58,8 +58,8 @@ jobs:
         run: uvx "ruff@$RUFF_VERSION" check .
       - name: ruff format --check
         run: uvx "ruff@$RUFF_VERSION" format --check .
-      - name: shellcheck scripts/
-        run: docker run --rm -v "$PWD:/mnt:ro" -w /mnt "$SHELLCHECK_IMAGE" scripts/*.sh
+      - name: shellcheck (scripts, smoke, e2e run.sh)
+        run: docker run --rm -v "$PWD:/mnt:ro" -w /mnt "$SHELLCHECK_IMAGE" scripts/*.sh tests/smoke.sh tests/e2e/run.sh
       - name: actionlint
         run: docker run --rm -v "$PWD:/repo:ro" -w /repo "$ACTIONLINT_IMAGE" -color
       - name: gitleaks (вся история)
