@@ -10,7 +10,6 @@
 **/dist/
 **/.DS_Store
 **/*.log
-env/
 **/venv/
 **/.venv/
 .vscode/

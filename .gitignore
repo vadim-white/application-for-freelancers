@@ -2,7 +2,6 @@
 __pycache__/
 *.pyc
 .venv/
-env/
 
 # Базы данных
 *.db
@@ -28,6 +27,3 @@ frontend/login_page/dist/
 
 # Внутренние заметки
 docs/
-
-# Разовые скрипты (пока не удалены)
-init_db.py
