@@ -65,7 +65,7 @@
             v-for="p in projects"
             :key="p.id"
             :project="p"
-            :tasks="shortTasks[p.id] || []"
+            :tasks="projectTasks[p.id] || []"
             @open="openProject"
           />
 
@@ -181,7 +181,7 @@ const isAdmin = computed(() => {
 })
 
 const projects = ref<any[]>([])
-const shortTasks = reactive<Record<number, any[]>>({})
+const projectTasks = reactive<Record<number, any[]>>({})
 const usersStats = ref<any[]>([])
 
 const currentTab = ref('tasks')
@@ -209,13 +209,13 @@ async function load() {
   try {
     const ps = await getProjects()
     projects.value = ps
-    // fetch first 3 tasks per project
+    // все задачи проекта: карточка показывает первые три и счётчик по всем
     for (const p of ps) {
       try {
         const tasks = await getTasks({ project_id: p.id })
-        shortTasks[p.id] = tasks.slice(0, 3)
+        projectTasks[p.id] = tasks
       } catch {
-        shortTasks[p.id] = []
+        projectTasks[p.id] = []
       }
     }
   } catch (err) {

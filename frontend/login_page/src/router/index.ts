@@ -6,9 +6,9 @@ import Profile from '../pages/Profile.vue'
 import { useAuthStore } from '../stores/auth'
 
 const routes = [
-  { path: '/', redirect: '/login' },
-  { path: '/login', component: LoginPage },
-  { path: '/register', component: RegisterPage },
+  { path: '/', redirect: () => (useAuthStore().isAuthenticated ? '/dashboard' : '/login') },
+  { path: '/login', component: LoginPage, meta: { guestOnly: true } },
+  { path: '/register', component: RegisterPage, meta: { guestOnly: true } },
   { path: '/dashboard', component: Dashboard, meta: { requiresAuth: true } },
   { path: '/profile', component: Profile, meta: { requiresAuth: true } }
 ]
@@ -23,6 +23,8 @@ router.beforeEach((to, from, next) => {
   const auth = useAuthStore()
   if (to.meta.requiresAuth && !auth.isAuthenticated) {
     next('/login')
+  } else if (to.meta.guestOnly && auth.isAuthenticated) {
+    next('/dashboard')
   } else {
     next()
   }

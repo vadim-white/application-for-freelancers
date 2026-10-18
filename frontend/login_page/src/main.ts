@@ -8,8 +8,9 @@ import "./styles/global.css";
 
 const app = createApp(App);
 
-app.use(router);
+// Pinia раньше роутера: redirect-функция роута «/» читает стор при установке роутера
 app.use(createPinia());
+app.use(router);
 app.use(naive);
 
 app.mount("#app");

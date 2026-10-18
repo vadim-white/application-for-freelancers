@@ -188,10 +188,6 @@ async function onStop() {
     description: note.value || props.task.title
   }
 
-  console.log('Time entry payload:', payload)
-  console.log('Task ID:', payload.task_id, 'Type:', typeof payload.task_id)
-  console.log('Minutes:', payload.minutes, 'Type:', typeof payload.minutes)
-
   saving.value = true
   try {
     await createTimeEntry(payload)
