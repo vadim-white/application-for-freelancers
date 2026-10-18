@@ -3,6 +3,9 @@
 # Секреты генерируют scripts/init-env.sh и scripts/init-k8s-env.sh в каждом прогоне; сразу после
 # генерации значения маскируются (::add-mask::). Вывод `docker compose config` и `kubectl kustomize`
 # содержит секреты — первый запускается только с --quiet, второй идёт только в pipe. set -x не включать.
+# timeout-minutes — по первому прогону: лёгкие jobs 5 мин (с запасом на медленное скачивание образов),
+# compose и kind — в 3–5 раз дольше фактического (раннер публичного репозитория — 4 vCPU,
+# у приватного 2 vCPU, запас это покрывает).
 name: CI
 
 on:
@@ -40,7 +43,7 @@ env:
 jobs:
   lint:
     runs-on: ubuntu-24.04
-    timeout-minutes: 10
+    timeout-minutes: 5 # первый прогон: 10 с
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -65,7 +68,7 @@ jobs:
   python:
     name: python (${{ matrix.service }})
     runs-on: ubuntu-24.04
-    timeout-minutes: 10
+    timeout-minutes: 5 # первый прогон: 25–40 с
     strategy:
       fail-fast: false
       matrix:
@@ -114,7 +117,7 @@ jobs:
 
   frontend:
     runs-on: ubuntu-24.04
-    timeout-minutes: 10
+    timeout-minutes: 5 # первый прогон: 24 с
     defaults:
       run:
         shell: bash
@@ -134,7 +137,7 @@ jobs:
 
   static:
     runs-on: ubuntu-24.04
-    timeout-minutes: 10
+    timeout-minutes: 5 # первый прогон: 13 с
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -178,7 +181,7 @@ jobs:
 
   compose:
     runs-on: ubuntu-24.04
-    timeout-minutes: 20
+    timeout-minutes: 10 # первый прогон: 1 мин 51 с
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -217,7 +220,7 @@ jobs:
 
   kind:
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    timeout-minutes: 15 # первый прогон: 4 мин 13 с
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
