@@ -1,0 +1,31 @@
+[project]
+name = "auth-service"
+version = "0.1.0"
+description = "Аутентификация: регистрация, вход, JWT"
+requires-python = "==3.14.*"
+dependencies = [
+    "fastapi==0.143.1",
+    "uvicorn[standard]==0.54.0",
+    "SQLAlchemy==2.0.54",
+    "alembic==1.20.0",
+    "pydantic==2.14.1",
+    "pydantic-settings==2.16.0",
+    "python-jose[cryptography]==3.5.0",
+    "python-dotenv==1.2.4",
+    "psycopg[binary]==3.3.6",
+    "passlib[bcrypt]==1.7.4",
+    "bcrypt==4.3.0",
+    "email-validator==2.3.0",
+]
+
+# зависимости только для тестов: uv sync ставит их по умолчанию, в образ не попадают (--no-dev)
+[dependency-groups]
+dev = [
+    "pytest==9.1.1",
+    "httpx2==2.13.1",
+    "pytest-cov==7.1.0",
+]
+
+# сервис — приложение, а не библиотека: uv ставит только зависимости, сам проект не собирает
+[tool.uv]
+package = false

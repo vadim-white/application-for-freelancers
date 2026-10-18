@@ -1,0 +1,26 @@
+[project]
+name = "gateway-service"
+version = "0.1.0"
+description = "API Gateway: проверка JWT и прокси к сервисам"
+requires-python = "==3.14.*"
+dependencies = [
+    "fastapi==0.143.1",
+    "uvicorn[standard]==0.54.0",
+    "pydantic==2.14.1",
+    "pydantic-settings==2.16.0",
+    "python-jose[cryptography]==3.5.0",
+    "python-dotenv==1.2.4",
+    "httpx==0.28.1",
+]
+
+# зависимости только для тестов: uv sync ставит их по умолчанию, в образ не попадают (--no-dev)
+[dependency-groups]
+dev = [
+    "pytest==9.1.1",
+    "httpx2==2.13.1",
+    "pytest-cov==7.1.0",
+]
+
+# сервис — приложение, а не библиотека: uv ставит только зависимости, сам проект не собирает
+[tool.uv]
+package = false

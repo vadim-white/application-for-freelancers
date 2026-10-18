@@ -48,6 +48,7 @@
 ## Стек
 
 - Python 3.14, FastAPI, SQLAlchemy 2.0, Pydantic 2, драйвер PostgreSQL psycopg 3
+- uv — зависимости Python (`pyproject.toml` + `uv.lock` в каждом сервисе), pytest
 - PostgreSQL 15 (в Docker), SQLite для локальной разработки без контейнеров
 - JWT (python-jose), хеширование паролей через bcrypt
 - Vue 3, TypeScript, Pinia, Vue Router, Axios, Vite, Naive UI
@@ -81,7 +82,7 @@ docker compose up --build --wait
 
 Таблицы auth-service, task-service и time-service создают одноразовые контейнеры `ser-auth-migrate`, `ser-task-migrate` и `ser-time-migrate` (`alembic upgrade head`), сервис стартует только после успешного завершения своей миграции. Если тома остались от версии без миграций, один раз выполните `docker compose down -v`: иначе миграция упадёт на уже существующих таблицах. То же после перехода на пароли из `.env`: пароль БД применяется только при создании тома.
 
-Тестовых пользователей создаёт одноразовый контейнер `ser-auth-seed` (`python -m app.init_users`) после миграции auth, ser-auth стартует после него. Сам сервис при старте пользователей не создаёт. По умолчанию (`SEED_TEST_USERS=true` в `.env`, дефолт в `docker-compose.yml` тоже `true`): создаются пользователи, которых ещё нет, повторный запуск дублей не делает. Без тестовых пользователей: `SEED_TEST_USERS=false docker compose up --build` (seed пишет в лог «пропущено» и завершается с кодом 0, войти можно после регистрации). Вне Docker то же делает `python -m app.init_users` в папке auth-service после `alembic upgrade head`, если в `.env` указано `SEED_TEST_USERS=true`.
+Тестовых пользователей создаёт одноразовый контейнер `ser-auth-seed` (`python -m app.init_users`) после миграции auth, ser-auth стартует после него. Сам сервис при старте пользователей не создаёт. По умолчанию (`SEED_TEST_USERS=true` в `.env`, дефолт в `docker-compose.yml` тоже `true`): создаются пользователи, которых ещё нет, повторный запуск дублей не делает. Без тестовых пользователей: `SEED_TEST_USERS=false docker compose up --build` (seed пишет в лог «пропущено» и завершается с кодом 0, войти можно после регистрации). Вне Docker то же делает `uv run python -m app.init_users` в папке auth-service после `uv run alembic upgrade head`, если в `.env` указано `SEED_TEST_USERS=true`.
 
 | Email | Пароль | Роль |
 |-------|--------|------|
@@ -97,37 +98,33 @@ docker compose down -v
 
 ### Локальный запуск без Docker
 
-Нужны Python 3.14 (версия в `.python-version`) и Node.js 20+. Каждый сервис запускается в отдельном терминале со своим виртуальным окружением. В auth-service, task-service и time-service таблицы создаёт `alembic upgrade head` (выполнить перед первым запуском и после обновления кода). Если `auth.db`, `task.db` или `time_service.db` осталась от версии без миграций, удалите её: на таблицах, созданных без Alembic, `alembic upgrade head` падает с ошибкой вида `table users already exists`. Базу выбирает обязательная переменная `DATABASE_URL`: для локального запуска в `.env.example` указан SQLite-файл в папке сервиса.
+Нужны [uv](https://docs.astral.sh/uv/) (проверено на 0.13.1) и Node.js 20+. Python 3.14 (версия в `.python-version`) uv при необходимости скачает сам. Каждый сервис запускается в отдельном терминале со своим виртуальным окружением: `uv sync` создаёт `.venv` в папке сервиса и ставит в него зависимости строго по `uv.lock` (вместе с dev-группой для тестов), `uv run <команда>` выполняет команду в этом окружении, активировать его не нужно. Окружение `.venv`, созданное раньше через `python -m venv` с другой версией Python, uv пересоздаст сам. Добавить или обновить зависимость — `uv add 'пакет==версия'` в папке сервиса (меняет `pyproject.toml` и `uv.lock`, оба файла коммитятся вместе). В auth-service, task-service и time-service таблицы создаёт `uv run alembic upgrade head` (выполнить перед первым запуском и после обновления кода). Если `auth.db`, `task.db` или `time_service.db` осталась от версии без миграций, удалите её: на таблицах, созданных без Alembic, `alembic upgrade head` падает с ошибкой вида `table users already exists`. Базу выбирает обязательная переменная `DATABASE_URL`: для локального запуска в `.env.example` указан SQLite-файл в папке сервиса.
 
 Перед первым запуском скопируйте в каждой папке сервиса и в `frontend/login_page` файл `.env.example` в `.env`. В `.env` всех четырёх бэкенд-сервисов впишите один и тот же `SECRET_KEY`. `DATABASE_URL` в auth, task и time уже есть в примере (SQLite). Без `SECRET_KEY` и `DATABASE_URL` сервисы не стартуют: значений по умолчанию нет, сервис сразу падает с ошибкой валидации настроек. Сгенерировать ключ: `python3 -c "import secrets; print(secrets.token_urlsafe(32))"`. Остальные значения из примеров подходят для локального запуска.
 
 ```bash
 # auth-service
 cd auth-service
-python3 -m venv .venv && source .venv/bin/activate
-pip install -r requirements.txt
-alembic upgrade head
-uvicorn app.main:app --reload --port 8001
+uv sync
+uv run alembic upgrade head
+uv run uvicorn app.main:app --reload --port 8001
 
 # task-service
 cd task-service
-python3 -m venv .venv && source .venv/bin/activate
-pip install -r requirements.txt
-alembic upgrade head
-uvicorn app.main:app --reload --port 8002
+uv sync
+uv run alembic upgrade head
+uv run uvicorn app.main:app --reload --port 8002
 
 # time-service
 cd time-service
-python3 -m venv .venv && source .venv/bin/activate
-pip install -r requirements.txt
-alembic upgrade head
-uvicorn app.main:app --reload --port 8003
+uv sync
+uv run alembic upgrade head
+uv run uvicorn app.main:app --reload --port 8003
 
 # gateway-service
 cd gateway-service
-python3 -m venv .venv && source .venv/bin/activate
-pip install -r requirements.txt
-uvicorn app.main:app --reload --port 8000
+uv sync
+uv run uvicorn app.main:app --reload --port 8000
 
 # frontend
 cd frontend/login_page
@@ -139,11 +136,20 @@ npm run dev
 
 ### Тесты
 
-Тесты есть у gateway, auth-service, task-service и time-service. Им не нужны запущенные сервисы: внешние HTTP-вызовы (gateway → сервисы, task → time) подменяются в тестах, базы — временная SQLite. Запуск в том же образе Python, что и у сервиса (`<service>` — `gateway-service`, `auth-service`, `task-service` или `time-service`):
+Тесты есть у gateway, auth-service, task-service и time-service. Им не нужны запущенные сервисы: внешние HTTP-вызовы (gateway → сервисы, task → time) подменяются в тестах, базы — временная SQLite. Запуск в папке сервиса (`<service>` — `gateway-service`, `auth-service`, `task-service` или `time-service`):
 
 ```bash
-docker run --rm -v "$PWD/<service>":/src:ro python:3.14-slim sh -c \
-  "cp -r /src /app && cd /app && rm -rf .env .venv && pip install -q -r requirements.txt -r requirements-dev.txt && python -m pytest -q"
+cd <service>
+uv run pytest -q
+```
+
+uv сам поставит Python 3.14 и зависимости из `uv.lock` вместе с dev-группой (`pytest`, `httpx2` — клиент для `TestClient` Starlette, `pytest-cov`). Покрытие: `uv run pytest --cov=app`.
+
+Без uv на машине — в Docker, в официальном образе uv с Python 3.14 на том же Debian, что и `python:3.14-slim` у сервисов:
+
+```bash
+docker run --rm -v "$PWD/<service>":/src:ro ghcr.io/astral-sh/uv:0.13.1-python3.14-trixie-slim sh -c \
+  "cp -r /src /app && cd /app && rm -rf .env .venv && uv run --locked pytest -q"
 ```
 
 #### Сквозной прогон
@@ -177,7 +183,7 @@ docker compose run --rm --no-deps --user "$(id -u):$(id -g)" \
 - для enum в `downgrade` после `op.drop_table` добавить `sa.Enum(name='…').drop(op.get_bind(), checkfirst=True)`: PostgreSQL не удаляет тип вместе с таблицей;
 - убрать комментарии «auto generated».
 
-Затем проверьте цикл `alembic upgrade head` → `alembic check` → `alembic downgrade base` → `alembic upgrade head`. Его выполняет `tests/test_migrations.py`: при расхождении моделей и миграций тест падает. Применить новую ревизию к базе стека: `docker compose up --build -d` (migrate-сервис выполнится сам) или `docker compose run --rm --no-deps ser-<service>-migrate alembic upgrade head`. Вне Docker те же команды `alembic …` запускаются в папке сервиса.
+Затем проверьте цикл `alembic upgrade head` → `alembic check` → `alembic downgrade base` → `alembic upgrade head`. Его выполняет `tests/test_migrations.py`: при расхождении моделей и миграций тест падает. Применить новую ревизию к базе стека: `docker compose up --build -d` (migrate-сервис выполнится сам) или `docker compose run --rm --no-deps ser-<service>-migrate alembic upgrade head`. Вне Docker те же команды запускаются в папке сервиса через uv: `uv run alembic upgrade head`, `uv run alembic check` и т. д.
 
 ### Kubernetes
 
@@ -292,7 +298,7 @@ curl -X POST http://localhost:8000/api/auth/login \
 - `SECRET_KEY` обязателен во всех сервисах, `DATABASE_URL` обязателен в auth, task и time: значений по умолчанию (в том числе SQLite-файла) нет, без них сервис не стартует. CORS настроен только в gateway и разрешает лишь адреса из `CORS_ORIGINS`
 - Фронтенд сам обновляет access-токен: на ответ 401 он один раз запрашивает `/api/auth/refresh` (параллельные запросы ждут один общий refresh) и повторяет запрос. Если refresh не удался, токены удаляются и открывается страница входа. Refresh-токен живёт 7 дней и не обновляется, после этого нужно войти заново
 - Кнопка «Выполнено» в списке задач проекта ставит статус `done`, а не удаляет задачу. Выполненные задачи показываются отдельным сворачиваемым блоком под текущими
-- Python 3.14 во всех образах. В Docker Compose и Kubernetes сервисы работают с PostgreSQL через psycopg 3 (`postgresql+psycopg://`). Все прямые зависимости бэкенда закреплены точными версиями (`==`), общие пакеты одинаковы во всех сервисах; `pytest` и `httpx` для тестов вынесены в `requirements-dev.txt`
+- Python 3.14 во всех образах. В Docker Compose и Kubernetes сервисы работают с PostgreSQL через psycopg 3 (`postgresql+psycopg://`). Зависимости бэкенда ведёт uv: прямые закреплены точными версиями (`==`) в `pyproject.toml` сервиса, все вместе с транзитивными — в `uv.lock` (версии и хеши), общие пакеты одинаковы во всех сервисах. Образ ставит их `uv sync --locked` (сборка падает, если `uv.lock` не совпадает с `pyproject.toml`) в `/opt/venv`; сам uv в итоговый образ не попадает. `pytest`, `httpx2` и `pytest-cov` — в dev-группе, в образ не ставятся
 - Схема БД auth-service, task-service и time-service управляется миграциями Alembic (`<service>/migrations/`): в Docker Compose их применяют сервисы `ser-auth-migrate`, `ser-task-migrate` и `ser-time-migrate` до старта своего сервиса, в Kubernetes — Job `auth-migrate`, `task-migrate`, `time-migrate` (один раз на деплой, порядок задаёт `scripts/k8s-deploy.sh`). Тест в каждом из них проверяет, что миграции совпадают с моделями
 - Проекты хранятся только в task-service: дубль проектов в time-service (`/api/time/projects`) удалён, фронтенд создаёт проект одним запросом. `user_id` записи времени обязателен (NOT NULL), фронтенд его не отправляет: сервер берёт `user_id` из токена
 - Автотесты (pytest) есть у всех бэкенд-сервисов (gateway 45, auth 34, task 51, time 25), CI нет.
@@ -305,7 +311,6 @@ curl -X POST http://localhost:8000/api/auth/login \
 
 ## Планы
 
-- Переход на uv (`pyproject.toml` + `uv.lock`)
 - Серверное состояние таймера: запуск, пауза и остановка на бэкенде, защита от параллельных таймеров
 - CI: тесты, линтер, сборка фронтенда, сквозной smoke-прогон через gateway
 - Kubernetes: graceful shutdown (`preStop`) для rollout без 502/503; readiness на `/ready` с проверкой БД и ревизии схемы; кластер kind в CI; позже — облачный overlay и HPA
