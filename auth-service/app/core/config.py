@@ -10,7 +10,9 @@ class Settings(BaseSettings):
     # Без значения по умолчанию: без ключа сервис не стартует
     SECRET_KEY: str = Field(min_length=1)
     ACCESS_TOKEN_EXPIRE_MINUTES: int = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "15"))
-    REFRESH_TOKEN_EXPIRE_MINUTES: int = int(os.getenv("REFRESH_TOKEN_EXPIRE_MINUTES", str(60 * 24 * 7)))
+    REFRESH_TOKEN_EXPIRE_MINUTES: int = int(
+        os.getenv("REFRESH_TOKEN_EXPIRE_MINUTES", str(60 * 24 * 7))
+    )
     ALGORITHM: str = os.getenv("ALGORITHM", "HS256")
     # Тестовых пользователей создаёт команда python -m app.init_users,
     # и только при SEED_TEST_USERS=true
@@ -18,5 +20,6 @@ class Settings(BaseSettings):
 
     class Config:
         env_file = ".env"
+
 
 settings = Settings()

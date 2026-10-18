@@ -4,6 +4,7 @@
 Создаёт пользователей только при SEED_TEST_USERS=true, иначе пишет «пропущено» и выходит с кодом 0.
 Таблицы должны уже существовать (alembic upgrade head). Повторный запуск не создаёт дублей.
 """
+
 import logging
 
 from sqlalchemy.orm import Session
@@ -38,25 +39,29 @@ TEST_USERS = [
     },
 ]
 
+
 def init_test_users(db: Session):
     """Создать тестовых пользователей, которых ещё нет"""
     for user_data in TEST_USERS:
-        existing_user = db.query(models.User).filter(
-            models.User.email == user_data["email"]
-        ).first()
+        existing_user = (
+            db.query(models.User).filter(models.User.email == user_data["email"]).first()
+        )
 
         if not existing_user:
-            db.add(models.User(
-                email=user_data["email"],
-                full_name=user_data["full_name"],
-                hashed_password=get_password_hash(user_data["password"]),
-                role=user_data["role"],
-            ))
+            db.add(
+                models.User(
+                    email=user_data["email"],
+                    full_name=user_data["full_name"],
+                    hashed_password=get_password_hash(user_data["password"]),
+                    role=user_data["role"],
+                )
+            )
             logger.info("Создан пользователь %s (%s)", user_data["email"], user_data["role"].value)
         else:
             logger.info("Пользователь уже есть: %s", user_data["email"])
 
     db.commit()
+
 
 def main():
     if not settings.SEED_TEST_USERS:
@@ -72,6 +77,7 @@ def main():
     finally:
         db.close()
     logger.info("Тестовые пользователи готовы")
+
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")

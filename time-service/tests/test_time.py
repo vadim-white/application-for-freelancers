@@ -31,15 +31,18 @@ def test_root_is_public(client):
     assert client.get("/").status_code == 200
 
 
-@pytest.mark.parametrize("token", [
-    make_token(expires_in=timedelta(minutes=-1)),
-    make_token(exp=False),
-    make_token(token_type="refresh"),
-    make_token(secret="other-secret"),
-    make_token(sub="abc"),
-    make_token(role="superuser"),
-    "not-a-jwt",
-])
+@pytest.mark.parametrize(
+    "token",
+    [
+        make_token(expires_in=timedelta(minutes=-1)),
+        make_token(exp=False),
+        make_token(token_type="refresh"),
+        make_token(secret="other-secret"),
+        make_token(sub="abc"),
+        make_token(role="superuser"),
+        "not-a-jwt",
+    ],
+)
 def test_invalid_tokens_401(client, token):
     assert client.get("/api/time/time-entries", headers=auth(token)).status_code == 401
 
@@ -50,7 +53,9 @@ def test_x_user_headers_without_token_401(client):
 
 
 def create(client, headers, **body):
-    return client.post("/api/time/time-entries", json={"task_id": 1, "minutes": 10, **body}, headers=headers)
+    return client.post(
+        "/api/time/time-entries", json={"task_id": 1, "minutes": 10, **body}, headers=headers
+    )
 
 
 def test_user_id_taken_from_token_not_body(client, user1):
@@ -149,6 +154,7 @@ def test_statistics_db_error_returns_500(client, admin):
 
 # --- Проекты удалены из time (проекты живут в task-service) ---
 
+
 @pytest.mark.parametrize("method", ["get", "post"])
 def test_projects_endpoint_removed_404(client, user1, method):
     r = client.request(method, "/api/time/projects", json={"name": "p"}, headers=user1)
@@ -157,12 +163,18 @@ def test_projects_endpoint_removed_404(client, user1, method):
 
 # --- DATABASE_URL обязателен ---
 
+
 def test_settings_require_database_url(tmp_path):
     env = {k: v for k, v in os.environ.items() if k != "DATABASE_URL"}
     env["SECRET_KEY"] = "test-secret"
     env["PYTHONPATH"] = str(SERVICE_ROOT)
     # cwd без .env, иначе строка подключения подтянется оттуда
-    r = subprocess.run([sys.executable, "-c", "import app.core.config"],
-                       cwd=tmp_path, env=env, capture_output=True, text=True)
+    r = subprocess.run(
+        [sys.executable, "-c", "import app.core.config"],
+        cwd=tmp_path,
+        env=env,
+        capture_output=True,
+        text=True,
+    )
     assert r.returncode != 0
     assert "DATABASE_URL" in r.stderr

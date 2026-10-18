@@ -38,15 +38,18 @@ def test_root_is_public(client):
     assert client.get("/").status_code == 200
 
 
-@pytest.mark.parametrize("token", [
-    make_token(expires_in=timedelta(minutes=-1)),          # просрочен
-    make_token(exp=False),                                 # без exp
-    make_token(token_type="refresh"),                      # refresh вместо access
-    make_token(secret="other-secret"),                     # чужая подпись
-    make_token(sub="abc"),                                 # sub не число
-    make_token(role="superuser"),                          # неизвестная роль
-    "not-a-jwt",
-])
+@pytest.mark.parametrize(
+    "token",
+    [
+        make_token(expires_in=timedelta(minutes=-1)),  # просрочен
+        make_token(exp=False),  # без exp
+        make_token(token_type="refresh"),  # refresh вместо access
+        make_token(secret="other-secret"),  # чужая подпись
+        make_token(sub="abc"),  # sub не число
+        make_token(role="superuser"),  # неизвестная роль
+        "not-a-jwt",
+    ],
+)
 def test_invalid_tokens_401(client, token):
     assert client.get("/api/tasks/tasks", headers=auth(token)).status_code == 401
 
@@ -66,7 +69,9 @@ def test_user_can_work_with_tasks(client, user_headers):
     assert r.status_code == 201
     task_id = r.json()["id"]
     assert client.get("/api/tasks/tasks", headers=user_headers).json()[0]["id"] == task_id
-    r = client.post(f"/api/tasks/tasks/{task_id}/status", json={"status": "done"}, headers=user_headers)
+    r = client.post(
+        f"/api/tasks/tasks/{task_id}/status", json={"status": "done"}, headers=user_headers
+    )
     assert r.json()["status"] == "done"
 
 
@@ -81,7 +86,12 @@ def test_user_can_manage_own_project(client, user_headers):
     assert r.status_code == 201
     pid = r.json()["id"]
     assert r.json()["owner_id"] == 1
-    assert client.put(f"/api/tasks/projects/{pid}", json={"name": "x"}, headers=user_headers).status_code == 200
+    assert (
+        client.put(
+            f"/api/tasks/projects/{pid}", json={"name": "x"}, headers=user_headers
+        ).status_code
+        == 200
+    )
     assert client.delete(f"/api/tasks/projects/{pid}", headers=user_headers).status_code == 204
 
 
@@ -122,18 +132,25 @@ def test_statistics_time_unreachable_502_without_details(client, admin_headers, 
 
 # --- DATABASE_URL обязателен ---
 
+
 def test_settings_require_database_url(tmp_path):
     env = {k: v for k, v in os.environ.items() if k != "DATABASE_URL"}
     env["SECRET_KEY"] = "test-secret"
     env["PYTHONPATH"] = str(SERVICE_ROOT)
     # cwd без .env, иначе строка подключения подтянется оттуда
-    r = subprocess.run([sys.executable, "-c", "import app.core.config"],
-                       cwd=tmp_path, env=env, capture_output=True, text=True)
+    r = subprocess.run(
+        [sys.executable, "-c", "import app.core.config"],
+        cwd=tmp_path,
+        env=env,
+        capture_output=True,
+        text=True,
+    )
     assert r.returncode != 0
     assert "DATABASE_URL" in r.stderr
 
 
 # --- Владелец проектов и задач (owner_id из токена) ---
+
 
 def test_project_owner_from_token(client, admin_headers):
     r = client.post("/api/tasks/projects", json={"name": "p"}, headers=admin_headers)
@@ -159,7 +176,9 @@ def test_owner_id_in_body_ignored(client, user_headers, admin_headers):
     assert r.status_code == 201
     pid = r.json()["id"]
     assert r.json()["owner_id"] == 99
-    r = client.put(f"/api/tasks/projects/{pid}", json={"name": "x", "owner_id": 5}, headers=admin_headers)
+    r = client.put(
+        f"/api/tasks/projects/{pid}", json={"name": "x", "owner_id": 5}, headers=admin_headers
+    )
     assert r.status_code == 200
     assert r.json()["owner_id"] == 99
 
@@ -167,22 +186,31 @@ def test_owner_id_in_body_ignored(client, user_headers, admin_headers):
     assert r.status_code == 201
     tid = r.json()["id"]
     assert r.json()["owner_id"] == 1
-    r = client.put(f"/api/tasks/tasks/{tid}", json={"title": "x", "owner_id": 5}, headers=user_headers)
+    r = client.put(
+        f"/api/tasks/tasks/{tid}", json={"title": "x", "owner_id": 5}, headers=user_headers
+    )
     assert r.status_code == 200
     assert r.json()["owner_id"] == 1
 
 
 def test_admin_task_in_foreign_project_gets_project_owner(client, user_headers, admin_headers):
-    pid = client.post("/api/tasks/projects", json={"name": "чужой"}, headers=user_headers).json()["id"]
-    r = client.post("/api/tasks/tasks", json={"title": "t", "project_id": pid}, headers=admin_headers)
+    pid = client.post("/api/tasks/projects", json={"name": "чужой"}, headers=user_headers).json()[
+        "id"
+    ]
+    r = client.post(
+        "/api/tasks/tasks", json={"title": "t", "project_id": pid}, headers=admin_headers
+    )
     assert r.status_code == 201
     assert r.json()["owner_id"] == 1
     assert r.json()["project"]["owner_id"] == 1
     # задача видна владельцу проекта
-    assert [t["id"] for t in client.get("/api/tasks/tasks", headers=user_headers).json()] == [r.json()["id"]]
+    assert [t["id"] for t in client.get("/api/tasks/tasks", headers=user_headers).json()] == [
+        r.json()["id"]
+    ]
 
 
 # --- Доступ «только свои» (1.2.6) ---
+
 
 def _project(client, headers, name="p"):
     r = client.post("/api/tasks/projects", json={"name": name}, headers=headers)
@@ -201,14 +229,25 @@ def test_projects_list_only_own_admin_sees_all(client, user_headers, other_heade
     p2 = _project(client, other_headers, "u2")
     pa = _project(client, admin_headers, "adm")
     assert [p["id"] for p in client.get("/api/tasks/projects", headers=user_headers).json()] == [p1]
-    assert [p["id"] for p in client.get("/api/tasks/projects", headers=other_headers).json()] == [p2]
-    assert {p["id"] for p in client.get("/api/tasks/projects", headers=admin_headers).json()} == {p1, p2, pa}
+    assert [p["id"] for p in client.get("/api/tasks/projects", headers=other_headers).json()] == [
+        p2
+    ]
+    assert {p["id"] for p in client.get("/api/tasks/projects", headers=admin_headers).json()} == {
+        p1,
+        p2,
+        pa,
+    }
 
 
 def test_foreign_project_404(client, user_headers, other_headers):
     pid = _project(client, other_headers, "чужой")
     assert client.get(f"/api/tasks/projects/{pid}", headers=user_headers).status_code == 404
-    assert client.put(f"/api/tasks/projects/{pid}", json={"name": "x"}, headers=user_headers).status_code == 404
+    assert (
+        client.put(
+            f"/api/tasks/projects/{pid}", json={"name": "x"}, headers=user_headers
+        ).status_code
+        == 404
+    )
     assert client.delete(f"/api/tasks/projects/{pid}", headers=user_headers).status_code == 404
     # ответ на чужой такой же, как на несуществующий
     missing = client.get("/api/tasks/projects/99999", headers=user_headers)
@@ -230,7 +269,9 @@ def test_admin_reads_updates_deletes_foreign_project(client, user_headers, admin
     assert client.get(f"/api/tasks/tasks/{tid}", headers=user_headers).status_code == 404  # каскад
 
 
-def test_tasks_list_only_own_and_filters_inside_own(client, user_headers, other_headers, admin_headers):
+def test_tasks_list_only_own_and_filters_inside_own(
+    client, user_headers, other_headers, admin_headers
+):
     p1 = _project(client, user_headers)
     p2 = _project(client, other_headers)
     t1 = _task(client, user_headers, project_id=p1, status="done")
@@ -257,9 +298,16 @@ def test_tasks_list_only_own_and_filters_inside_own(client, user_headers, other_
 def test_foreign_task_404(client, user_headers, other_headers):
     tid = _task(client, other_headers, "чужая")
     assert client.get(f"/api/tasks/tasks/{tid}", headers=user_headers).status_code == 404
-    assert client.put(f"/api/tasks/tasks/{tid}", json={"title": "x"}, headers=user_headers).status_code == 404
-    assert client.post(f"/api/tasks/tasks/{tid}/status", json={"status": "done"},
-                       headers=user_headers).status_code == 404
+    assert (
+        client.put(f"/api/tasks/tasks/{tid}", json={"title": "x"}, headers=user_headers).status_code
+        == 404
+    )
+    assert (
+        client.post(
+            f"/api/tasks/tasks/{tid}/status", json={"status": "done"}, headers=user_headers
+        ).status_code
+        == 404
+    )
     assert client.delete(f"/api/tasks/tasks/{tid}", headers=user_headers).status_code == 404
     r = client.get(f"/api/tasks/tasks/{tid}", headers=other_headers).json()
     assert (r["title"], r["status"]) == ("чужая", "todo")
@@ -271,14 +319,18 @@ def test_admin_reads_updates_deletes_foreign_task(client, user_headers, admin_he
     r = client.put(f"/api/tasks/tasks/{tid}", json={"title": "x"}, headers=admin_headers)
     assert r.status_code == 200
     assert r.json()["owner_id"] == 1
-    r = client.post(f"/api/tasks/tasks/{tid}/status", json={"status": "done"}, headers=admin_headers)
+    r = client.post(
+        f"/api/tasks/tasks/{tid}/status", json={"status": "done"}, headers=admin_headers
+    )
     assert r.json()["status"] == "done"
     assert client.delete(f"/api/tasks/tasks/{tid}", headers=admin_headers).status_code == 204
 
 
 def test_user_task_in_foreign_project_404(client, user_headers, other_headers):
     pid = _project(client, other_headers)
-    r = client.post("/api/tasks/tasks", json={"title": "t", "project_id": pid}, headers=user_headers)
+    r = client.post(
+        "/api/tasks/tasks", json={"title": "t", "project_id": pid}, headers=user_headers
+    )
     assert r.status_code == 404
     assert client.get("/api/tasks/tasks", headers=other_headers).json() == []
 
@@ -287,7 +339,9 @@ def test_user_task_in_foreign_project_404(client, user_headers, other_headers):
 def test_task_in_missing_project_404(client, user_headers, admin_headers, project_id):
     # project_id=0 раньше проходил без проверки (if project_id:), на PostgreSQL — 500
     for headers in (user_headers, admin_headers):
-        r = client.post("/api/tasks/tasks", json={"title": "t", "project_id": project_id}, headers=headers)
+        r = client.post(
+            "/api/tasks/tasks", json={"title": "t", "project_id": project_id}, headers=headers
+        )
         assert r.status_code == 404
     assert client.get("/api/tasks/tasks", headers=admin_headers).json() == []
 
@@ -302,12 +356,16 @@ def test_move_task_to_own_project(client, user_headers):
 
 
 @pytest.mark.parametrize("target", ["foreign", 0, 99999])
-def test_user_move_task_to_foreign_or_missing_project_404(client, user_headers, other_headers, target):
+def test_user_move_task_to_foreign_or_missing_project_404(
+    client, user_headers, other_headers, target
+):
     p1 = _project(client, user_headers)
     if target == "foreign":
         target = _project(client, other_headers)
     tid = _task(client, user_headers, project_id=p1)
-    r = client.put(f"/api/tasks/tasks/{tid}", json={"project_id": target, "title": "x"}, headers=user_headers)
+    r = client.put(
+        f"/api/tasks/tasks/{tid}", json={"project_id": target, "title": "x"}, headers=user_headers
+    )
     assert r.status_code == 404
     t = client.get(f"/api/tasks/tasks/{tid}", headers=user_headers).json()
     assert (t["project_id"], t["title"]) == (p1, "t")
@@ -323,7 +381,9 @@ def test_admin_move_task(client, user_headers, other_headers, admin_headers):
     r = client.put(f"/api/tasks/tasks/{tid}", json={"project_id": p2}, headers=admin_headers)
     assert r.status_code == 400
     for missing in (0, 99999):
-        r = client.put(f"/api/tasks/tasks/{tid}", json={"project_id": missing}, headers=admin_headers)
+        r = client.put(
+            f"/api/tasks/tasks/{tid}", json={"project_id": missing}, headers=admin_headers
+        )
         assert r.status_code == 404
     assert client.get(f"/api/tasks/tasks/{tid}", headers=user_headers).json()["project_id"] == p1
     # в другой проект владельца задачи — можно

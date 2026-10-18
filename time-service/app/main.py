@@ -13,6 +13,7 @@ app = FastAPI(title="Time Service")
 # (в compose — сервис ser-time-migrate)
 app.include_router(time_router, prefix="/api/time")
 
+
 @app.get("/")
 async def root():
     return {"service": "time-service", "status": "ok"}

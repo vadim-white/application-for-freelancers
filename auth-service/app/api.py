@@ -12,6 +12,7 @@ from .deps import get_db
 
 router = APIRouter()
 
+
 @router.post("/register", response_model=schemas.UserRead, status_code=status.HTTP_201_CREATED)
 def register(user_in: schemas.UserCreate, db: Session = Depends(get_db)):
     existing = crud.get_user_by_email(db, email=user_in.email)
@@ -19,6 +20,7 @@ def register(user_in: schemas.UserCreate, db: Session = Depends(get_db)):
         raise HTTPException(status_code=400, detail="Email already registered")
     user = crud.create_user(db, user_in)
     return user
+
 
 @router.post("/login", response_model=schemas.Token)
 def login(form_data: schemas.UserAuth, db: Session = Depends(get_db)):
@@ -28,6 +30,7 @@ def login(form_data: schemas.UserAuth, db: Session = Depends(get_db)):
     if not user.is_active:
         raise HTTPException(status_code=403, detail="User is inactive")
     return {**create_tokens_for_user(user), "token_type": "bearer"}
+
 
 @router.post("/refresh", response_model=schemas.TokenRefreshResponse)
 def refresh_token(data: schemas.TokenRefreshRequest, db: Session = Depends(get_db)):
@@ -44,7 +47,8 @@ def refresh_token(data: schemas.TokenRefreshRequest, db: Session = Depends(get_d
         raise HTTPException(status_code=401, detail="Invalid refresh token")
     return {"access_token": create_tokens_for_user(user)["access_token"], "token_type": "bearer"}
 
+
 @router.get("/me", response_model=schemas.UserRead)
-def read_me(user = Depends(crud.get_current_token_user)):
+def read_me(user=Depends(crud.get_current_token_user)):
     # get_current_token_user returns a full user model
     return user

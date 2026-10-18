@@ -5,6 +5,7 @@ from .core.config import settings
 
 router = APIRouter()
 
+
 @router.get("/health")
 async def health():
     # check upstream services quickly

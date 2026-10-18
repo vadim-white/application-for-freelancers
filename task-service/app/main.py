@@ -8,6 +8,7 @@ app = FastAPI(title="Task Service (task-service)")
 # (в compose — сервис ser-task-migrate)
 app.include_router(api_router, prefix="/api/tasks")
 
+
 @app.get("/")
 async def root():
     return {"service": "task-service", "status": "ok"}

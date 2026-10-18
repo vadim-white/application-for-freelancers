@@ -49,6 +49,7 @@ def make_user(db):
         db.commit()
         db.refresh(user)
         return user
+
     return _make
 
 

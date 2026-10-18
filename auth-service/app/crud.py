@@ -1,4 +1,3 @@
-
 from fastapi import Depends, Header, HTTPException
 from jose import JWTError
 from sqlalchemy.orm import Session
@@ -11,6 +10,7 @@ from .db import SessionLocal
 def get_user_by_email(db: Session, email: str):
     return db.query(models.User).filter(models.User.email == email).first()
 
+
 def create_user(db: Session, user_in: schemas.UserCreate):
     user = models.User(
         email=user_in.email,
@@ -22,6 +22,7 @@ def create_user(db: Session, user_in: schemas.UserCreate):
     db.refresh(user)
     return user
 
+
 # Dependency to get DB session
 def get_db():
     db = SessionLocal()
@@ -29,6 +30,7 @@ def get_db():
         yield db
     finally:
         db.close()
+
 
 def get_active_user_by_sub(db: Session, sub) -> models.User | None:
     """Пользователь по claim `sub` токена; None, если sub некорректен,
@@ -40,6 +42,7 @@ def get_active_user_by_sub(db: Session, sub) -> models.User | None:
     if not user or not user.is_active:
         return None
     return user
+
 
 def get_current_token_user(db: Session = Depends(get_db), authorization: str | None = Header(None)):
     """Get current user from Authorization header (Bearer access token)"""

@@ -37,6 +37,7 @@ def make_token(sub, token_type, expires_in=timedelta(minutes=5), **extra):
 
 # --- register ---
 
+
 def test_register_creates_user_with_role_user(client):
     r = client.post("/api/auth/register", json={"email": "new@example.com", "password": PASSWORD})
     assert r.status_code == 201
@@ -45,6 +46,7 @@ def test_register_creates_user_with_role_user(client):
 
 
 # --- login ---
+
 
 @pytest.mark.parametrize("role", [models.UserRole.user, models.UserRole.admin])
 def test_login_returns_tokens_with_role(client, make_user, role):
@@ -76,6 +78,7 @@ def test_login_inactive_user(client, make_user):
 
 
 # --- refresh ---
+
 
 def test_refresh_keeps_role(client, make_user):
     make_user(role=models.UserRole.admin)
@@ -117,19 +120,24 @@ def test_refresh_rejects_access_token(client, make_user):
     assert refresh(client, at).status_code == 401
 
 
-@pytest.mark.parametrize("token", [
-    "not-a-jwt",
-    make_token("1", "refresh", expires_in=timedelta(seconds=-10)),
-    make_token("1", "refresh", expires_in=None),
-    make_token(None, "refresh"),
-    make_token("abc", "refresh"),
-], ids=["garbage", "expired", "no-exp", "no-sub", "bad-sub"])
+@pytest.mark.parametrize(
+    "token",
+    [
+        "not-a-jwt",
+        make_token("1", "refresh", expires_in=timedelta(seconds=-10)),
+        make_token("1", "refresh", expires_in=None),
+        make_token(None, "refresh"),
+        make_token("abc", "refresh"),
+    ],
+    ids=["garbage", "expired", "no-exp", "no-sub", "bad-sub"],
+)
 def test_refresh_invalid_tokens(client, make_user, token):
     make_user()
     assert refresh(client, token).status_code == 401
 
 
 # --- /me ---
+
 
 def test_me(client, make_user):
     make_user(role=models.UserRole.admin)
@@ -165,7 +173,9 @@ def test_me_expired_token(client, make_user):
     assert "Signature" not in r.text  # текст исключения не утекает
 
 
-@pytest.mark.parametrize("is_active, delete", [(False, False), (True, True)], ids=["inactive", "deleted"])
+@pytest.mark.parametrize(
+    "is_active, delete", [(False, False), (True, True)], ids=["inactive", "deleted"]
+)
 def test_me_inactive_or_deleted_user(client, make_user, db, is_active, delete):
     user = make_user()
     at = login(client).json()["access_token"]
@@ -178,6 +188,7 @@ def test_me_inactive_or_deleted_user(client, make_user, db, is_active, delete):
 
 
 # --- seed тестовых пользователей ---
+
 
 def test_startup_does_not_seed(db, monkeypatch):
     # seed — отдельная команда, приложение при старте пользователей не создаёт даже с флагом
@@ -217,13 +228,19 @@ def test_init_users_skipped_without_flag(db, caplog):
 
 def test_init_users_module_exits_zero_without_flag(tmp_path):
     env = {**os.environ, "SEED_TEST_USERS": "false", "PYTHONPATH": str(SERVICE_ROOT)}
-    r = subprocess.run([sys.executable, "-m", "app.init_users"],
-                       cwd=tmp_path, env=env, capture_output=True, text=True)
+    r = subprocess.run(
+        [sys.executable, "-m", "app.init_users"],
+        cwd=tmp_path,
+        env=env,
+        capture_output=True,
+        text=True,
+    )
     assert r.returncode == 0, r.stderr
     assert "пропущено" in r.stderr
 
 
 # --- SECRET_KEY обязателен ---
+
 
 @pytest.mark.parametrize("secret", [None, ""], ids=["missing", "empty"])
 def test_settings_require_secret_key(tmp_path, secret):
@@ -232,28 +249,44 @@ def test_settings_require_secret_key(tmp_path, secret):
         env["SECRET_KEY"] = secret
     env["PYTHONPATH"] = str(SERVICE_ROOT)
     # cwd без .env, иначе ключ подтянется оттуда
-    r = subprocess.run([sys.executable, "-c", "import app.core.config"],
-                       cwd=tmp_path, env=env, capture_output=True, text=True)
+    r = subprocess.run(
+        [sys.executable, "-c", "import app.core.config"],
+        cwd=tmp_path,
+        env=env,
+        capture_output=True,
+        text=True,
+    )
     assert r.returncode != 0
     assert "SECRET_KEY" in r.stderr
 
 
 def test_settings_accept_secret_key_from_env(tmp_path):
     env = {**os.environ, "SECRET_KEY": "from-env", "PYTHONPATH": str(SERVICE_ROOT)}
-    r = subprocess.run([sys.executable, "-c", "from app.core.config import settings; print(settings.SECRET_KEY)"],
-                       cwd=tmp_path, env=env, capture_output=True, text=True)
+    r = subprocess.run(
+        [sys.executable, "-c", "from app.core.config import settings; print(settings.SECRET_KEY)"],
+        cwd=tmp_path,
+        env=env,
+        capture_output=True,
+        text=True,
+    )
     assert r.returncode == 0, r.stderr
     assert r.stdout.strip() == "from-env"
 
 
 # --- DATABASE_URL обязателен ---
 
+
 def test_settings_require_database_url(tmp_path):
     env = {k: v for k, v in os.environ.items() if k != "DATABASE_URL"}
     env["SECRET_KEY"] = "test-secret"
     env["PYTHONPATH"] = str(SERVICE_ROOT)
     # cwd без .env, иначе строка подключения подтянется оттуда
-    r = subprocess.run([sys.executable, "-c", "import app.core.config"],
-                       cwd=tmp_path, env=env, capture_output=True, text=True)
+    r = subprocess.run(
+        [sys.executable, "-c", "import app.core.config"],
+        cwd=tmp_path,
+        env=env,
+        capture_output=True,
+        text=True,
+    )
     assert r.returncode != 0
     assert "DATABASE_URL" in r.stderr

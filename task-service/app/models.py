@@ -12,6 +12,7 @@ class TaskStatus(str, enum.Enum):
     done = "done"
     blocked = "blocked"
 
+
 class Project(Base):
     __tablename__ = "projects"
     __table_args__ = {"extend_existing": True}
@@ -25,6 +26,7 @@ class Project(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
     tasks = relationship("Task", back_populates="project", cascade="all, delete-orphan")
+
 
 class Task(Base):
     __tablename__ = "tasks"

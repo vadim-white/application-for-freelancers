@@ -6,6 +6,7 @@ from . import models, schemas
 
 logger = logging.getLogger(__name__)
 
+
 def create_time_entry(db: Session, entry_in: schemas.TimeEntryCreate, user_id: int):
     # validate minutes
     logger.info(f"Creating time entry: task_id={entry_in.task_id}, minutes={entry_in.minutes}")
@@ -20,6 +21,7 @@ def create_time_entry(db: Session, entry_in: schemas.TimeEntryCreate, user_id: i
     db.refresh(entry)
     logger.info(f"Time entry created successfully: id={entry.id}")
     return entry
+
 
 def get_time_entries(db: Session, task_id: int = None, user_id: int = None):
     query = db.query(models.TimeEntry)

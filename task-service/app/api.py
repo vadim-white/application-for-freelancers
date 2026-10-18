@@ -18,9 +18,11 @@ router = APIRouter(dependencies=[Depends(get_current_user)])
 # Чужой объект для user неотличим от несуществующего: 404, а не 403,
 # чтобы не раскрывать, что такой id есть
 
+
 def _owner_scope(user: CurrentUser) -> int | None:
     """owner_id для фильтра списков: у admin без фильтра."""
     return None if user.is_admin else user.id
+
 
 def get_owned_project(db: Session, project_id: int, user: CurrentUser) -> models.Project:
     p = crud.get_project(db, project_id)
@@ -28,48 +30,71 @@ def get_owned_project(db: Session, project_id: int, user: CurrentUser) -> models
         raise HTTPException(status_code=404, detail="Project not found")
     return p
 
+
 def get_owned_task(db: Session, task_id: int, user: CurrentUser) -> models.Task:
     t = crud.get_task(db, task_id)
     if t is None or (not user.is_admin and t.owner_id != user.id):
         raise HTTPException(status_code=404, detail="Task not found")
     return t
 
+
 # --- Projects ---
 @router.post("/projects", response_model=schemas.ProjectRead, status_code=status.HTTP_201_CREATED)
-def create_project(project_in: schemas.ProjectCreate, db: Session = Depends(get_db),
-                   user: CurrentUser = Depends(get_current_user)):
+def create_project(
+    project_in: schemas.ProjectCreate,
+    db: Session = Depends(get_db),
+    user: CurrentUser = Depends(get_current_user),
+):
     project = crud.create_project(db, project_in, owner_id=user.id)
     logger.info(f"Project created: id={project.id}, owner_id={project.owner_id}")
     return project
 
+
 @router.get("/projects", response_model=list[schemas.ProjectRead])
-def list_projects(skip: int = 0, limit: int = 100, db: Session = Depends(get_db),
-                  user: CurrentUser = Depends(get_current_user)):
+def list_projects(
+    skip: int = 0,
+    limit: int = 100,
+    db: Session = Depends(get_db),
+    user: CurrentUser = Depends(get_current_user),
+):
     return crud.list_projects(db, skip=skip, limit=limit, owner_id=_owner_scope(user))
 
+
 @router.get("/projects/{project_id}", response_model=schemas.ProjectRead)
-def get_project(project_id: int, db: Session = Depends(get_db),
-                user: CurrentUser = Depends(get_current_user)):
+def get_project(
+    project_id: int, db: Session = Depends(get_db), user: CurrentUser = Depends(get_current_user)
+):
     return get_owned_project(db, project_id, user)
 
+
 @router.put("/projects/{project_id}", response_model=schemas.ProjectRead)
-def update_project(project_id: int, update_in: schemas.ProjectUpdate, db: Session = Depends(get_db),
-                   user: CurrentUser = Depends(get_current_user)):
+def update_project(
+    project_id: int,
+    update_in: schemas.ProjectUpdate,
+    db: Session = Depends(get_db),
+    user: CurrentUser = Depends(get_current_user),
+):
     p = get_owned_project(db, project_id, user)
     return crud.update_project(db, p, update_in)
 
+
 @router.delete("/projects/{project_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_project(project_id: int, db: Session = Depends(get_db),
-                   user: CurrentUser = Depends(get_current_user)):
+def delete_project(
+    project_id: int, db: Session = Depends(get_db), user: CurrentUser = Depends(get_current_user)
+):
     p = get_owned_project(db, project_id, user)
     crud.delete_project(db, p)
     logger.info(f"Project deleted: id={project_id}")
     return {}
 
+
 # --- Tasks ---
 @router.post("/tasks", response_model=schemas.TaskRead, status_code=status.HTTP_201_CREATED)
-def create_task(task_in: schemas.TaskCreate, db: Session = Depends(get_db),
-                user: CurrentUser = Depends(get_current_user)):
+def create_task(
+    task_in: schemas.TaskCreate,
+    db: Session = Depends(get_db),
+    user: CurrentUser = Depends(get_current_user),
+):
     # Владелец из токена. Задача в проекте принадлежит владельцу проекта
     # (admin, создавая задачу в чужом проекте, не становится её владельцем).
     # is not None: project_id=0 тоже проверяется, иначе на PostgreSQL 500 от внешнего ключа
@@ -77,24 +102,45 @@ def create_task(task_in: schemas.TaskCreate, db: Session = Depends(get_db),
     if task_in.project_id is not None:
         owner_id = get_owned_project(db, task_in.project_id, user).owner_id
     task = crud.create_task(db, task_in, owner_id=owner_id)
-    logger.info(f"Task created: id={task.id}, project_id={task.project_id}, owner_id={task.owner_id}")
+    logger.info(
+        f"Task created: id={task.id}, project_id={task.project_id}, owner_id={task.owner_id}"
+    )
     return task
 
+
 @router.get("/tasks", response_model=list[schemas.TaskRead])
-def list_tasks(skip: int = 0, limit: int = 100,
-               project_id: int | None = Query(None), status_filter: models.TaskStatus | None = Query(None, alias="status"),
-               db: Session = Depends(get_db), user: CurrentUser = Depends(get_current_user)):
-    return crud.list_tasks(db, skip=skip, limit=limit, project_id=project_id, status=status_filter,
-                           owner_id=_owner_scope(user))
+def list_tasks(
+    skip: int = 0,
+    limit: int = 100,
+    project_id: int | None = Query(None),
+    status_filter: models.TaskStatus | None = Query(None, alias="status"),
+    db: Session = Depends(get_db),
+    user: CurrentUser = Depends(get_current_user),
+):
+    return crud.list_tasks(
+        db,
+        skip=skip,
+        limit=limit,
+        project_id=project_id,
+        status=status_filter,
+        owner_id=_owner_scope(user),
+    )
+
 
 @router.get("/tasks/{task_id}", response_model=schemas.TaskRead)
-def get_task(task_id: int, db: Session = Depends(get_db),
-             user: CurrentUser = Depends(get_current_user)):
+def get_task(
+    task_id: int, db: Session = Depends(get_db), user: CurrentUser = Depends(get_current_user)
+):
     return get_owned_task(db, task_id, user)
 
+
 @router.put("/tasks/{task_id}", response_model=schemas.TaskRead)
-def update_task(task_id: int, update_in: schemas.TaskUpdate, db: Session = Depends(get_db),
-                user: CurrentUser = Depends(get_current_user)):
+def update_task(
+    task_id: int,
+    update_in: schemas.TaskUpdate,
+    db: Session = Depends(get_db),
+    user: CurrentUser = Depends(get_current_user),
+):
     logger.info(f"Updating task: id={task_id}, update={update_in.dict()}")
     t = get_owned_task(db, task_id, user)
     # Перенос только в проект владельца задачи. user в чужой проект получает 404 из
@@ -107,18 +153,25 @@ def update_task(task_id: int, update_in: schemas.TaskUpdate, db: Session = Depen
     logger.info(f"Task updated: id={task_id}, new_status={result.status}")
     return result
 
+
 @router.delete("/tasks/{task_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_task(task_id: int, db: Session = Depends(get_db),
-                user: CurrentUser = Depends(get_current_user)):
+def delete_task(
+    task_id: int, db: Session = Depends(get_db), user: CurrentUser = Depends(get_current_user)
+):
     t = get_owned_task(db, task_id, user)
     crud.delete_task(db, t)
     logger.info(f"Task deleted: id={task_id}")
     return {}
 
+
 # convenience change-status endpoint
 @router.post("/tasks/{task_id}/status", response_model=schemas.TaskRead)
-def change_status(task_id: int, status_in: dict, db: Session = Depends(get_db),
-                  user: CurrentUser = Depends(get_current_user)):
+def change_status(
+    task_id: int,
+    status_in: dict,
+    db: Session = Depends(get_db),
+    user: CurrentUser = Depends(get_current_user),
+):
     logger.info(f"Changing task status: id={task_id}, new_status={status_in}")
     t = get_owned_task(db, task_id, user)
     # expect {"status":"in_progress"}
@@ -135,6 +188,7 @@ def change_status(task_id: int, status_in: dict, db: Session = Depends(get_db),
     db.refresh(t)
     logger.info(f"Task status changed: id={task_id}, new_status={t.status}")
     return t
+
 
 # --- Statistics ---
 @router.get("/statistics/users")

@@ -21,12 +21,12 @@ class Settings(BaseSettings):
     # Gateway settings
     GATEWAY_PORT: int = 8000
 
-
     @property
     def cors_origins(self) -> list[str]:
         return [o.strip() for o in self.CORS_ORIGINS.split(",") if o.strip()]
 
     class Config:
         env_file = ".env"
+
 
 settings = Settings()

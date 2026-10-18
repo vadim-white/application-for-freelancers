@@ -11,6 +11,7 @@ app = FastAPI(title="Auth Service (auth-service)")
 
 app.include_router(api_router, prefix="/api/auth")
 
+
 @app.get("/")
 async def root():
     return {"service": "auth-service", "status": "ok"}

@@ -9,6 +9,7 @@ class UserRole(enum.Enum):
     user = "user"
     admin = "admin"
 
+
 class User(Base):
     __tablename__ = "users"
     __table_args__ = {"extend_existing": True}  # ← защита
@@ -20,5 +21,3 @@ class User(Base):
     full_name = Column(String, nullable=True)
     is_active = Column(Boolean, default=True, nullable=False)
     role = Column(Enum(UserRole), default=UserRole.user, nullable=False)
-
-

@@ -31,8 +31,15 @@ def client():
     return TestClient(app)
 
 
-def make_token(sub="1", role="user", token_type="access", expires_in=timedelta(minutes=5),
-               secret=TEST_SECRET, exp=True, **extra):
+def make_token(
+    sub="1",
+    role="user",
+    token_type="access",
+    expires_in=timedelta(minutes=5),
+    secret=TEST_SECRET,
+    exp=True,
+    **extra,
+):
     payload = {"sub": sub, "type": token_type, **extra}
     if role is not None:
         payload["role"] = role

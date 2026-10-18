@@ -9,6 +9,7 @@ from tests.conftest import bearer, make_token
 
 # --- публичные пути ---
 
+
 @pytest.mark.parametrize("path", ["/api/auth/login", "/api/auth/register", "/api/auth/refresh"])
 def test_public_auth_endpoints_without_token(client, upstream, path):
     r = client.post(path, json={})
@@ -61,13 +62,17 @@ def test_health_all_upstreams_down(client, monkeypatch):
 
 # --- 401 ---
 
-@pytest.mark.parametrize("path", [
-    "/api/auth/me",
-    "/api/tasks/projects",
-    "/api/time/time-entries",
-    "/api/tasks/statistics/users",
-    "/api/auth/login/",  # не точное совпадение с публичным путём
-])
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "/api/auth/me",
+        "/api/tasks/projects",
+        "/api/time/time-entries",
+        "/api/tasks/statistics/users",
+        "/api/auth/login/",  # не точное совпадение с публичным путём
+    ],
+)
 def test_protected_without_token_returns_401(client, upstream, path):
     r = client.get(path)
     assert r.status_code == 401
@@ -75,28 +80,44 @@ def test_protected_without_token_returns_401(client, upstream, path):
     assert upstream == []
 
 
-@pytest.mark.parametrize("header", [
-    "Basic abc",
-    "Bearer",
-    "Bearer a b",
-    "Bearer not-a-jwt",
-])
+@pytest.mark.parametrize(
+    "header",
+    [
+        "Basic abc",
+        "Bearer",
+        "Bearer a b",
+        "Bearer not-a-jwt",
+    ],
+)
 def test_malformed_authorization_returns_401(client, upstream, header):
     r = client.get("/api/tasks/projects", headers={"Authorization": header})
     assert r.status_code == 401
     assert upstream == []
 
 
-@pytest.mark.parametrize("token", [
-    make_token(expires_in=timedelta(seconds=-10)),       # просрочен
-    make_token(expires_in=None),                         # без exp
-    make_token(secret="other-secret"),                   # чужая подпись
-    make_token(token_type="refresh"),                    # refresh вместо access
-    make_token(token_type=None),                         # без type
-    make_token(sub=None),                                # без sub
-    make_token(sub="abc"),                               # sub не число
-    make_token(role="superuser"),                        # неизвестная роль
-], ids=["expired", "no-exp", "bad-signature", "refresh", "no-type", "no-sub", "bad-sub", "bad-role"])
+@pytest.mark.parametrize(
+    "token",
+    [
+        make_token(expires_in=timedelta(seconds=-10)),  # просрочен
+        make_token(expires_in=None),  # без exp
+        make_token(secret="other-secret"),  # чужая подпись
+        make_token(token_type="refresh"),  # refresh вместо access
+        make_token(token_type=None),  # без type
+        make_token(sub=None),  # без sub
+        make_token(sub="abc"),  # sub не число
+        make_token(role="superuser"),  # неизвестная роль
+    ],
+    ids=[
+        "expired",
+        "no-exp",
+        "bad-signature",
+        "refresh",
+        "no-type",
+        "no-sub",
+        "bad-sub",
+        "bad-role",
+    ],
+)
 def test_invalid_tokens_return_401(client, upstream, token):
     r = client.get("/api/tasks/projects", headers=bearer(token))
     assert r.status_code == 401
@@ -106,9 +127,16 @@ def test_invalid_tokens_return_401(client, upstream, token):
 def test_alg_none_token_rejected(client, upstream):
     import base64
     import json
+
     def b64(d):
         return base64.urlsafe_b64encode(json.dumps(d).encode()).rstrip(b"=").decode()
-    token = b64({"alg": "none", "typ": "JWT"}) + "." + b64({"sub": "1", "type": "access", "role": "admin", "exp": 9999999999}) + "."
+
+    token = (
+        b64({"alg": "none", "typ": "JWT"})
+        + "."
+        + b64({"sub": "1", "type": "access", "role": "admin", "exp": 9999999999})
+        + "."
+    )
     r = client.get("/api/tasks/projects", headers=bearer(token))
     assert r.status_code == 401
     assert upstream == []
@@ -116,36 +144,48 @@ def test_alg_none_token_rejected(client, upstream):
 
 # --- 404 ---
 
-@pytest.mark.parametrize("path", [
-    "/api/unknown",
-    "/api/authx/login",
-    "/api/",
-    "/api/tasks/%2e%2e/auth/me",
-    "/api/auth/login/%2E%2E/%2E%2E/tasks/projects",
-])
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "/api/unknown",
+        "/api/authx/login",
+        "/api/",
+        "/api/tasks/%2e%2e/auth/me",
+        "/api/auth/login/%2E%2E/%2E%2E/tasks/projects",
+    ],
+)
 def test_unknown_paths_return_404(client, upstream, path):
     r = client.get(path, headers=bearer(make_token()))
     assert r.status_code == 404
     assert upstream == []
 
 
-@pytest.mark.parametrize("path", [
-    "/api/tasks/../auth/me",
-    "/api/auth/login/../../tasks/projects",
-    "/api/time/./time-entries",
-])
+@pytest.mark.parametrize(
+    "path",
+    [
+        "/api/tasks/../auth/me",
+        "/api/auth/login/../../tasks/projects",
+        "/api/time/./time-entries",
+    ],
+)
 def test_resolve_upstream_rejects_dot_segments(path):
     from app.proxy import resolve_upstream
+
     assert resolve_upstream(path) is None
 
 
 # --- маршрутизация и заголовки ---
 
-@pytest.mark.parametrize("path, target", [
-    ("/api/auth/me", "http://auth/api/auth/me"),
-    ("/api/tasks/tasks?project_id=3", "http://task/api/tasks/tasks?project_id=3"),
-    ("/api/time/time-entries", "http://time/api/time/time-entries"),
-])
+
+@pytest.mark.parametrize(
+    "path, target",
+    [
+        ("/api/auth/me", "http://auth/api/auth/me"),
+        ("/api/tasks/tasks?project_id=3", "http://task/api/tasks/tasks?project_id=3"),
+        ("/api/time/time-entries", "http://time/api/time/time-entries"),
+    ],
+)
 def test_valid_token_routes_to_service(client, upstream, path, target):
     r = client.get(path, headers=bearer(make_token()))
     assert r.status_code == 200
@@ -215,28 +255,36 @@ def test_upstream_unavailable_returns_502(client, monkeypatch, error):
 
 
 def test_upstream_error_status_is_passed_through(client, monkeypatch):
-    mock_httpx(monkeypatch, proxy, lambda request: httpx.Response(404, json={"detail": "Not found"}))
+    mock_httpx(
+        monkeypatch, proxy, lambda request: httpx.Response(404, json={"detail": "Not found"})
+    )
     r = client.get("/api/tasks/projects/9", headers=bearer(make_token()))
     assert r.status_code == 404
     assert r.json() == {"detail": "Not found"}
 
 
 def test_cors_preflight_without_token(client, upstream):
-    r = client.options("/api/tasks/projects", headers={
-        "Origin": "http://localhost:5173",
-        "Access-Control-Request-Method": "GET",
-        "Access-Control-Request-Headers": "authorization",
-    })
+    r = client.options(
+        "/api/tasks/projects",
+        headers={
+            "Origin": "http://localhost:5173",
+            "Access-Control-Request-Method": "GET",
+            "Access-Control-Request-Headers": "authorization",
+        },
+    )
     assert r.status_code == 200
     assert upstream == []
 
 
 def preflight(client, origin):
-    return client.options("/api/tasks/projects", headers={
-        "Origin": origin,
-        "Access-Control-Request-Method": "GET",
-        "Access-Control-Request-Headers": "authorization",
-    })
+    return client.options(
+        "/api/tasks/projects",
+        headers={
+            "Origin": origin,
+            "Access-Control-Request-Method": "GET",
+            "Access-Control-Request-Headers": "authorization",
+        },
+    )
 
 
 def test_cors_origins_parsed_from_env():
@@ -267,4 +315,3 @@ def test_cors_headers_on_401(client, upstream):
     r = client.get("/api/tasks/tasks", headers={"Origin": "http://localhost:5173"})
     assert r.status_code == 401
     assert r.headers["access-control-allow-origin"] == "http://localhost:5173"
-

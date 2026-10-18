@@ -1,4 +1,3 @@
-
 from sqlalchemy.orm import Session
 
 from . import models, schemas
@@ -17,17 +16,23 @@ def create_project(db: Session, project_in: schemas.ProjectCreate, owner_id: int
     db.refresh(project)
     return project
 
+
 def get_project(db: Session, project_id: int) -> models.Project | None:
     return db.query(models.Project).filter(models.Project.id == project_id).first()
 
-def list_projects(db: Session, skip: int = 0, limit: int = 100,
-                  owner_id: int | None = None) -> list[models.Project]:
+
+def list_projects(
+    db: Session, skip: int = 0, limit: int = 100, owner_id: int | None = None
+) -> list[models.Project]:
     q = db.query(models.Project)
     if owner_id is not None:
         q = q.filter(models.Project.owner_id == owner_id)
     return q.offset(skip).limit(limit).all()
 
-def update_project(db: Session, project: models.Project, update_in: schemas.ProjectUpdate) -> models.Project:
+
+def update_project(
+    db: Session, project: models.Project, update_in: schemas.ProjectUpdate
+) -> models.Project:
     if update_in.name is not None:
         project.name = update_in.name
     if update_in.description is not None:
@@ -39,10 +44,12 @@ def update_project(db: Session, project: models.Project, update_in: schemas.Proj
     db.refresh(project)
     return project
 
+
 def delete_project(db: Session, project: models.Project):
     db.delete(project)
     db.commit()
     return True
+
 
 # Tasks
 def create_task(db: Session, task_in: schemas.TaskCreate, owner_id: int) -> models.Task:
@@ -60,12 +67,19 @@ def create_task(db: Session, task_in: schemas.TaskCreate, owner_id: int) -> mode
     db.refresh(task)
     return task
 
+
 def get_task(db: Session, task_id: int) -> models.Task | None:
     return db.query(models.Task).filter(models.Task.id == task_id).first()
 
-def list_tasks(db: Session, skip: int = 0, limit: int = 100,
-               project_id: int | None = None, status: models.TaskStatus | None = None,
-               owner_id: int | None = None) -> list[models.Task]:
+
+def list_tasks(
+    db: Session,
+    skip: int = 0,
+    limit: int = 100,
+    project_id: int | None = None,
+    status: models.TaskStatus | None = None,
+    owner_id: int | None = None,
+) -> list[models.Task]:
     q = db.query(models.Task)
     if owner_id is not None:
         q = q.filter(models.Task.owner_id == owner_id)
@@ -74,6 +88,7 @@ def list_tasks(db: Session, skip: int = 0, limit: int = 100,
     if status is not None:
         q = q.filter(models.Task.status == status)
     return q.offset(skip).limit(limit).all()
+
 
 def update_task(db: Session, task: models.Task, update_in: schemas.TaskUpdate) -> models.Task:
     if update_in.title is not None:
@@ -92,6 +107,7 @@ def update_task(db: Session, task: models.Task, update_in: schemas.TaskUpdate) -
     db.commit()
     db.refresh(task)
     return task
+
 
 def delete_task(db: Session, task: models.Task):
     db.delete(task)

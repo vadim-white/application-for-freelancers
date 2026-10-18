@@ -5,11 +5,13 @@ from pydantic import BaseModel
 
 # Pydantic v2: use from_attributes in Config for ORM models
 
+
 class TaskStatus(str, Enum):
     todo = "todo"
     in_progress = "in_progress"
     done = "done"
     blocked = "blocked"
+
 
 # Project schemas
 class ProjectBase(BaseModel):
@@ -17,11 +19,14 @@ class ProjectBase(BaseModel):
     description: str | None = None
     is_active: bool | None = True
 
+
 class ProjectCreate(ProjectBase):
     pass
 
+
 class ProjectUpdate(ProjectBase):
     name: str | None = None
+
 
 # owner_id только в ответах: владельца задаёт токен, поле в теле запроса игнорируется
 class ProjectRead(ProjectBase):
@@ -32,6 +37,7 @@ class ProjectRead(ProjectBase):
     class Config:
         from_attributes = True
 
+
 # Task schemas
 class TaskBase(BaseModel):
     title: str
@@ -41,8 +47,10 @@ class TaskBase(BaseModel):
     project_id: int | None = None
     is_active: bool | None = True
 
+
 class TaskCreate(TaskBase):
     pass
+
 
 class TaskUpdate(BaseModel):
     title: str | None = None
@@ -51,6 +59,7 @@ class TaskUpdate(BaseModel):
     deadline: datetime | None = None
     project_id: int | None = None
     is_active: bool | None = None
+
 
 class TaskRead(TaskBase):
     id: int

@@ -20,15 +20,19 @@ app.add_middleware(
 # health check
 app.include_router(health_router)
 
+
 # catch-all proxy route: all paths under /api/*
 # Неизвестные пути -> 404, всё кроме публичных эндпоинтов auth требует Bearer access-токен.
-@app.api_route("/api/{full_path:path}", methods=["GET","POST","PUT","PATCH","DELETE","OPTIONS"])
+@app.api_route(
+    "/api/{full_path:path}", methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"]
+)
 async def proxy(full_path: str, request: Request):
     base_url = resolve_upstream(request.url.path)
     if base_url is None:
         raise HTTPException(status_code=404, detail="Not found")
     user = authenticate(request)
     return await stream_proxy(request, base_url, user)
+
 
 @app.get("/")
 async def root():

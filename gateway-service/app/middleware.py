@@ -1,15 +1,16 @@
-
 from fastapi import HTTPException, Request
 from jose import JWTError, jwt
 
 from .core.config import settings
 
 # Эндпоинты, доступные без токена. Сравнение точное: /api/auth/login/../x сюда не попадёт.
-PUBLIC_PATHS = frozenset({
-    "/api/auth/register",
-    "/api/auth/login",
-    "/api/auth/refresh",
-})
+PUBLIC_PATHS = frozenset(
+    {
+        "/api/auth/register",
+        "/api/auth/login",
+        "/api/auth/refresh",
+    }
+)
 
 ALLOWED_ROLES = frozenset({"user", "admin"})
 

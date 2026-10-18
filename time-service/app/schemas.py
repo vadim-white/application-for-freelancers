@@ -8,15 +8,17 @@ class TimeEntryBase(BaseModel):
     minutes: int = Field(..., gt=0, description="Количество минут > 0")
     description: str | None = None
 
-    @validator('minutes')
+    @validator("minutes")
     def validate_minutes(cls, v):
         if v is None or v <= 0:
             raise ValueError("minutes must be greater than 0")
         return int(v)
 
+
 class TimeEntryCreate(TimeEntryBase):
     # user_id не принимается от клиента: берётся из токена (лишнее поле в теле игнорируется)
     pass
+
 
 class TimeEntryRead(TimeEntryBase):
     id: int
