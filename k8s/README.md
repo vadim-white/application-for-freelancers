@@ -39,7 +39,7 @@ Docker Compose и кластер независимы: у них разные п
 open http://127.0.0.1:8080
 ```
 
-С нуля на Docker Desktop (4 ГБ, 8 CPU) `kind-up.sh` занимает ~1,5 минуты (дольше при первом скачивании образов), `k8s-deploy.sh` — 60–75 с. Каждый скрипт завершается с кодом ≠ 0 при любом сбое.
+С нуля на Docker Desktop (4 ГБ, 8 CPU) `kind-up.sh` занимает ~1,5 минуты (дольше при первом скачивании образов), `k8s-deploy.sh` — 60–85 с. Каждый скрипт завершается с кодом ≠ 0 при любом сбое.
 
 **`scripts/kind-up.sh`** создаёт кластер `freelance` по [kind-config.yaml](kind-config.yaml) (один узел, контекст kubectl — `kind-freelance`). Затем ставит Envoy Gateway v1.9.2 (`kubectl apply --server-side`; в `install.yaml` есть CRD Gateway API, CRD Envoy Gateway и контроллер в namespace `envoy-gateway-system`) и ждёт `Available` контроллера. После этого собирает пять образов (`ser-auth`, `ser-task`, `ser-time`, `ser-gateway`, `ser-frontend`) через `docker compose build` и загружает их в узел (`kind load docker-image`). Секреты и `.env` ему не нужны. Повторный запуск кластер не пересоздаёт, Envoy Gateway применяет без изменений, образы пересобирает и загружает заново. После изменения кода запустите `kind-up.sh`, затем `k8s-deploy.sh` и `rollout restart` изменённых Deployment (см. «Известные ограничения»).
 
