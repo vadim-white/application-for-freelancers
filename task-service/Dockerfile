@@ -24,8 +24,10 @@ COPY --from=deps /opt/venv /opt/venv
 
 WORKDIR /app
 
-# Копирование приложения
-COPY task-service .
+# Только рантайм: alembic.ini и migrations/ нужны Job и контейнерам миграций на этом же образе
+COPY task-service/app ./app
+COPY task-service/migrations ./migrations
+COPY task-service/alembic.ini ./
 
 # Непривилегированный пользователь; код и venv принадлежат root и процессу доступны только на чтение.
 # USER числом, а не именем: kubelet проверяет runAsNonRoot только по числовому UID (имя не резолвит)
