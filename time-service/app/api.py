@@ -6,21 +6,12 @@ from sqlalchemy.orm import Session
 
 from . import crud, schemas
 from .core.auth import CurrentUser, get_current_user, require_admin
-from .db import SessionLocal
+from .deps import get_db
 
 logger = logging.getLogger(__name__)
 
 # Все эндпоинты требуют валидный access-токен (401 без него)
 router = APIRouter(dependencies=[Depends(get_current_user)])
-
-
-# Dependency
-def get_db():
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
 
 
 # Time entries

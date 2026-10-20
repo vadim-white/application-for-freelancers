@@ -85,7 +85,7 @@ def delete_project(
     p = get_owned_project(db, project_id, user)
     crud.delete_project(db, p)
     logger.info(f"Project deleted: id={project_id}")
-    return {}
+    return None
 
 
 # --- Tasks ---
@@ -141,7 +141,7 @@ def update_task(
     db: Session = Depends(get_db),
     user: CurrentUser = Depends(get_current_user),
 ):
-    logger.info(f"Updating task: id={task_id}, update={update_in.dict()}")
+    logger.info(f"Updating task: id={task_id}, update={update_in.model_dump()}")
     t = get_owned_task(db, task_id, user)
     # Перенос только в проект владельца задачи. user в чужой проект получает 404 из
     # get_owned_project; admin видит все проекты, поэтому для него отдельный 400
@@ -161,28 +161,20 @@ def delete_task(
     t = get_owned_task(db, task_id, user)
     crud.delete_task(db, t)
     logger.info(f"Task deleted: id={task_id}")
-    return {}
+    return None
 
 
 # convenience change-status endpoint
 @router.post("/tasks/{task_id}/status", response_model=schemas.TaskRead)
 def change_status(
     task_id: int,
-    status_in: dict,
+    status_in: schemas.TaskStatusUpdate,
     db: Session = Depends(get_db),
     user: CurrentUser = Depends(get_current_user),
 ):
-    logger.info(f"Changing task status: id={task_id}, new_status={status_in}")
+    logger.info(f"Changing task status: id={task_id}, new_status={status_in.status.value}")
     t = get_owned_task(db, task_id, user)
-    # expect {"status":"in_progress"}
-    new_status = status_in.get("status")
-    if new_status is None:
-        raise HTTPException(status_code=400, detail="Missing status")
-    try:
-        t.status = models.TaskStatus(new_status)
-    except Exception as e:
-        logger.error(f"Invalid status: {new_status}, error: {e}")
-        raise HTTPException(status_code=400, detail="Invalid status") from e
+    t.status = status_in.status
     db.add(t)
     db.commit()
     db.refresh(t)

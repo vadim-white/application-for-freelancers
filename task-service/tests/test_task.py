@@ -75,6 +75,16 @@ def test_user_can_work_with_tasks(client, user_headers):
     assert r.json()["status"] == "done"
 
 
+@pytest.mark.parametrize("body", [{"status": "bogus"}, {"status": None}, {}])
+def test_change_status_invalid_body_422(client, user_headers, body):
+    r = client.post("/api/tasks/tasks", json={"title": "t1"}, headers=user_headers)
+    task_id = r.json()["id"]
+    r = client.post(f"/api/tasks/tasks/{task_id}/status", json=body, headers=user_headers)
+    assert r.status_code == 422
+    task = client.get(f"/api/tasks/tasks/{task_id}", headers=user_headers).json()
+    assert task["status"] == "todo"
+
+
 def test_token_without_role_is_user(client):
     headers = auth(make_token(role=None))
     assert client.get("/api/tasks/tasks", headers=headers).status_code == 200

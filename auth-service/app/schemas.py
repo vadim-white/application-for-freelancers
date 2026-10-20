@@ -1,4 +1,4 @@
-from pydantic import BaseModel, EmailStr, field_validator
+from pydantic import BaseModel, ConfigDict, EmailStr, field_validator
 
 
 class UserBase(BaseModel):
@@ -24,9 +24,7 @@ class UserRead(UserBase):
     is_active: bool
     role: str
 
-    class Config:
-        orm_mode = True
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
     @field_validator("role", mode="before")
     @classmethod

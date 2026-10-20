@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from pydantic import BaseModel, Field, validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 class TimeEntryBase(BaseModel):
@@ -8,7 +8,8 @@ class TimeEntryBase(BaseModel):
     minutes: int = Field(..., gt=0, description="Количество минут > 0")
     description: str | None = None
 
-    @validator("minutes")
+    @field_validator("minutes")
+    @classmethod
     def validate_minutes(cls, v):
         if v is None or v <= 0:
             raise ValueError("minutes must be greater than 0")
@@ -28,5 +29,4 @@ class TimeEntryRead(TimeEntryBase):
     created_at: datetime
     updated_at: datetime | None = None
 
-    class Config:
-        orm_mode = True
+    model_config = ConfigDict(from_attributes=True)

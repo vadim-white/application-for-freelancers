@@ -1,7 +1,13 @@
 from collections.abc import Generator
 
-from .crud import get_db
+from sqlalchemy.orm import Session
+
+from .db import SessionLocal
 
 
-def get_db_dep() -> Generator:
-    yield from get_db()
+def get_db() -> Generator[Session]:
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()

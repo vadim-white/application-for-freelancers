@@ -1,16 +1,8 @@
 from datetime import datetime
-from enum import Enum
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
-# Pydantic v2: use from_attributes in Config for ORM models
-
-
-class TaskStatus(str, Enum):
-    todo = "todo"
-    in_progress = "in_progress"
-    done = "done"
-    blocked = "blocked"
+from .models import TaskStatus
 
 
 # Project schemas
@@ -34,8 +26,7 @@ class ProjectRead(ProjectBase):
     owner_id: int
     created_at: datetime | None = None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 # Task schemas
@@ -61,6 +52,10 @@ class TaskUpdate(BaseModel):
     is_active: bool | None = None
 
 
+class TaskStatusUpdate(BaseModel):
+    status: TaskStatus
+
+
 class TaskRead(TaskBase):
     id: int
     owner_id: int
@@ -68,5 +63,4 @@ class TaskRead(TaskBase):
     updated_at: datetime | None = None
     project: ProjectRead | None = None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)

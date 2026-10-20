@@ -15,7 +15,7 @@ def create_time_entry(db: Session, entry_in: schemas.TimeEntryCreate, user_id: i
         logger.error(f"Invalid minutes value: {entry_in.minutes}")
         raise ValueError("Invalid minutes value; must be > 0")
 
-    entry = models.TimeEntry(**entry_in.dict(), user_id=user_id)
+    entry = models.TimeEntry(**entry_in.model_dump(), user_id=user_id)
     db.add(entry)
     db.commit()
     db.refresh(entry)

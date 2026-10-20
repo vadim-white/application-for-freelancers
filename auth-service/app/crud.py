@@ -4,7 +4,7 @@ from sqlalchemy.orm import Session
 
 from . import models, schemas
 from .core.security import decode_token, get_password_hash
-from .db import SessionLocal
+from .deps import get_db
 
 
 def get_user_by_email(db: Session, email: str):
@@ -21,15 +21,6 @@ def create_user(db: Session, user_in: schemas.UserCreate):
     db.commit()
     db.refresh(user)
     return user
-
-
-# Dependency to get DB session
-def get_db():
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
 
 
 def get_active_user_by_sub(db: Session, sub) -> models.User | None:

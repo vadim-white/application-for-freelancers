@@ -15,7 +15,6 @@ class TaskStatus(str, enum.Enum):
 
 class Project(Base):
     __tablename__ = "projects"
-    __table_args__ = {"extend_existing": True}
 
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String(255), nullable=False)
@@ -30,7 +29,6 @@ class Project(Base):
 
 class Task(Base):
     __tablename__ = "tasks"
-    __table_args__ = {"extend_existing": True}
 
     id = Column(Integer, primary_key=True, index=True)
     title = Column(String(255), nullable=False)
