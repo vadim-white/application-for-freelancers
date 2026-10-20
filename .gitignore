@@ -13,6 +13,10 @@ __pycache__/
 k8s/overlays/local/app.env
 k8s/overlays/local/db.env
 
+# Тег образов kind и kustomization с ним (пишут scripts/kind-up.sh и scripts/k8s-deploy.sh)
+k8s/overlays/local/image-tag
+k8s/overlays/.deploy/
+
 # Артефакты e2e (Playwright): скриншоты и trace упавших тестов
 tests/e2e/test-results/
 

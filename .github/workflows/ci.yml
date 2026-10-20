@@ -267,6 +267,7 @@ jobs:
         run: |
           k() { kubectl --context kind-freelance -n freelance-service "$@"; }
           k get pods,jobs -o wide || true
+          k get deploy -o wide || true
           k get events --sort-by=.lastTimestamp || true
           k describe gateway entry || true
           kubectl --context kind-freelance -n envoy-gateway-system get pods -o wide || true
