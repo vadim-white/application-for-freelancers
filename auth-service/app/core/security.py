@@ -1,26 +1,27 @@
 from datetime import UTC, datetime, timedelta
 
-from jose import jwt
-from passlib.context import CryptContext
+import jwt
+from pwdlib import PasswordHash
+from pwdlib.hashers.bcrypt import BcryptHasher
 
 from .config import settings
 
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+password_hash = PasswordHash((BcryptHasher(),))
+
+# вход с неизвестным email тоже проверяет пароль, чтобы по времени ответа не было видно,
+# зарегистрирован ли email
+DUMMY_HASH = password_hash.hash("dummy-password")
 
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
     # Валидация перед проверкой
     if len(plain_password.encode("utf-8")) > 72:
         return False
-    return pwd_context.verify(plain_password, hashed_password)
+    return password_hash.verify(plain_password, hashed_password)
 
 
 def get_password_hash(password: str) -> str:
-    # Трункейт пароль до 72 байт для bcrypt
-    password_bytes = password.encode("utf-8")
-    if len(password_bytes) > 72:
-        password = password_bytes[:72].decode("utf-8", errors="ignore")
-    return pwd_context.hash(password)
+    return password_hash.hash(password)
 
 
 def create_access_token(data: dict) -> str:
@@ -42,7 +43,7 @@ def decode_token(token: str) -> dict:
         token,
         settings.SECRET_KEY,
         algorithms=[settings.ALGORITHM],
-        options={"require_exp": True},
+        options={"require": ["exp"]},
     )
 
 

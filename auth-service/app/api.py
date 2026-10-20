@@ -1,9 +1,10 @@
+import jwt
 from fastapi import APIRouter, Depends, HTTPException, status
-from jose import JWTError
 from sqlalchemy.orm import Session
 
 from . import crud, schemas
 from .core.security import (
+    DUMMY_HASH,
     create_tokens_for_user,
     decode_token,
     verify_password,
@@ -25,7 +26,10 @@ def register(user_in: schemas.UserCreate, db: Session = Depends(get_db)):
 @router.post("/login", response_model=schemas.Token)
 def login(form_data: schemas.UserAuth, db: Session = Depends(get_db)):
     user = crud.get_user_by_email(db, form_data.email)
-    if not user or not verify_password(form_data.password, user.hashed_password):
+    if not user:
+        verify_password(form_data.password, DUMMY_HASH)
+        raise HTTPException(status_code=401, detail="Incorrect email or password")
+    if not verify_password(form_data.password, user.hashed_password):
         raise HTTPException(status_code=401, detail="Incorrect email or password")
     if not user.is_active:
         raise HTTPException(status_code=403, detail="User is inactive")
@@ -36,7 +40,7 @@ def login(form_data: schemas.UserAuth, db: Session = Depends(get_db)):
 def refresh_token(data: schemas.TokenRefreshRequest, db: Session = Depends(get_db)):
     try:
         payload = decode_token(data.refresh_token)
-    except JWTError:
+    except jwt.InvalidTokenError:
         raise HTTPException(status_code=401, detail="Invalid refresh token") from None
     if payload.get("type") != "refresh":
         raise HTTPException(status_code=401, detail="Not a refresh token")

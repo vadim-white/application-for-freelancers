@@ -100,7 +100,7 @@ def test_malformed_authorization_returns_401(client, upstream, header):
     [
         make_token(expires_in=timedelta(seconds=-10)),  # просрочен
         make_token(expires_in=None),  # без exp
-        make_token(secret="other-secret"),  # чужая подпись
+        make_token(secret="other-secret-key-at-least-32-bytes-long"),  # чужая подпись
         make_token(token_type="refresh"),  # refresh вместо access
         make_token(token_type=None),  # без type
         make_token(sub=None),  # без sub

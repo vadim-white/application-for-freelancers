@@ -77,10 +77,10 @@ body() {
 }
 ids() { jq_ '" ".join(str(x["id"]) for x in d)'; }       # список объектов -> "1 2 3"
 has() { case " $1 " in *" $2 "*) echo 1;; *) echo 0;; esac; }  # has "1 2 3" 2 -> 1
-# токен, подписанный ключом стека, с произвольными claims (python-jose внутри ser-auth)
+# токен, подписанный ключом стека, с произвольными claims (PyJWT внутри ser-auth)
 forge() { # claims-json [key-expr]
   in_svc auth env CLAIMS="$1" KEY="${2:-}" python -c "
-import os,time,json; from jose import jwt
+import os,time,json,jwt
 c=json.loads(os.environ['CLAIMS']); now=int(time.time())
 for k in ('exp','iat'):
     if k in c: c[k]=now+c[k]
@@ -125,7 +125,7 @@ T_EXP=$(forge "{\"sub\":\"$U1ID\",\"role\":\"user\",\"type\":\"access\",\"exp\":
 chk "expired token" 401 "$(code "$G/api/tasks/tasks" -H "Authorization: Bearer $T_EXP")"
 T_NOEXP=$(forge "{\"sub\":\"$U1ID\",\"role\":\"user\",\"type\":\"access\"}")
 chk "no exp" 401 "$(code "$G/api/tasks/tasks" -H "Authorization: Bearer $T_NOEXP")"
-T_BADKEY=$(forge "{\"sub\":\"$U1ID\",\"role\":\"admin\",\"type\":\"access\",\"exp\":600}" not-the-key)
+T_BADKEY=$(forge "{\"sub\":\"$U1ID\",\"role\":\"admin\",\"type\":\"access\",\"exp\":600}" not-the-stack-key-but-32-bytes-or-more)
 chk "wrong signature key" 401 "$(code "$G/api/tasks/tasks" -H "Authorization: Bearer $T_BADKEY")"
 T_ROLE=$(forge "{\"sub\":\"$U1ID\",\"role\":\"superadmin\",\"type\":\"access\",\"exp\":600}")
 chk "unknown role" 401 "$(code "$G/api/tasks/tasks" -H "Authorization: Bearer $T_ROLE")"

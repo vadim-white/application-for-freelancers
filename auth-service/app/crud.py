@@ -1,5 +1,5 @@
+import jwt
 from fastapi import Depends, Header, HTTPException
-from jose import JWTError
 from sqlalchemy.orm import Session
 
 from . import models, schemas
@@ -46,7 +46,7 @@ def get_current_token_user(db: Session = Depends(get_db), authorization: str | N
 
     try:
         payload = decode_token(parts[1])
-    except JWTError:
+    except jwt.InvalidTokenError:
         raise HTTPException(status_code=401, detail="Invalid or expired token") from None
     if payload.get("type") != "access":
         raise HTTPException(status_code=401, detail="Invalid token type")

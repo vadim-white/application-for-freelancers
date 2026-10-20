@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 
+import jwt
 from fastapi import Depends, HTTPException, Request
-from jose import JWTError, jwt
 
 from .config import settings
 
@@ -47,9 +47,9 @@ def get_current_user(request: Request) -> CurrentUser:
             parts[1],
             settings.SECRET_KEY,
             algorithms=[settings.ALGORITHM],
-            options={"require_exp": True},
+            options={"require": ["exp"]},
         )
-    except JWTError:
+    except jwt.InvalidTokenError:
         raise _unauthorized("Invalid or expired token") from None
 
     # refresh-токен подписан тем же ключом, как access его принимать нельзя

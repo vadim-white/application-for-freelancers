@@ -176,7 +176,7 @@ k logs <под> --previous                  # предыдущий контей�
 kubectl --context kind-freelance -n envoy-gateway-system logs deploy/envoy-gateway   # контроллер входа
 ```
 
-В логах `ser-auth` и `auth-seed` есть известный шум: `(trapped) error reading bcrypt version` с traceback (passlib и bcrypt 4, на работу не влияет). У Job миграций на чистом кластере в упавших первых попытках — `Name or service not known` (см. «Миграции и seed»).
+У Job миграций на чистом кластере в упавших первых попытках — `Name or service not known` (см. «Миграции и seed»).
 
 События и причины:
 

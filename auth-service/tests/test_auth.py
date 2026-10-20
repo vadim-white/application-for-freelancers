@@ -4,11 +4,12 @@ import subprocess
 import sys
 from datetime import UTC, datetime, timedelta
 
+import jwt
 import pytest
 from fastapi.testclient import TestClient
-from jose import jwt
 
 from app import init_users, models
+from app.core import security
 from app.core.config import settings
 from app.main import app
 from tests.conftest import PASSWORD, login
@@ -68,6 +69,40 @@ def test_login_wrong_password(client, make_user):
 
 def test_login_unknown_email(client):
     assert login(client, email="nobody@example.com").status_code == 401
+
+
+def test_login_unknown_email_still_verifies_password(client, make_user, monkeypatch):
+    make_user()
+    calls = []
+    real_verify = security.password_hash.verify
+
+    def spy(password, hashed):
+        calls.append(hashed)
+        return real_verify(password, hashed)
+
+    monkeypatch.setattr(security.password_hash, "verify", spy)
+    assert login(client, email="nobody@example.com").status_code == 401
+    assert calls == [security.DUMMY_HASH]
+    assert login(client, password="wrong-password").status_code == 401
+    assert len(calls) == 2
+
+
+# хеш user1 из базы compose, созданный passlib 1.7.4 + bcrypt 4.3.0
+PASSLIB_HASH = "$2b$12$u053QhRr2AyFUaWT6Khu/.Ph/1KiNqgF8WSjFRbUAUYTOVKFeL.K6"
+
+
+@pytest.mark.parametrize("path", ["/api/auth/register", "/api/auth/login"])
+def test_password_over_72_bytes_rejected_before_bcrypt(client, path):
+    # bcrypt 5 бросает ValueError на пароль длиннее 72 байт: до него должна остановить схема
+    r = client.post(path, json={"email": "long@example.com", "password": "я" * 37})
+    assert r.status_code == 422
+
+
+def test_login_with_passlib_hash(client, db):
+    db.add(models.User(email="old@example.com", hashed_password=PASSLIB_HASH))
+    db.commit()
+    assert login(client, email="old@example.com").status_code == 200
+    assert login(client, email="old@example.com", password="wrong-password").status_code == 401
 
 
 def test_login_inactive_user(client, make_user):

@@ -3,17 +3,17 @@ import tempfile
 from datetime import UTC, datetime, timedelta
 
 # Окружение задаётся до импорта приложения: config и engine создаются при импорте
-os.environ["SECRET_KEY"] = "test-secret"
+os.environ["SECRET_KEY"] = "test-secret-key-at-least-32-bytes-long"
 os.environ["DATABASE_URL"] = f"sqlite:///{tempfile.mkdtemp()}/time_test.db"
 
+import jwt
 import pytest
 from fastapi.testclient import TestClient
-from jose import jwt
 
 from app.db import Base, engine
 from app.main import app
 
-TEST_SECRET = "test-secret"
+TEST_SECRET = "test-secret-key-at-least-32-bytes-long"
 
 
 @pytest.fixture(autouse=True)

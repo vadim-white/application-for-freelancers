@@ -37,7 +37,7 @@ def test_root_is_public(client):
         make_token(expires_in=timedelta(minutes=-1)),
         make_token(exp=False),
         make_token(token_type="refresh"),
-        make_token(secret="other-secret"),
+        make_token(secret="other-secret-key-at-least-32-bytes-long"),
         make_token(sub="abc"),
         make_token(role="superuser"),
         "not-a-jwt",

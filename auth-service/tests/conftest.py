@@ -2,7 +2,7 @@ import os
 import tempfile
 
 # Окружение задаётся до импорта приложения: config и engine создаются при импорте
-os.environ["SECRET_KEY"] = "test-secret"
+os.environ["SECRET_KEY"] = "test-secret-key-at-least-32-bytes-long"
 os.environ["DATABASE_URL"] = f"sqlite:///{tempfile.mkdtemp()}/auth_test.db"
 os.environ["SEED_TEST_USERS"] = "false"
 

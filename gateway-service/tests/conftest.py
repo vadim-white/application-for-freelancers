@@ -2,19 +2,19 @@ import os
 from datetime import UTC, datetime, timedelta
 
 # Окружение задаётся до импорта приложения: config и CORS настраиваются при импорте
-os.environ["SECRET_KEY"] = "test-secret"
+os.environ["SECRET_KEY"] = "test-secret-key-at-least-32-bytes-long"
 os.environ["CORS_ORIGINS"] = "http://localhost:5173, http://app.example"
 
 import httpx
+import jwt
 import pytest
 from fastapi.testclient import TestClient
-from jose import jwt
 
 from app import proxy
 from app.core.config import settings
 from app.main import app
 
-TEST_SECRET = "test-secret"
+TEST_SECRET = "test-secret-key-at-least-32-bytes-long"
 
 
 @pytest.fixture(autouse=True)

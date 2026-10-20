@@ -44,7 +44,7 @@ def test_root_is_public(client):
         make_token(expires_in=timedelta(minutes=-1)),  # просрочен
         make_token(exp=False),  # без exp
         make_token(token_type="refresh"),  # refresh вместо access
-        make_token(secret="other-secret"),  # чужая подпись
+        make_token(secret="other-secret-key-at-least-32-bytes-long"),  # чужая подпись
         make_token(sub="abc"),  # sub не число
         make_token(role="superuser"),  # неизвестная роль
         "not-a-jwt",
