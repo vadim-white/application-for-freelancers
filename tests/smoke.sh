@@ -6,9 +6,9 @@
 # Предшественник — docs/archive/smoke_1.2.9.sh (до 1.5.1, вне git).
 #
 # Два режима (SMOKE_MODE), seed-пользователи нужны в обоих:
-#   compose (по умолчанию) — 116 проверок. Стек: `docker compose up --build -d --wait`
+#   compose (по умолчанию) — 117 проверок. Стек: `docker compose up --build -d --wait`
 #     (сам скрипт готовности не ждёт: после --wait gateway слушает порт и логин seed-пользователей работает).
-#   k8s — 114 проверок. Кластер kind: `./scripts/k8s-deploy.sh` (миграции, seed, вход Gateway).
+#   k8s — 115 проверок. Кластер kind: `./scripts/k8s-deploy.sh` (миграции, seed, вход Gateway).
 #     Запросы идут через вход кластера http://127.0.0.1:8080 (Envoy Gateway, /api -> ser-gateway), как из
 #     браузера; port-forward не нужен. Отличия от compose:
 #     - нет четырёх проверок «localhost:8001/8002/8003/5432 closed»: кластер публикует на хост только порт
@@ -31,7 +31,7 @@ case "$MODE" in
   compose)
     G="${SMOKE_G:-http://localhost:8000}"
     CLOSED_PORTS="8001 8002 8003 5432"
-    EXPECTED=116
+    EXPECTED=117
     in_svc() { local s=$1; shift; docker exec "ser-$s" "$@"; }   # in_svc auth|gateway команда...
     in_auth_db() { docker exec ser-auth-db "$@"; }
     ;;
@@ -40,7 +40,7 @@ case "$MODE" in
     KNS=freelance-service
     G="${SMOKE_G:-http://127.0.0.1:8080}"
     CLOSED_PORTS=""
-    EXPECTED=114
+    EXPECTED=115
     in_svc() { local s=$1; shift; kubectl --context "$KCTX" -n "$KNS" exec "deploy/ser-$s" -- "$@"; }
     in_auth_db() { kubectl --context "$KCTX" -n "$KNS" exec auth-db-0 -c postgres -- "$@"; }
     ;;
@@ -102,6 +102,10 @@ fi
 R=$(code "$G/api/auth/register" -H "$J" -d "{\"email\":\"e2e-$SFX@example.com\",\"password\":\"password123\"}"); chk "register new user" 201 "$R"
 R=$(cu -s "$G/api/auth/register" -H "$J" -d "{\"email\":\"e2e-adm-$SFX@example.com\",\"password\":\"password123\",\"role\":\"admin\"}" | jq_ 'd["role"]'); chk "register with role=admin -> role user" user "$R"
 chk "login wrong password" 401 "$(code "$G/api/auth/login" -H "$J" -d '{"email":"user1@example.com","password":"bad"}')"
+# date ставят и сервис, и uvicorn gateway: дубль — две строки или склейка через запятую в Envoy;
+# запятая есть и в одном date, поэтому считаем GMT
+R=$(cu -s -D - -o /dev/null "$G/api/auth/login" -H "$J" -d '{"email":"user1@example.com","password":"bad"}' | grep -i '^date:' | grep -o GMT | wc -l | tr -d ' ')
+chk "proxied response: one date" 1 "$R"
 
 ADMIN=$(login admin@example.com); A=$(echo "$ADMIN" | jq_ 'd["access_token"]'); AR=$(echo "$ADMIN" | jq_ 'd["refresh_token"]')
 U1J=$(login user1@example.com); U1=$(echo "$U1J" | jq_ 'd["access_token"]'); U1R=$(echo "$U1J" | jq_ 'd["refresh_token"]')

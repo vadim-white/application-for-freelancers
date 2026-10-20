@@ -3,7 +3,6 @@ from datetime import timedelta
 import httpx
 import pytest
 
-from app import health, proxy
 from app.core.config import settings
 from tests.conftest import bearer, make_token
 
@@ -24,18 +23,7 @@ def test_root_and_health_without_token(client, upstream):
     assert r.json()["upstreams"] == {"auth": True, "task": True, "time": True}
 
 
-def mock_httpx(monkeypatch, module, handler):
-    """Подменяет транспорт httpx.AsyncClient в module (health или proxy)."""
-    real_client = httpx.AsyncClient
-
-    def fake_client(*args, **kwargs):
-        kwargs["transport"] = httpx.MockTransport(handler)
-        return real_client(*args, **kwargs)
-
-    monkeypatch.setattr(module.httpx, "AsyncClient", fake_client)
-
-
-def test_health_upstream_unreachable_or_not_200(client, monkeypatch):
+def test_health_upstream_unreachable_or_not_200(client, mock_upstream):
     def handler(request: httpx.Request) -> httpx.Response:
         if request.url.host == "auth":
             raise httpx.ConnectError("connection refused", request=request)
@@ -43,18 +31,18 @@ def test_health_upstream_unreachable_or_not_200(client, monkeypatch):
             return httpx.Response(503)
         return httpx.Response(200)
 
-    mock_httpx(monkeypatch, health, handler)
+    mock_upstream(handler)
     r = client.get("/health")
     # сам /health отвечает 200 всегда: состояние сервисов — только в теле
     assert r.status_code == 200
     assert r.json() == {"gateway": "ok", "upstreams": {"auth": False, "task": False, "time": True}}
 
 
-def test_health_all_upstreams_down(client, monkeypatch):
+def test_health_all_upstreams_down(client, mock_upstream):
     def handler(request: httpx.Request) -> httpx.Response:
         raise httpx.ConnectTimeout("timeout", request=request)
 
-    mock_httpx(monkeypatch, health, handler)
+    mock_upstream(handler)
     r = client.get("/health")
     assert r.status_code == 200
     assert r.json()["upstreams"] == {"auth": False, "task": False, "time": False}
@@ -243,21 +231,28 @@ def test_body_without_content_type_defaults_to_json(client, upstream):
     assert upstream[0].headers["content-type"] == "application/json"
 
 
-@pytest.mark.parametrize("error", [httpx.ConnectError, httpx.ReadTimeout])
-def test_upstream_unavailable_returns_502(client, monkeypatch, error):
+@pytest.mark.parametrize(
+    "error, status, text",
+    [
+        (httpx.ConnectError, 502, "Upstream service unavailable"),
+        (httpx.RemoteProtocolError, 502, "Upstream service unavailable"),
+        (httpx.ConnectTimeout, 504, "Upstream service timeout"),
+        (httpx.ReadTimeout, 504, "Upstream service timeout"),
+        (httpx.PoolTimeout, 504, "Upstream service timeout"),
+    ],
+)
+def test_upstream_error_or_timeout(client, mock_upstream, error, status, text):
     def handler(request: httpx.Request) -> httpx.Response:
         raise error("upstream down", request=request)
 
-    mock_httpx(monkeypatch, proxy, handler)
+    mock_upstream(handler)
     r = client.get("/api/tasks/projects", headers=bearer(make_token()))
-    assert r.status_code == 502
-    assert r.text == "Upstream service unavailable"
+    assert r.status_code == status
+    assert r.text == text
 
 
-def test_upstream_error_status_is_passed_through(client, monkeypatch):
-    mock_httpx(
-        monkeypatch, proxy, lambda request: httpx.Response(404, json={"detail": "Not found"})
-    )
+def test_upstream_error_status_is_passed_through(client, mock_upstream):
+    mock_upstream(lambda request: httpx.Response(404, json={"detail": "Not found"}))
     r = client.get("/api/tasks/projects/9", headers=bearer(make_token()))
     assert r.status_code == 404
     assert r.json() == {"detail": "Not found"}

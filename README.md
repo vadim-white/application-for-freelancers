@@ -39,6 +39,8 @@
 
 У каждого сервиса своя база данных, сервисы не ходят в чужие таблицы. Task Service обращается к Time Service по HTTP, когда собирает статистику.
 
+Gateway держит один HTTP-клиент на процесс (`httpx.AsyncClient`, пул keep-alive соединений к сервисам; создаётся при старте и закрывается при остановке). Таймауты запроса к сервису: подключение 5 с, остальное 30 с. Сервис недоступен (отказ в соединении, имя не резолвится, разрыв) — 502 `Upstream service unavailable`, сервис не ответил вовремя — 504 `Upstream service timeout`; причина пишется в лог gateway. Тело ответа идёт клиенту потоком, байты как есть (сжатое — вместе с `content-encoding`). Hop-by-hop заголовки (`connection`, `keep-alive`, `te`, `trailer`, `transfer-encoding`, `upgrade`, `proxy-*` и перечисленные в `Connection`) gateway не пересылает ни в запросе, ни в ответе, а `date` и `server` в ответе ставит сам uvicorn gateway — копии от сервиса отбрасываются. `/health` опрашивает три сервиса параллельно, с таймаутом 2 с на каждый.
+
 В Kubernetes вход в кластер один — Gateway API (контроллер Envoy Gateway) на `http://127.0.0.1:8080`: `/api` уходит в API Gateway, всё остальное — во фронтенд. Сервисы приложения наружу не публикуются (все `ClusterIP`):
 
 ```
@@ -183,13 +185,13 @@ docker run --rm -v "$PWD/<service>":/src:ro ghcr.io/astral-sh/uv:0.13.1-python3.
 
 ```bash
 docker compose up --build -d --wait
-bash tests/smoke.sh                      # режим compose: 116 проверок
+bash tests/smoke.sh                      # режим compose: 117 проверок
 
 ./scripts/k8s-deploy.sh                  # кластер kind (см. k8s/README.md)
-SMOKE_MODE=k8s bash tests/smoke.sh       # режим k8s: 114 проверок через http://127.0.0.1:8080
+SMOKE_MODE=k8s bash tests/smoke.sh       # режим k8s: 115 проверок через http://127.0.0.1:8080
 ```
 
-`/health` gateway всегда отвечает 200, а доступность сервисов пишет в теле (`upstreams`), поэтому smoke проверяет тело: `auth`, `task`, `time` — все `true`. В k8s запрос идёт изнутри пода `ser-gateway` (через вход `/health` отдаёт фронт). Каждый запрос curl ограничен 15 с (`--max-time`), молчащий сервер не повесит прогон. В конце smoke сверяет число пройденных проверок с ожидаемым (116 / 114): пропущенная проверка (например, пустой цикл) не даёт FAIL, но и не даёт PASS, и тогда печатается «пройдено N из ожидаемых M». Код выхода 0 — FAIL нет и пройдено ровно ожидаемое число.
+`/health` gateway всегда отвечает 200, а доступность сервисов пишет в теле (`upstreams`), поэтому smoke проверяет тело: `auth`, `task`, `time` — все `true`. В k8s запрос идёт изнутри пода `ser-gateway` (через вход `/health` отдаёт фронт). Каждый запрос curl ограничен 15 с (`--max-time`), молчащий сервер не повесит прогон. Проксированный ответ проверяется на один заголовок `date` (раньше gateway пересылал ещё и `date` сервиса). В конце smoke сверяет число пройденных проверок с ожидаемым (117 / 115): пропущенная проверка (например, пустой цикл) не даёт FAIL, но и не даёт PASS, и тогда печатается «пройдено N из ожидаемых M». Код выхода 0 — FAIL нет и пройдено ровно ожидаемое число.
 
 #### e2e в браузере (Playwright)
 
@@ -278,7 +280,7 @@ open http://127.0.0.1:8080       # приложение (вход admin@example.
 - миграции — Job `auth-migrate`, `task-migrate`, `time-migrate`, seed — Job `auth-seed`. Порядок задаёт `k8s-deploy.sh`. Деплоить только через него: Job неизменяемы, голый `kubectl apply -k` поверх старых Job падает или не перезапускает миграции;
 - по две реплики у auth, task, time, gateway и frontend, базы — по одной;
 - Pod Security Admission `restricted` (не root, без привилегий, корень только на чтение), NetworkPolicy по умолчанию запрещают всё, кроме нужных связей;
-- сквозной прогон против кластера — `SMOKE_MODE=k8s bash tests/smoke.sh` (114 проверок).
+- сквозной прогон против кластера — `SMOKE_MODE=k8s bash tests/smoke.sh` (115 проверок).
 
 Удалить кластер: `kind delete cluster --name freelance`.
 
@@ -292,8 +294,8 @@ GitHub Actions, workflow [.github/workflows/ci.yml](.github/workflows/ci.yml). �
 | `python` (×4: auth, task, time, gateway) | `uv sync --locked`, `uv run pytest --cov=app`: порог покрытия из `pyproject.toml`, тест миграций на PostgreSQL 15 (service container, `TEST_POSTGRES_URL`). Пропущенный тест роняет job: значит, база не подключилась |
 | `frontend` | Node из `.nvmrc` (24), `npm ci`, `npm run typecheck`, `npm run build` |
 | `static` | `docker compose config --quiet` на `.env` от `init-env.sh`, kubeconform v0.8.0 по выводу `kubectl kustomize` обоих overlay (как в [k8s/README.md](k8s/README.md#диагностика)) |
-| `compose` | с чистого раннера: `init-env.sh` → `docker compose up --build -d --wait` → smoke (116) → e2e (`http://127.0.0.1:5173`), в конце `down -v` |
-| `kind` | `kind-up.sh` → `init-k8s-env.sh` → `k8s-deploy.sh` → smoke k8s (114) → e2e через вход (`http://127.0.0.1:8080`) → `kubectl apply --dry-run=server` обоих overlay |
+| `compose` | с чистого раннера: `init-env.sh` → `docker compose up --build -d --wait` → smoke (117) → e2e (`http://127.0.0.1:5173`), в конце `down -v` |
+| `kind` | `kind-up.sh` → `init-k8s-env.sh` → `k8s-deploy.sh` → smoke k8s (115) → e2e через вход (`http://127.0.0.1:8080`) → `kubectl apply --dry-run=server` обоих overlay |
 
 Где смотреть: вкладка **Actions** репозитория, workflow **CI**, бейдж в начале README показывает статус последнего прогона. Если падают compose или kind, отдельный шаг «диагностика» печатает состояние: для compose — `docker compose ps -a` и последние строки логов, для kind — поды и Job, события, `describe gateway entry`, логи подов (и прошлых контейнеров) и контроллера Envoy Gateway. Скриншоты и trace упавших e2e-тестов приходят артефактом прогона (`e2e-compose`, `e2e-kind`, хранятся 7 дней). Повторить job локально можно теми же командами, что в разделах «Тесты», «Линтер» и в [k8s/README.md](k8s/README.md).
 
@@ -405,7 +407,7 @@ curl -X POST http://localhost:8000/api/auth/login \
 - Python 3.14 во всех образах. В Docker Compose и Kubernetes сервисы работают с PostgreSQL через psycopg 3 (`postgresql+psycopg://`). Зависимости бэкенда ведёт uv: прямые закреплены точными версиями (`==`) в `pyproject.toml` сервиса, все вместе с транзитивными — в `uv.lock` (версии и хеши), общие пакеты одинаковы во всех сервисах. Образ ставит их `uv sync --locked` (сборка падает, если `uv.lock` не совпадает с `pyproject.toml`) в `/opt/venv`; сам uv в итоговый образ не попадает. `pytest`, `httpx2` и `pytest-cov` — в dev-группе, в образ не ставятся
 - Схема БД auth-service, task-service и time-service управляется миграциями Alembic (`<service>/migrations/`): в Docker Compose их применяют сервисы `ser-auth-migrate`, `ser-task-migrate` и `ser-time-migrate` до старта своего сервиса, в Kubernetes — Job `auth-migrate`, `task-migrate`, `time-migrate` (один раз на деплой, порядок задаёт `scripts/k8s-deploy.sh`). Тест в каждом из них проверяет, что миграции совпадают с моделями
 - Проекты хранятся только в task-service: дубль проектов в time-service (`/api/time/projects`) удалён, фронтенд создаёт проект одним запросом. `user_id` записи времени обязателен (NOT NULL), фронтенд его не отправляет: сервер берёт `user_id` из токена
-- Автотесты (pytest) есть у всех бэкенд-сервисов (с PostgreSQL: gateway 51, auth 40, task 57, time 32; без `TEST_POSTGRES_URL` тесты миграций на PostgreSQL пропускаются — 51 / 38 + 2 skipped / 54 + 3 skipped / 30 + 2 skipped), покрытие 100 / 94 / 98 / 99 % с порогом в `pyproject.toml`. Python-код проверяет ruff (`ruff.toml`, см. «Линтер»), типы фронтенда — `npm run typecheck` (vue-tsc, 0 ошибок). Сквозные проверки: smoke (`tests/smoke.sh`, compose 116, k8s 114) и e2e в браузере (`tests/e2e/`, 5 тестов: авто-refresh, неудачный refresh, «только свои», счётчик задач, роут `/`). Всё это, а также shellcheck, gitleaks, kubeconform и сквозные прогоны в compose и kind с нуля, выполняет CI (GitHub Actions) на каждый push и pull request (см. «CI»)
+- Автотесты (pytest) есть у всех бэкенд-сервисов (с PostgreSQL: gateway 64, auth 40, task 57, time 32; без `TEST_POSTGRES_URL` тесты миграций на PostgreSQL пропускаются — 64 / 38 + 2 skipped / 54 + 3 skipped / 30 + 2 skipped), покрытие 100 / 94 / 98 / 99 % с порогом в `pyproject.toml`. Python-код проверяет ruff (`ruff.toml`, см. «Линтер»), типы фронтенда — `npm run typecheck` (vue-tsc, 0 ошибок). Сквозные проверки: smoke (`tests/smoke.sh`, compose 117, k8s 115) и e2e в браузере (`tests/e2e/`, 5 тестов: авто-refresh, неудачный refresh, «только свои», счётчик задач, роут `/`). Всё это, а также shellcheck, gitleaks, kubeconform и сквозные прогоны в compose и kind с нуля, выполняет CI (GitHub Actions) на каждый push и pull request (см. «CI»)
 - Фронтенд в Docker собирается multi-stage на Node 24 (`npm ci`, `vite build`) и раздаётся nginx без root (`nginx-unprivileged`, слушает 8080): долгий кэш для `/assets/`, `index.html` без кэша, gzip, SPA-роуты отдают `index.html`. Запросы `/api/` nginx проксирует на gateway, поэтому браузер ходит на один адрес и CORS для фронтенда не нужен. В Kubernetes фронтенд описан под этот образ: порт 8080, `GATEWAY_URL` из ConfigMap, startup/liveness/readiness `GET /`, Service `ClusterIP`
 - В Kubernetes вход один — Gateway API (Envoy Gateway v1.9.2) на `http://127.0.0.1:8080`: `/api` → gateway, остальное → фронтенд; `LoadBalancer` и `NodePort` в namespace приложения нет, все сервисы `ClusterIP`. Автомасштабирования нет: у stateless-сервисов (auth, task, time, gateway, frontend) по две реплики, базы — по одной. При `rollout restart` под нагрузкой возможны единичные 502/503 в момент остановки старого пода (graceful shutdown — в планах). Кластер — только локальный kind (`./scripts/kind-up.sh`, ставит и Envoy Gateway), манифесты собираются kustomize (`base` + `overlays/local`), деплой с миграциями и seed — `./scripts/k8s-deploy.sh`; проверено с нуля (инструкция и ограничения — [k8s/README.md](k8s/README.md)). Облачного overlay (реестр образов, TLS, управляемый Postgres) нет. Базы в кластере проверяются `pg_isready -U … -d …`, `PGDATA` лежит в подпапке тома. Readiness сервисов — публичный `GET /`, без проверки БД
 - В Kubernetes сетевые политики по умолчанию запрещают всё: открыты только DNS, вход от Envoy к фронту и gateway, фронт → gateway, gateway → auth, task, time, task → time и каждый сервис со своими Job → своя база. Сервис не достанет до чужой базы, базы и сервисы не выходят в интернет ([k8s/README.md](k8s/README.md#сетевые-политики))

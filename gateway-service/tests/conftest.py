@@ -1,3 +1,4 @@
+import inspect
 import os
 from datetime import UTC, datetime, timedelta
 
@@ -10,9 +11,9 @@ import jwt
 import pytest
 from fastapi.testclient import TestClient
 
-from app import proxy
 from app.core.config import settings
 from app.main import app
+from app.proxy import get_http_client
 
 TEST_SECRET = "test-secret-key-at-least-32-bytes-long"
 
@@ -26,22 +27,50 @@ def _settings(monkeypatch):
     monkeypatch.setattr(settings, "TIME_URL", "http://time")
 
 
+def as_network_stream(handler):
+    """httpx.Response(content=bytes) создаётся уже прочитанным; настоящий транспорт отдаёт тело
+    потоком, и прокси читает его через aiter_raw — поэтому тело оборачивается в поток."""
+
+    async def wrapped(request: httpx.Request) -> httpx.Response:
+        response = handler(request)
+        if inspect.isawaitable(response):
+            response = await response
+        if not response.is_stream_consumed:
+            return response
+
+        # stream — байты как переданы в тест, до распаковки content-encoding
+        raw = b"".join(response.stream)
+
+        async def body():
+            yield raw
+
+        return httpx.Response(response.status_code, headers=response.headers, content=body())
+
+    return wrapped
+
+
 @pytest.fixture
-def upstream(monkeypatch):
-    """Подменяет сетевые вызовы gateway; хранит полученные upstream-запросы."""
+def mock_upstream():
+    """Подменяет общий клиент gateway клиентом на MockTransport с заданным обработчиком."""
+
+    def install(handler):
+        client = httpx.AsyncClient(transport=httpx.MockTransport(as_network_stream(handler)))
+        app.dependency_overrides[get_http_client] = lambda: client
+
+    yield install
+    app.dependency_overrides.pop(get_http_client, None)
+
+
+@pytest.fixture
+def upstream(mock_upstream):
+    """Сервисы отвечают 200; хранит полученные upstream-запросы."""
     calls = []
 
     def handler(request: httpx.Request) -> httpx.Response:
         calls.append(request)
         return httpx.Response(200, json={"ok": True})
 
-    real_client = httpx.AsyncClient
-
-    def fake_client(*args, **kwargs):
-        kwargs["transport"] = httpx.MockTransport(handler)
-        return real_client(*args, **kwargs)
-
-    monkeypatch.setattr(proxy.httpx, "AsyncClient", fake_client)
+    mock_upstream(handler)
     return calls
 
 
