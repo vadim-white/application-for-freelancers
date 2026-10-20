@@ -36,6 +36,10 @@ else
   kind create cluster --config k8s/kind-config.yaml
 fi
 
+# kind создаёт узел с restart=on-failure: после перезапуска Docker Desktop кластер сам поднимается
+# и держит ~2 ГиБ. Выключаем автозапуск: кластер стартует только вручную (docker start)
+docker update --restart=no "$CLUSTER-control-plane" >/dev/null
+
 kubectl --context "$CONTEXT" wait --for=condition=Ready node --all --timeout=120s
 
 # Envoy Gateway: server-side apply (CRD слишком велики для аннотации last-applied client-side apply),
