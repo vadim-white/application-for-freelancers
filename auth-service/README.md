@@ -18,13 +18,15 @@
    uv run uvicorn app.main:app --reload --port 8001
    ```
 
+Проверка готовности: `GET http://127.0.0.1:8001/ready` — 200 `{"ready": true}`, если база доступна и схема не старше кода (ревизия в `alembic_version` равна head миграций или незнакома — новее); иначе 503 с причиной в `reason` (`schema not migrated`, `schema revision … is older than code …`, `database unavailable`). Эндпоинт вне `/api`, через gateway недоступен — его опрашивают healthcheck compose и readiness-проба Kubernetes. `GET /` — только «процесс отвечает» (liveness).
+
 ## Тесты
 
 ```bash
 uv run pytest -q
 ```
 
-Запущенные сервисы не нужны. Тест миграций на PostgreSQL идёт, только если задана `TEST_POSTGRES_URL` — см. [«Тесты» в корневом README](../README.md#тесты).
+Запущенные сервисы не нужны. Тесты миграций и `/ready` на PostgreSQL идут, только если задана `TEST_POSTGRES_URL` — см. [«Тесты» в корневом README](../README.md#тесты).
 
 ## Переменные окружения
 

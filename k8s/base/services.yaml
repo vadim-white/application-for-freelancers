@@ -14,7 +14,7 @@ spec:
       labels:
         app: ser-auth
     spec:
-      # схему БД создаёт Job auth-migrate (migrations.yaml), сервис его не ждёт: порядок задаёт k8s-deploy.sh
+      # схему БД создаёт Job auth-migrate (migrations.yaml); до неё /ready отвечает 503 и трафика на под нет
       # PSA restricted: не root (USER 10001 в образе), без токена API k8s, только чтение корня
       automountServiceAccountToken: false
       securityContext:
@@ -56,7 +56,7 @@ spec:
             configMapKeyRef:
               name: service-config
               key: access-token-expire-minutes
-        # startupProbe: до 60 с на старт (холодный старт с лимитом CPU 200m под нагрузкой узла дольше 30 с);
+        # startupProbe: до 60 с на старт (запас на холодный старт под нагрузкой узла);
         # liveness/readiness включаются после первого ответа, initialDelaySeconds не нужен
         startupProbe:
           httpGet:
@@ -64,23 +64,28 @@ spec:
             port: 8001
           periodSeconds: 2
           failureThreshold: 30
+        # liveness без БД: перезапуск не чинит упавшую базу; 6 неудач (60 с) — перезапуск дороже снятия с трафика
         livenessProbe:
           httpGet:
             path: /
             port: 8001
           periodSeconds: 10
+          timeoutSeconds: 3
+          failureThreshold: 6
+        # readiness: база доступна и схема не старше кода (иначе 503 — под вне балансировки)
         readinessProbe:
           httpGet:
-            path: /
+            path: /ready
             port: 8001
           periodSeconds: 5
+          timeoutSeconds: 3
+        # без лимита CPU: троттлинг на 200m растягивал вход (bcrypt) до ~2,5 с и валил пробы под нагрузкой
         resources:
           requests:
             memory: "128Mi"
             cpu: "50m"
           limits:
             memory: "256Mi"
-            cpu: "200m"
 ---
 apiVersion: v1
 kind: Service
@@ -113,7 +118,7 @@ spec:
       labels:
         app: ser-task
     spec:
-      # схему БД создаёт Job task-migrate (migrations.yaml), сервис его не ждёт: порядок задаёт k8s-deploy.sh
+      # схему БД создаёт Job task-migrate (migrations.yaml); до неё /ready отвечает 503 и трафика на под нет
       # PSA restricted: не root (USER 10001 в образе), без токена API k8s, только чтение корня
       automountServiceAccountToken: false
       securityContext:
@@ -155,7 +160,7 @@ spec:
             configMapKeyRef:
               name: service-config
               key: algorithm
-        # startupProbe: до 60 с на старт (холодный старт с лимитом CPU 200m под нагрузкой узла дольше 30 с);
+        # startupProbe: до 60 с на старт (запас на холодный старт под нагрузкой узла);
         # liveness/readiness включаются после первого ответа, initialDelaySeconds не нужен
         startupProbe:
           httpGet:
@@ -163,23 +168,28 @@ spec:
             port: 8002
           periodSeconds: 2
           failureThreshold: 30
+        # liveness без БД: перезапуск не чинит упавшую базу; 6 неудач (60 с) — перезапуск дороже снятия с трафика
         livenessProbe:
           httpGet:
             path: /
             port: 8002
           periodSeconds: 10
+          timeoutSeconds: 3
+          failureThreshold: 6
+        # readiness: база доступна и схема не старше кода (иначе 503 — под вне балансировки)
         readinessProbe:
           httpGet:
-            path: /
+            path: /ready
             port: 8002
           periodSeconds: 5
+          timeoutSeconds: 3
+        # без лимита CPU: троттлинг на 200m растягивал вход (bcrypt) до ~2,5 с и валил пробы под нагрузкой
         resources:
           requests:
             memory: "128Mi"
             cpu: "50m"
           limits:
             memory: "256Mi"
-            cpu: "200m"
 ---
 apiVersion: v1
 kind: Service
@@ -212,7 +222,7 @@ spec:
       labels:
         app: ser-time
     spec:
-      # схему БД создаёт Job time-migrate (migrations.yaml), сервис его не ждёт: порядок задаёт k8s-deploy.sh
+      # схему БД создаёт Job time-migrate (migrations.yaml); до неё /ready отвечает 503 и трафика на под нет
       # PSA restricted: не root (USER 10001 в образе), без токена API k8s, только чтение корня
       automountServiceAccountToken: false
       securityContext:
@@ -249,7 +259,7 @@ spec:
             configMapKeyRef:
               name: service-config
               key: algorithm
-        # startupProbe: до 60 с на старт (холодный старт с лимитом CPU 200m под нагрузкой узла дольше 30 с);
+        # startupProbe: до 60 с на старт (запас на холодный старт под нагрузкой узла);
         # liveness/readiness включаются после первого ответа, initialDelaySeconds не нужен
         startupProbe:
           httpGet:
@@ -257,23 +267,28 @@ spec:
             port: 8003
           periodSeconds: 2
           failureThreshold: 30
+        # liveness без БД: перезапуск не чинит упавшую базу; 6 неудач (60 с) — перезапуск дороже снятия с трафика
         livenessProbe:
           httpGet:
             path: /
             port: 8003
           periodSeconds: 10
+          timeoutSeconds: 3
+          failureThreshold: 6
+        # readiness: база доступна и схема не старше кода (иначе 503 — под вне балансировки)
         readinessProbe:
           httpGet:
-            path: /
+            path: /ready
             port: 8003
           periodSeconds: 5
+          timeoutSeconds: 3
+        # без лимита CPU: троттлинг на 200m растягивал вход (bcrypt) до ~2,5 с и валил пробы под нагрузкой
         resources:
           requests:
             memory: "128Mi"
             cpu: "50m"
           limits:
             memory: "256Mi"
-            cpu: "200m"
 ---
 apiVersion: v1
 kind: Service

@@ -1,6 +1,7 @@
 from fastapi import FastAPI
 
 from .api import router as api_router
+from .ready import router as ready_router
 
 app = FastAPI(title="Auth Service (auth-service)")
 
@@ -10,6 +11,8 @@ app = FastAPI(title="Auth Service (auth-service)")
 # (в compose — ser-auth-seed)
 
 app.include_router(api_router, prefix="/api/auth")
+# /ready вне /api: gateway его не проксирует, проверяют только kubelet и compose
+app.include_router(ready_router)
 
 
 @app.get("/")

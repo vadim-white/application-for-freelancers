@@ -54,3 +54,10 @@ async def proxy(
 @app.get("/")
 async def root():
     return {"service": "gateway", "status": "ok"}
+
+
+# Без проверки сервисов: иначе один упавший сервис снимает с трафика весь gateway,
+# а с ним и пути к остальным; доступность сервисов — в /health
+@app.get("/ready")
+async def ready():
+    return {"ready": True}

@@ -6,9 +6,9 @@
 # Предшественник — docs/archive/smoke_1.2.9.sh (до 1.5.1, вне git).
 #
 # Два режима (SMOKE_MODE), seed-пользователи нужны в обоих:
-#   compose (по умолчанию) — 117 проверок. Стек: `docker compose up --build -d --wait`
+#   compose (по умолчанию) — 120 проверок. Стек: `docker compose up --build -d --wait`
 #     (сам скрипт готовности не ждёт: после --wait gateway слушает порт и логин seed-пользователей работает).
-#   k8s — 115 проверок. Кластер kind: `./scripts/k8s-deploy.sh` (миграции, seed, вход Gateway).
+#   k8s — 118 проверок. Кластер kind: `./scripts/k8s-deploy.sh` (миграции, seed, вход Gateway).
 #     Запросы идут через вход кластера http://127.0.0.1:8080 (Envoy Gateway, /api -> ser-gateway), как из
 #     браузера; port-forward не нужен. Отличия от compose:
 #     - нет четырёх проверок «localhost:8001/8002/8003/5432 closed»: кластер публикует на хост только порт
@@ -24,6 +24,7 @@
 #     поэтому /health проверяется изнутри пода gateway (заодно подтверждает NetworkPolicy gateway -> сервисы).
 # /health gateway всегда отвечает 200, доступность сервисов пишет только в теле (upstreams), поэтому
 # проверяется тело: upstreams.auth, .task, .time все true (в обоих режимах).
+# /ready сервисов вне /api, через gateway недоступен, поэтому проверяется изнутри gateway.
 # Переопределяется: SMOKE_G (адрес gateway или входа), SMOKE_ORIGIN (разрешённый CORS origin),
 # KUBE_CONTEXT (kind-freelance).
 MODE="${SMOKE_MODE:-compose}"
@@ -31,7 +32,7 @@ case "$MODE" in
   compose)
     G="${SMOKE_G:-http://localhost:8000}"
     CLOSED_PORTS="8001 8002 8003 5432"
-    EXPECTED=117
+    EXPECTED=120
     in_svc() { local s=$1; shift; docker exec "ser-$s" "$@"; }   # in_svc auth|gateway команда...
     in_auth_db() { docker exec ser-auth-db "$@"; }
     ;;
@@ -40,7 +41,7 @@ case "$MODE" in
     KNS=freelance-service
     G="${SMOKE_G:-http://127.0.0.1:8080}"
     CLOSED_PORTS=""
-    EXPECTED=115
+    EXPECTED=118
     in_svc() { local s=$1; shift; kubectl --context "$KCTX" -n "$KNS" exec "deploy/ser-$s" -- "$@"; }
     in_auth_db() { kubectl --context "$KCTX" -n "$KNS" exec auth-db-0 -c postgres -- "$@"; }
     ;;
@@ -99,6 +100,10 @@ else
   chk "GET /health upstreams all true" "auth task time" "$HEALTH"
   chk "GET /" 200 "$(code "$G/")"
 fi
+for s in auth:8001 task:8002 time:8003; do
+  R=$(in_svc gateway python -c "import urllib.request as u;print(u.urlopen('http://ser-$s/ready', timeout=5).status)")
+  chk "/ready ${s%%:*} (from gateway)" 200 "$R"
+done
 R=$(code "$G/api/auth/register" -H "$J" -d "{\"email\":\"e2e-$SFX@example.com\",\"password\":\"password123\"}"); chk "register new user" 201 "$R"
 R=$(cu -s "$G/api/auth/register" -H "$J" -d "{\"email\":\"e2e-adm-$SFX@example.com\",\"password\":\"password123\",\"role\":\"admin\"}" | jq_ 'd["role"]'); chk "register with role=admin -> role user" user "$R"
 chk "login wrong password" 401 "$(code "$G/api/auth/login" -H "$J" -d '{"email":"user1@example.com","password":"bad"}')"

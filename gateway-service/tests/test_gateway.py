@@ -23,6 +23,20 @@ def test_root_and_health_without_token(client, upstream):
     assert r.json()["upstreams"] == {"auth": True, "task": True, "time": True}
 
 
+def test_ready_does_not_call_upstreams(client, mock_upstream):
+    calls = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append(request)
+        raise httpx.ConnectError("connection refused", request=request)
+
+    mock_upstream(handler)
+    r = client.get("/ready")
+    assert r.status_code == 200
+    assert r.json() == {"ready": True}
+    assert calls == []
+
+
 def test_health_upstream_unreachable_or_not_200(client, mock_upstream):
     def handler(request: httpx.Request) -> httpx.Response:
         if request.url.host == "auth":

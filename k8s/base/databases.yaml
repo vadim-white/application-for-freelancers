@@ -65,6 +65,7 @@ spec:
             - pg_isready -U $POSTGRES_USER -d $POSTGRES_DB
           initialDelaySeconds: 30
           periodSeconds: 10
+          timeoutSeconds: 3
         readinessProbe:
           exec:
             command:
@@ -73,6 +74,7 @@ spec:
             - pg_isready -U $POSTGRES_USER -d $POSTGRES_DB
           initialDelaySeconds: 5
           periodSeconds: 10
+          timeoutSeconds: 3
         resources:
           requests:
             memory: "256Mi"
@@ -172,6 +174,7 @@ spec:
             - pg_isready -U $POSTGRES_USER -d $POSTGRES_DB
           initialDelaySeconds: 30
           periodSeconds: 10
+          timeoutSeconds: 3
         readinessProbe:
           exec:
             command:
@@ -180,6 +183,7 @@ spec:
             - pg_isready -U $POSTGRES_USER -d $POSTGRES_DB
           initialDelaySeconds: 5
           periodSeconds: 10
+          timeoutSeconds: 3
         resources:
           requests:
             memory: "256Mi"
@@ -279,6 +283,7 @@ spec:
             - pg_isready -U $POSTGRES_USER -d $POSTGRES_DB
           initialDelaySeconds: 30
           periodSeconds: 10
+          timeoutSeconds: 3
         readinessProbe:
           exec:
             command:
@@ -287,6 +292,7 @@ spec:
             - pg_isready -U $POSTGRES_USER -d $POSTGRES_DB
           initialDelaySeconds: 5
           periodSeconds: 10
+          timeoutSeconds: 3
         resources:
           requests:
             memory: "256Mi"

@@ -1,4 +1,4 @@
-# Общие параметры healthcheck приложений; test (публичный GET /) задан у каждого сервиса.
+# Общие параметры healthcheck приложений; test (GET /ready: у сервисов — база и схема на месте) задан у каждого.
 # Адрес 127.0.0.1, а не localhost: uvicorn слушает только IPv4.
 # start_interval: на старте проверка раз в секунду, поэтому up --wait не ждёт лишних 10 с
 x-app-healthcheck: &app-healthcheck
@@ -97,7 +97,7 @@ services:
     restart: unless-stopped
     healthcheck:
       <<: *app-healthcheck
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/', timeout=2)"]
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/ready', timeout=2)"]
 
   # Auth Service
   ser-auth:
@@ -125,7 +125,7 @@ services:
     restart: unless-stopped
     healthcheck:
       <<: *app-healthcheck
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8001/', timeout=2)"]
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8001/ready', timeout=2)"]
 
   # Миграции Auth Service: одноразовый запуск alembic upgrade head перед ser-auth
   ser-auth-migrate:
@@ -185,7 +185,7 @@ services:
     restart: unless-stopped
     healthcheck:
       <<: *app-healthcheck
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8002/', timeout=2)"]
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8002/ready', timeout=2)"]
 
   # Миграции Task Service: одноразовый запуск alembic upgrade head перед ser-task
   ser-task-migrate:
@@ -223,7 +223,7 @@ services:
     restart: unless-stopped
     healthcheck:
       <<: *app-healthcheck
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8003/', timeout=2)"]
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8003/ready', timeout=2)"]
 
   # Миграции Time Service: одноразовый запуск alembic upgrade head перед ser-time
   ser-time-migrate:
