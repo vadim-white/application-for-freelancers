@@ -255,11 +255,12 @@ jobs:
         run: SMOKE_MODE=k8s bash tests/smoke.sh
       - name: e2e (Playwright, через вход http://127.0.0.1:8080)
         run: E2E_BASE_URL=http://127.0.0.1:8080 bash tests/e2e/run.sh
+      # overlay с тегом из k8s-deploy.sh: шаблон пода Job неизменяем, с :latest из git patch отклоняется
       - name: apply --dry-run=server (оба overlay)
         run: |
-          for overlay in local local-seed; do
-            echo "== k8s/overlays/$overlay"
-            kubectl kustomize "k8s/overlays/$overlay" \
+          for overlay in app seed; do
+            echo "== k8s/overlays/.deploy/$overlay"
+            kubectl kustomize "k8s/overlays/.deploy/$overlay" \
               | kubectl --context kind-freelance apply --dry-run=server -f -
           done
       - name: диагностика

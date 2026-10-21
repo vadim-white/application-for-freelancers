@@ -291,12 +291,12 @@ GitHub Actions, workflow [.github/workflows/ci.yml](.github/workflows/ci.yml). �
 
 | Job | Что проверяет |
 |---|---|
-| `lint` | `ruff check` и `ruff format --check` (0.17.1), shellcheck (`scripts/*.sh`, `tests/smoke.sh`, `tests/e2e/run.sh`), [actionlint](https://github.com/rhysd/actionlint) по workflow (и shellcheck внутри `run:`), [gitleaks](https://github.com/gitleaks/gitleaks) по всей истории git (найденное печатается скрытым, `--redact`) |
+| `lint` | `ruff check` и `ruff format --check` (0.17.1), shellcheck (`scripts/*.sh`, `tests/smoke.sh`, `tests/e2e/run.sh`), [actionlint](https://github.com/rhysd/actionlint) по workflow (и shellcheck внутри `run:`), [gitleaks](https://github.com/gitleaks/gitleaks) по всей истории git (найденное печатается скрытым, `--redact`; стандартные правила плюс allowlist фиктивных JWT-ключей тестов в `.gitleaks.toml`) |
 | `python` (×4: auth, task, time, gateway) | `uv sync --locked`, `uv run pytest --cov=app`: порог покрытия из `pyproject.toml`, тест миграций на PostgreSQL 15 (service container, `TEST_POSTGRES_URL`). Пропущенный тест роняет job: значит, база не подключилась |
 | `frontend` | Node из `.nvmrc` (24), `npm ci`, `npm run typecheck`, `npm run build` |
 | `static` | `docker compose config --quiet` на `.env` от `init-env.sh`, kubeconform v0.8.0 по выводу `kubectl kustomize` обоих overlay (как в [k8s/README.md](k8s/README.md#диагностика)) |
 | `compose` | с чистого раннера: `init-env.sh` → `docker compose up --build -d --wait` → smoke (117) → e2e (`http://127.0.0.1:5173`), в конце `down -v` |
-| `kind` | `kind-up.sh` → `init-k8s-env.sh` → `k8s-deploy.sh` → smoke k8s (115) → e2e через вход (`http://127.0.0.1:8080`) → `kubectl apply --dry-run=server` обоих overlay |
+| `kind` | `kind-up.sh` → `init-k8s-env.sh` → `k8s-deploy.sh` → smoke k8s (115) → e2e через вход (`http://127.0.0.1:8080`) → `kubectl apply --dry-run=server` обоих overlay с развёрнутым тегом (`k8s/overlays/.deploy/app` и `seed`) |
 
 Где смотреть: вкладка **Actions** репозитория, workflow **CI**, бейдж в начале README показывает статус последнего прогона. Если падают compose или kind, отдельный шаг «диагностика» печатает состояние: для compose — `docker compose ps -a` и последние строки логов, для kind — поды и Job, Deployment с тегами образов, события, `describe gateway entry`, логи подов (и прошлых контейнеров) и контроллера Envoy Gateway. Скриншоты и trace упавших e2e-тестов приходят артефактом прогона (`e2e-compose`, `e2e-kind`, хранятся 7 дней). Повторить job локально можно теми же командами, что в разделах «Тесты», «Линтер» и в [k8s/README.md](k8s/README.md).
 

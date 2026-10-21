@@ -206,8 +206,10 @@ k describe networkpolicy ser-task
 ```bash
 kubectl kustomize k8s/overlays/local | docker run --rm -i ghcr.io/yannh/kubeconform:v0.8.0 \
   -strict -summary -skip Gateway,GatewayClass,HTTPRoute,EnvoyProxy -     # 41 valid + 4 skipped (local-seed: 44 + 4)
-kubectl kustomize k8s/overlays/local | kubectl --context kind-freelance apply --dry-run=server -f -
+kubectl kustomize k8s/overlays/.deploy/app | kubectl --context kind-freelance apply --dry-run=server -f -   # и .deploy/seed
 ```
+
+kubeconform можно запускать на overlay из git (`:latest`), а `apply --dry-run=server` — только на `.deploy/app` и `.deploy/seed` (их пишет `k8s-deploy.sh` с тегом из `image-tag`). У развёрнутых Job шаблон пода неизменяем, и overlay с другим тегом образа сервер отклоняет: `Job.batch "auth-migrate" is invalid: spec.template: … field is immutable`.
 
 Вывод `kubectl kustomize` содержит Secret'ы (base64), в файлы и логи его не сохраняйте. Шум, который не означает ошибку: `httproute … configured` при каждом `apply` (у CRD нет strategic merge, объект не меняется), `namespace: freelance-service` у кластерного `GatewayClass` в выводе kustomize (kubectl это поле отбрасывает).
 
@@ -228,9 +230,9 @@ Job `kind` в [.github/workflows/ci.yml](../.github/workflows/ci.yml) (разд�
 2. `./scripts/kind-up.sh` — кластер, Envoy Gateway (sha256 `install.yaml`), сборка и загрузка образов; checkout чистый, поэтому тег — SHA коммита без `-dirty`;
 3. `./scripts/init-k8s-env.sh` — новые секреты; workflow сразу маскирует их значения и base64 (`::add-mask::`);
 4. `./scripts/k8s-deploy.sh`, затем `SMOKE_MODE=k8s bash tests/smoke.sh` (115) и e2e через вход `http://127.0.0.1:8080` (на Linux `run.sh` работает с `--network host`);
-5. `kubectl kustomize … | kubectl apply --dry-run=server -f -` для `local` и `local-seed`: в лог попадают только строки `unchanged` / `configured`, содержимое манифестов — нет.
+5. `kubectl kustomize … | kubectl apply --dry-run=server -f -` для `.deploy/app` и `.deploy/seed` (overlay `local` и `local-seed` с тем тегом, что развёрнут): в лог попадают только строки `unchanged` / `configured`, содержимое манифестов — нет.
 
-Если что-то упало, шаг «диагностика» печатает `get pods,jobs -o wide`, `get deploy -o wide` (виден тег образов), события, `describe gateway entry`, поды и логи контроллера Envoy Gateway, логи подов приложения (`--all-containers`, хвост, и `--previous`, если контейнер перезапускался). Скриншоты и trace e2e — артефакт `e2e-kind`. Шаг 5 проверяет overlay из git (`:latest`): теги в `--dry-run` роли не играют.
+Если что-то упало, шаг «диагностика» печатает `get pods,jobs -o wide`, `get deploy -o wide` (виден тег образов), события, `describe gateway entry`, поды и логи контроллера Envoy Gateway, логи подов приложения (`--all-containers`, хвост, и `--previous`, если контейнер перезапускался). Скриншоты и trace e2e — артефакт `e2e-kind`. Шаг 5 проверяет те же манифесты, что применил `k8s-deploy.sh`: с overlay из git (`:latest`) Job миграций дают `field is immutable`, а Deployment — `configured` вместо `unchanged`.
 
 Скрипты в CI запускаются без изменений. В шаге 1.5.7 в них поправлено только то, на что указал shellcheck, поведение прежнее (проверено на копиях в macOS bash 3.2 и Linux bash 5.2): в `init-env.sh` и `init-k8s-env.sh` цикл по ключам шаблона — `while read` из подстановки процесса вместо `for key in $(grep …)`; в `k8s-deploy.sh` проверка Envoy Gateway — `if ! … || ! …; then die` вместо `A && B || die`.
 
