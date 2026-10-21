@@ -72,7 +72,7 @@ cd application-for-freelancers
 docker compose up --build --wait
 ```
 
-`--wait` возвращает управление, когда одноразовые контейнеры (миграции, seed) завершились с кодом 0, а auth, task, time, gateway, frontend и базы стали `healthy` (у сервисов проверка — публичный `GET /`, у баз — `pg_isready`). Поэтому сразу после команды можно входить под тестовыми пользователями. Без `--wait` стек тоже поднимется, но сервисы ещё какое-то время будут стартовать. Нужен Docker Compose v2 (проверено на 2.40.2, в CI — 2.38.2).
+`--wait` возвращает управление, когда одноразовые контейнеры (миграции, seed) завершились с кодом 0, а auth, task, time, gateway, frontend и базы стали `healthy` (у auth, task и time проверка — `GET /ready`: база доступна и схема на месте, у gateway — `GET /ready`, у frontend — `GET /`, у баз — `pg_isready`). Поэтому сразу после команды можно входить под тестовыми пользователями. Без `--wait` стек тоже поднимется, но сервисы ещё какое-то время будут стартовать. Нужен Docker Compose v2 (проверено на 2.40.2, в CI — 2.38.2).
 
 Без `.env` `docker compose` не стартует и пишет «задайте в .env (./scripts/init-env.sh)». Скрипт создаёт корневой `.env` из `.env.example`; если `.env` уже есть, дописывает только отсутствующие ключи, существующие значения не трогает. Значения секретов он не печатает. Секреты генерирует `python3` или `openssl`; если нет ни того ни другого, скрипт печатает «Нужен python3 или openssl для генерации секретов» и завершается с кодом 1, пустые значения в `.env` не пишутся.
 
@@ -389,6 +389,7 @@ curl -X POST http://localhost:8000/api/auth/login \
 ├── .github/workflows/   CI (GitHub Actions): ci.yml
 ├── .env.example         шаблон общих переменных для Docker Compose
 ├── .git-blame-ignore-revs коммиты форматирования, которые пропускает git blame
+├── .gitleaks.toml       allowlist gitleaks: фиктивные JWT-ключи тестов
 ├── ruff.toml            настройки линтера и форматтера Python (ruff)
 └── docker-compose.yml
 ```
