@@ -22,6 +22,8 @@ spec:
         runAsUser: 10001
         seccompProfile:
           type: RuntimeDefault
+      # 30 с: preStop 5 + до 20 с дообработки в uvicorn (--timeout-graceful-shutdown в образе), потом SIGKILL
+      terminationGracePeriodSeconds: 30
       containers:
       - name: ser-auth
         image: ser-auth:latest
@@ -79,6 +81,11 @@ spec:
             port: 8001
           periodSeconds: 5
           timeoutSeconds: 3
+        # SIGTERM только через 5 с: Envoy и kube-proxy ещё шлют запросы на под, пока не увидят его удаление
+        lifecycle:
+          preStop:
+            sleep:
+              seconds: 5
         # без лимита CPU: троттлинг на 200m растягивал вход (bcrypt) до ~2,5 с и валил пробы под нагрузкой
         resources:
           requests:
@@ -126,6 +133,8 @@ spec:
         runAsUser: 10001
         seccompProfile:
           type: RuntimeDefault
+      # 30 с: preStop 5 + до 20 с дообработки в uvicorn (--timeout-graceful-shutdown в образе), потом SIGKILL
+      terminationGracePeriodSeconds: 30
       containers:
       - name: ser-task
         image: ser-task:latest
@@ -183,6 +192,11 @@ spec:
             port: 8002
           periodSeconds: 5
           timeoutSeconds: 3
+        # SIGTERM только через 5 с: Envoy и kube-proxy ещё шлют запросы на под, пока не увидят его удаление
+        lifecycle:
+          preStop:
+            sleep:
+              seconds: 5
         # без лимита CPU: троттлинг на 200m растягивал вход (bcrypt) до ~2,5 с и валил пробы под нагрузкой
         resources:
           requests:
@@ -230,6 +244,8 @@ spec:
         runAsUser: 10001
         seccompProfile:
           type: RuntimeDefault
+      # 30 с: preStop 5 + до 20 с дообработки в uvicorn (--timeout-graceful-shutdown в образе), потом SIGKILL
+      terminationGracePeriodSeconds: 30
       containers:
       - name: ser-time
         image: ser-time:latest
@@ -282,6 +298,11 @@ spec:
             port: 8003
           periodSeconds: 5
           timeoutSeconds: 3
+        # SIGTERM только через 5 с: Envoy и kube-proxy ещё шлют запросы на под, пока не увидят его удаление
+        lifecycle:
+          preStop:
+            sleep:
+              seconds: 5
         # без лимита CPU: троттлинг на 200m растягивал вход (bcrypt) до ~2,5 с и валил пробы под нагрузкой
         resources:
           requests:

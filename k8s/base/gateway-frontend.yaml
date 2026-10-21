@@ -21,6 +21,8 @@ spec:
         runAsUser: 10001
         seccompProfile:
           type: RuntimeDefault
+      # 30 с: preStop 5 + до 20 с дообработки в uvicorn (--timeout-graceful-shutdown в образе), потом SIGKILL
+      terminationGracePeriodSeconds: 30
       containers:
       - name: ser-gateway
         image: ser-gateway:latest
@@ -86,6 +88,11 @@ spec:
             port: 8000
           periodSeconds: 5
           timeoutSeconds: 3
+        # SIGTERM только через 5 с: Envoy и kube-proxy ещё шлют запросы на под, пока не увидят его удаление
+        lifecycle:
+          preStop:
+            sleep:
+              seconds: 5
         # без лимита CPU: троттлинг на 200m валил пробы под нагрузкой узла
         resources:
           requests:
@@ -134,6 +141,8 @@ spec:
         runAsGroup: 101
         seccompProfile:
           type: RuntimeDefault
+      # 30 с: preStop 5 + дообработка; STOPSIGNAL образа SIGQUIT — nginx завершает начатые запросы
+      terminationGracePeriodSeconds: 30
       containers:
       - name: ser-frontend
         image: ser-frontend:latest
@@ -172,6 +181,11 @@ spec:
             port: 8080
           periodSeconds: 5
           timeoutSeconds: 3
+        # SIGTERM только через 5 с: Envoy и kube-proxy ещё шлют запросы на под, пока не увидят его удаление
+        lifecycle:
+          preStop:
+            sleep:
+              seconds: 5
         volumeMounts:
         # pid и *_temp_path nginx-unprivileged
         - name: tmp

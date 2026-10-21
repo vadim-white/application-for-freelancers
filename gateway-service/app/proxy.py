@@ -20,6 +20,9 @@ HOP_BY_HOP = frozenset(
 # uvicorn gateway ставит свои; копии от сервиса дали бы по два заголовка
 GATEWAY_RESPONSE_HEADERS = frozenset({"date", "server"})
 
+# RFC 9110, 9.2.2: повтор такого запроса не меняет результат
+IDEMPOTENT_METHODS = frozenset({"GET", "HEAD", "OPTIONS", "TRACE", "PUT", "DELETE"})
+
 
 def get_http_client(request: Request) -> httpx.AsyncClient:
     return request.app.state.http_client
@@ -67,6 +70,18 @@ async def relay_body(r: httpx.Response) -> AsyncIterator[bytes]:
         await r.aclose()
 
 
+async def send_upstream(client: httpx.AsyncClient, request: httpx.Request) -> httpx.Response:
+    # Соединение из пула может закрыть останавливающийся под сервиса (uvicorn по SIGTERM) в момент
+    # отправки. Идемпотентный запрос безопасно повторить, POST — нет: он мог дойти до сервиса.
+    try:
+        return await client.send(request, stream=True)
+    except (httpx.NetworkError, httpx.RemoteProtocolError) as e:
+        if request.method not in IDEMPOTENT_METHODS:
+            raise
+        logger.warning(f"Upstream connection failed, retrying once: {e!r}")
+        return await client.send(request, stream=True)
+
+
 async def stream_proxy(
     request: Request, base_url: str, user: dict | None, client: httpx.AsyncClient
 ) -> Response:
@@ -98,7 +113,7 @@ async def stream_proxy(
         method=request.method, url=target_url, headers=headers, content=body
     )
     try:
-        r = await client.send(upstream_request, stream=True)
+        r = await send_upstream(client, upstream_request)
         logger.info(f"Upstream response: {r.status_code}")
     except httpx.TimeoutException as e:
         logger.error(f"Upstream request timed out: {e!r}")

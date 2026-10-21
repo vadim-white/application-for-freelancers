@@ -229,3 +229,62 @@ def test_response_closed_when_client_disconnects(mock_upstream, closed_responses
 
     asyncio.run(run())
     assert len(closed_responses) == 1
+
+
+# --- повтор при обрыве соединения ---
+
+
+def failing_once(error):
+    """Первый запрос обрывается ошибкой error, следующие получают 200; хранит все запросы."""
+    calls = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append(request)
+        if len(calls) == 1:
+            raise error("connection closed", request=request)
+        return httpx.Response(200, json={"ok": True})
+
+    return handler, calls
+
+
+@pytest.mark.parametrize("method", ["GET", "OPTIONS", "PUT", "DELETE"])
+@pytest.mark.parametrize("error", [httpx.RemoteProtocolError, httpx.ReadError, httpx.ConnectError])
+def test_idempotent_request_retried_once(client, mock_upstream, method, error):
+    handler, calls = failing_once(error)
+    mock_upstream(handler)
+    r = client.request(
+        method, "/api/tasks/projects/1", headers=bearer(make_token()), content=b'{"a":1}'
+    )
+    assert r.status_code == 200
+    assert len(calls) == 2
+    assert calls[1].content == b'{"a":1}'
+
+
+@pytest.mark.parametrize("method", ["POST", "PATCH"])
+def test_non_idempotent_request_not_retried(client, mock_upstream, method):
+    handler, calls = failing_once(httpx.RemoteProtocolError)
+    mock_upstream(handler)
+    r = client.request(method, "/api/tasks/projects", headers=bearer(make_token()), content=b"{}")
+    assert r.status_code == 502
+    assert len(calls) == 1
+
+
+def test_retry_failure_returns_502(client, mock_upstream):
+    calls = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append(request)
+        raise httpx.RemoteProtocolError("connection closed", request=request)
+
+    mock_upstream(handler)
+    r = client.get("/api/tasks/projects", headers=bearer(make_token()))
+    assert r.status_code == 502
+    assert len(calls) == 2
+
+
+def test_timeout_not_retried(client, mock_upstream):
+    handler, calls = failing_once(httpx.ReadTimeout)
+    mock_upstream(handler)
+    r = client.get("/api/tasks/projects", headers=bearer(make_token()))
+    assert r.status_code == 504
+    assert len(calls) == 1

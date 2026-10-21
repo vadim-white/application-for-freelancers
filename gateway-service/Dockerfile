@@ -31,5 +31,5 @@ COPY gateway-service/app ./app
 RUN useradd --system --uid 10001 --no-create-home app
 USER 10001
 
-# Запуск сервиса
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+# после SIGTERM до 20 с на начатые запросы: вместе с preStop (5 с) укладывается в grace k8s (30 с)
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--timeout-graceful-shutdown", "20"]
