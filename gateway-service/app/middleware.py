@@ -58,7 +58,7 @@ def authenticate(request: Request) -> dict | None:
     if not isinstance(sub, str) or not sub.isdigit():
         raise _unauthorized("Invalid token subject")
 
-    # role нет в токенах после /refresh (чинится в auth); по умолчанию минимальные права
+    # токен без role — минимальные права
     role = payload.get("role", "user")
     if role not in ALLOWED_ROLES:
         raise _unauthorized("Invalid token role")

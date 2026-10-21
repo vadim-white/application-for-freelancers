@@ -1,9 +1,5 @@
 #!/usr/bin/env bash
-# Поднимает локальный кластер kind "freelance", ставит в него Envoy Gateway (вход через
-# Gateway API) и загружает образы сервисов.
-# Идемпотентен: существующий кластер не пересоздаётся, Envoy Gateway применяется повторно без
-# изменений, образы пересобираются и загружаются заново. Манифесты приложения не применяет,
-# значения секретов не нужны.
+# Поднимает кластер kind с Envoy Gateway и загружает образы; повторный запуск безопасен.
 # Совместим с macOS bash 3.2.
 set -eu
 
@@ -11,9 +7,8 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 CLUSTER="freelance"
 CONTEXT="kind-$CLUSTER"
 IMAGES="ser-auth ser-task ser-time ser-gateway ser-frontend"
-# Envoy Gateway — контроллер входа (Gateway API). install.yaml релиза содержит CRD Gateway API той же
-# версии (v1.6.1, канал experimental), CRD Envoy Gateway и контроллер в envoy-gateway-system.
-# Версия и sha256 файла закреплены: другой файл по тому же адресу не применится.
+# install.yaml релиза содержит и CRD Gateway API той же версии (v1.6.1, канал experimental).
+# sha256 закреплён: другой файл по тому же адресу не применится.
 ENVOY_GATEWAY_VERSION="v1.9.2"
 ENVOY_GATEWAY_SHA256="0412a72907e57ff9b73c56a7bf6df5190bf0f6e4f8bb4bba34e38630bbab5778"
 ENVOY_GATEWAY_URL="https://github.com/envoyproxy/gateway/releases/download/$ENVOY_GATEWAY_VERSION/install.yaml"
@@ -53,10 +48,8 @@ kubectl --context "$CONTEXT" apply --server-side -f "$eg_tmp"
 kubectl --context "$CONTEXT" -n envoy-gateway-system wait --for=condition=Available \
   deployment/envoy-gateway --timeout=300s
 
-# сборка образов из docker-compose.yml (теги ser-*:latest).
-# compose разбирает файл целиком и требует SECRET_KEY и пароли баз, хотя сборке они
-# не нужны: подставляем заглушки только в окружение этой команды (в образы не попадают,
-# .env не читается и не создаётся)
+# compose требует SECRET_KEY и пароли баз даже для сборки: заглушки — только в окружении
+# этой команды, в образы и .env не попадают
 SECRET_KEY=build AUTH_DB_PASSWORD=build TASK_DB_PASSWORD=build TIME_DB_PASSWORD=build \
   docker compose build
 

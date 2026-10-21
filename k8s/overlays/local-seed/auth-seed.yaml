@@ -1,5 +1,4 @@
-# Тестовые пользователи admin@example.com, user1@example.com, user2@example.com (пароль password123),
-# аналог ser-auth-seed в compose. Только для разработки, в base его нет.
+# Тестовые пользователи (пароль password123) только для разработки, поэтому в base его нет.
 # Идемпотентен: существующих пользователей init_users не трогает.
 apiVersion: batch/v1
 kind: Job

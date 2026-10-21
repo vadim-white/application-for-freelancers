@@ -65,8 +65,7 @@ spec:
             configMapKeyRef:
               name: service-config
               key: cors-origins
-        # startupProbe: до 60 с на старт (запас на холодный старт под нагрузкой узла);
-        # liveness/readiness включаются после первого ответа, initialDelaySeconds не нужен
+        # запас на холодный старт под нагрузкой узла; liveness/readiness ждут её, initialDelaySeconds не нужен
         startupProbe:
           httpGet:
             path: /

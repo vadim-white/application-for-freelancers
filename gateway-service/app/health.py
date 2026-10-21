@@ -21,7 +21,6 @@ async def _is_up(client: httpx.AsyncClient, url: str) -> bool:
 
 @router.get("/health")
 async def health(client: httpx.AsyncClient = Depends(get_http_client)):
-    # check upstream services quickly
     names = ("auth", "task", "time")
     urls = (settings.AUTH_URL, settings.TASK_URL, settings.TIME_URL)
     results = await asyncio.gather(*(_is_up(client, url) for url in urls))

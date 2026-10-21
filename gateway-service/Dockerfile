@@ -1,11 +1,11 @@
 # uv закреплён по версии и digest: тег можно перевесить на другой образ, digest — нет
 FROM ghcr.io/astral-sh/uv:0.13.1@sha256:4a1f3666816dafadd20ceb71eac9a7d56d7ef30279f7d64048519ab901ada336 AS uv
 
-# Этап сборки: зависимости строго по uv.lock в venv вне /app. uv остаётся только в этом этапе
+# uv остаётся только в этапе сборки, в итоговый образ не попадает
 FROM python:3.14-slim AS deps
 COPY --from=uv /uv /bin/uv
-# .pyc зависимостей при сборке (как делал pip): без них импорт при лимите CPU 200m вдвое дольше;
-# Python из образа, не скачивать; copy — кэш смонтирован отдельно от venv
+# .pyc зависимостей — при сборке: в контейнере их не записать, и каждый старт компилировал бы импорт заново;
+# copy — кэш смонтирован отдельно от venv
 ENV UV_PROJECT_ENVIRONMENT=/opt/venv UV_COMPILE_BYTECODE=1 UV_PYTHON_DOWNLOADS=never UV_LINK_MODE=copy
 WORKDIR /app
 COPY gateway-service/pyproject.toml gateway-service/uv.lock ./
@@ -15,8 +15,7 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 
 FROM python:3.14-slim
 
-# без .pyc для кода приложения и с немедленным выводом логов;
-# venv первым в PATH — uvicorn, alembic и python берутся из него
+# логи без буфера: сразу видны в docker logs и kubectl logs
 ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 PATH="/opt/venv/bin:$PATH"
 
 # venv из этапа сборки: тот же базовый образ, поэтому путь к интерпретатору в venv совпадает

@@ -1,6 +1,5 @@
-# Локальный кластер kind. Секреты — из app.env и db.env (создаёт scripts/init-k8s-env.sh, в git не попадают).
-# Применять через scripts/k8s-deploy.sh: он удаляет старые Job (неизменяемы), ждёт миграций и
-# затем применяет ../local-seed (тестовые пользователи). Голый apply -k второй раз падает на изменённых Job.
+# Секреты — из app.env и db.env (создаёт scripts/init-k8s-env.sh, вне git). Применять через
+# scripts/k8s-deploy.sh: голый apply -k второй раз падает на изменённых Job, а seed нужен после миграций.
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 namespace: freelance-service
@@ -20,14 +19,14 @@ secretGenerator:
     envs:
       - db.env
 patches:
-  # образы ser-*:latest загружаются в узел через kind load (scripts/kind-up.sh), из реестра их не тянем
+  # образы загружает в узел kind-up.sh, тег подставляет k8s-deploy.sh (:latest — только в git); реестра нет
   - target:
       kind: Deployment
     patch: |-
       - op: add
         path: /spec/template/spec/containers/0/imagePullPolicy
         value: Never
-  # Job миграций (k8s/base/migrations.yaml) — те же образы ser-*:latest
+  # Job миграций — те же образы сервисов с тем же тегом
   - target:
       kind: Job
     patch: |-

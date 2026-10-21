@@ -91,7 +91,7 @@ async def stream_proxy(
 
     logger.info(f"Proxying {request.method} {request.url.path} -> {target_url}")
 
-    # build headers to forward (exclude host and client-supplied X-User-*)
+    # Host httpx поставит по адресу сервиса; X-User-* от клиента не пропускаем
     headers = [
         (k, v)
         for k, v in drop_hop_by_hop(request.headers.items())
@@ -104,7 +104,6 @@ async def stream_proxy(
 
     body = await request.body()
 
-    # Если есть body, убедимся что Content-Type установлен правильно
     if body and all(k != "content-type" for k, _ in headers):
         headers.append(("Content-Type", "application/json"))
         logger.debug("Added Content-Type: application/json")

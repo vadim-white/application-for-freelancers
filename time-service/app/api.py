@@ -62,7 +62,6 @@ def get_users_statistics(db: Session = Depends(get_db), user: CurrentUser = Depe
     logger.info("Getting users statistics")
 
     try:
-        # Группируем по user_id и получаем статистику
         from . import models
 
         stats = (
@@ -75,7 +74,6 @@ def get_users_statistics(db: Session = Depends(get_db), user: CurrentUser = Depe
             .all()
         )
 
-        # Преобразуем в список словарей
         result = []
         for stat in stats:
             result.append(

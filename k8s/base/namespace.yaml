@@ -6,9 +6,8 @@ metadata:
     # самописная метка, в селекторах не используется: NetworkPolicy выбирают namespace по
     # kubernetes.io/metadata.name (её ставит API-сервер, её не подделать)
     name: freelance-service
-    # Pod Security Admission: под, нарушающий профиль restricted, не создаётся (API-сервер отклоняет).
-    # enforce закреплён на версии правил кластера (v1.35), чтобы обновление k8s не начало внезапно
-    # отклонять поды; warn и audit — по последней версии правил, новые требования видны заранее.
+    # enforce закреплён на v1.35, чтобы обновление k8s не начало внезапно отклонять поды;
+    # warn и audit — по последней версии правил, новые требования видны заранее.
     pod-security.kubernetes.io/enforce: restricted
     pod-security.kubernetes.io/enforce-version: v1.35
     pod-security.kubernetes.io/warn: restricted

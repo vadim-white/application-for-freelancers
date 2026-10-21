@@ -54,5 +54,4 @@ def refresh_token(data: schemas.TokenRefreshRequest, db: Session = Depends(get_d
 
 @router.get("/me", response_model=schemas.UserRead)
 def read_me(user=Depends(crud.get_current_token_user)):
-    # get_current_token_user returns a full user model
     return user

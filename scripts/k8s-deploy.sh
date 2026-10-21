@@ -1,14 +1,6 @@
 #!/usr/bin/env bash
-# Деплой в локальный кластер kind "freelance" в нужном порядке (аналог docker compose up --wait):
-#   1. удалить старые Job миграций и seed (Job неизменяем, повторный apply изменённого падает);
-#   2. kubectl apply -k k8s/overlays/.deploy/app (overlay local с тегом образов из image-tag);
-#   3. дождаться Job auth-migrate, task-migrate, time-migrate (Complete; при Failed — выход с логом);
-#   4. применить k8s/overlays/.deploy/seed (local-seed с тем же тегом) и дождаться Job auth-seed;
-#   5. rollout status баз (StatefulSet) и сервисов (Deployment);
-#   6. дождаться Gateway entry (Programmed: Envoy получил конфигурацию, вход на http://127.0.0.1:8080).
-# Код возврата ≠ 0 при любом сбое. Кластер и образы готовит scripts/kind-up.sh,
-# секреты — scripts/init-k8s-env.sh. Работает только с контекстом kind-freelance.
-# Совместим с macOS bash 3.2.
+# Деплой в kind по порядку, как docker compose up --wait: миграции, seed, rollout, вход.
+# Кластер и образы готовит kind-up.sh, секреты — init-k8s-env.sh. Совместим с macOS bash 3.2.
 set -eu
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -88,23 +80,21 @@ wait_jobs() {
   done
 }
 
-# 1. старые Job: тот же манифест после пересборки образа нужно выполнить заново, а изменённый — не применить
+# Job неизменяем: изменённый манифест не применится, а тот же после пересборки не выполнится заново
 if k get namespace "$NS" >/dev/null 2>&1; then
   k -n "$NS" delete job -l 'app.kubernetes.io/component in (migration,seed)' --ignore-not-found --wait=true
 fi
 
-# 2. манифесты
 k apply -k "$DEPLOY_DIR/app"
 
-# 3. миграции (поды Job, стартовавшие до готовности БД, повторяются по backoffLimit)
+# поды Job, стартовавшие до готовности БД, повторяются по backoffLimit
 # shellcheck disable=SC2086
 wait_jobs $MIGRATIONS
 
-# 4. тестовые пользователи: после миграций auth, отдельным apply (в одном apply порядка нет)
+# seed — отдельным apply после миграций auth: внутри одного apply порядка нет
 k apply -k "$DEPLOY_DIR/seed"
 wait_jobs auth-seed
 
-# 5. базы и сервисы
 # списки — отдельным присваиванием: сбой kubectl внутри for $(…) set -e не ловит
 statefulsets="$(k -n "$NS" get statefulset -o name)"
 deployments="$(k -n "$NS" get deployment -o name)"
@@ -115,7 +105,7 @@ for deploy in $deployments; do
   k -n "$NS" rollout status "$deploy" --timeout="$ROLLOUT_TIMEOUT"
 done
 
-# 6. вход: Envoy Gateway создаёт прокси в envoy-gateway-system и программирует его маршрутами
+# Programmed: прокси Envoy получил маршруты, вход открыт
 k -n "$NS" wait --for=condition=Programmed "gateway/$ENTRY_GATEWAY" --timeout="$ROLLOUT_TIMEOUT"
 
 echo "Готово: миграции и seed выполнены, сервисы готовы (образы :$TAG). Вход: $ENTRY_URL (API — $ENTRY_URL/api)"

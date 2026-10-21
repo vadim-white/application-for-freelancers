@@ -1,12 +1,6 @@
 #!/bin/bash
-# e2e-тесты (Playwright) в Docker: bash tests/e2e/run.sh [аргументы pytest]
-# Адрес фронта — E2E_BASE_URL (по умолчанию http://127.0.0.1:5173 — compose; kind — http://127.0.0.1:8080).
-# Стек уже должен быть поднят: скрипт его не запускает и готовности не ждёт.
-# Образ freelance-e2e собирается из tests/e2e/Dockerfile (зависимости по uv.lock, слой кэшируется),
-# тесты монтируются в контейнер; скриншоты и trace упавших тестов — в tests/e2e/test-results/.
-# Сеть: на Linux — --network host (127.0.0.1 контейнера = хост). На macOS (Docker Desktop) host-сети
-# нет: внутри контейнера поднимается TCP-форвардер 127.0.0.1:<порт> -> host.docker.internal:<порт>,
-# и браузер открывает тот же адрес, что и на хосте.
+# bash tests/e2e/run.sh [аргументы pytest]; стек уже поднят, E2E_BASE_URL — compose :5173 по умолчанию, kind :8080.
+# На macOS host-сети нет: в контейнере форвардер 127.0.0.1:<порт> -> host.docker.internal, браузер видит тот же адрес.
 set -euo pipefail
 
 DIR="$(cd "$(dirname "$0")" && pwd)"

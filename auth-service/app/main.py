@@ -5,10 +5,8 @@ from .ready import router as ready_router
 
 app = FastAPI(title="Auth Service (auth-service)")
 
-# Таблицы создаёт не приложение, а миграции: alembic upgrade head
-# (в compose — сервис ser-auth-migrate).
-# Тестовых пользователей создаёт отдельная команда python -m app.init_users
-# (в compose — ser-auth-seed)
+# Таблицы создают миграции (в compose — ser-auth-migrate), тестовых пользователей —
+# python -m app.init_users (ser-auth-seed), а не приложение
 
 app.include_router(api_router, prefix="/api/auth")
 # /ready вне /api: gateway его не проксирует, проверяют только kubelet и compose

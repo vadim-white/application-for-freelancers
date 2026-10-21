@@ -17,7 +17,6 @@ from .models import UserRole
 
 logger = logging.getLogger("app.init_users")
 
-# Тестовые пользователи
 TEST_USERS = [
     {
         "email": "admin@example.com",

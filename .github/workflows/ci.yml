@@ -1,11 +1,6 @@
-# CI: проверки без стека (lint, python, frontend, static) и два сквозных прогона (compose, kind).
-# Всё запускается на каждый push в любую ветку, на pull request и вручную (решение 7 этапа 1.5).
-# Секреты генерируют scripts/init-env.sh и scripts/init-k8s-env.sh в каждом прогоне; сразу после
-# генерации значения маскируются (::add-mask::). Вывод `docker compose config` и `kubectl kustomize`
-# содержит секреты — первый запускается только с --quiet, второй идёт только в pipe. set -x не включать.
-# timeout-minutes — по первому прогону: лёгкие jobs 5 мин (с запасом на медленное скачивание образов),
-# compose и kind — в 3–5 раз дольше фактического (раннер публичного репозитория — 4 vCPU,
-# у приватного 2 vCPU, запас это покрывает).
+# Вывод `docker compose config` и `kubectl kustomize` содержит секреты: первый — только с --quiet,
+# второй — только в pipe; значения маскируются сразу после генерации. set -x не включать.
+# timeout-minutes compose и kind — в 3–5 раз больше первого прогона: у приватного репо раннер 2 vCPU, а не 4.
 name: CI
 
 on:
@@ -74,8 +69,7 @@ jobs:
       matrix:
         service: [auth, task, time, gateway]
     services:
-      # тест миграций на PostgreSQL (auth, task, time; у gateway базы нет, переменная не используется).
-      # Одноразовая база раннера, вход без пароля
+      # одноразовая база для тестов на PostgreSQL, вход без пароля; у gateway базы нет
       postgres:
         image: postgres:15-alpine
         env:

@@ -14,7 +14,7 @@ DUMMY_HASH = password_hash.hash("dummy-password")
 
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
-    # Валидация перед проверкой
+    # bcrypt берёт не больше 72 байт, а bcrypt 5 на длинном пароле бросает ValueError
     if len(plain_password.encode("utf-8")) > 72:
         return False
     return password_hash.verify(plain_password, hashed_password)

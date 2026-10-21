@@ -16,8 +16,8 @@ ADMIN = "admin@example.com"
 USER1 = "user1@example.com"
 USER2 = "user2@example.com"
 
-# С запасом: логин в kind ~2,5 с (bcrypt при лимите CPU 200m), у admin дашборд грузит задачи
-# по каждому проекту последовательно. Ожидания — только по событиям, без фиксированных пауз.
+# С запасом на нагруженный узел: у admin дашборд грузит задачи по каждому проекту последовательно.
+# Ожидания — только по событиям, без фиксированных пауз.
 TIMEOUT_MS = 20_000
 NAVIGATION_TIMEOUT_MS = 30_000
 expect.set_options(timeout=TIMEOUT_MS)

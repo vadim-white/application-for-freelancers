@@ -1,12 +1,5 @@
-# Сетевые политики namespace: по умолчанию запрещено всё (вход и выход у каждого пода),
-# дальше — только нужные связи. Политики складываются (разрешено, если разрешает хоть одна).
-# Раскладка: одна политика на под (podSelector по метке app) — в ней всё, что под принимает
-# (ingress) и куда ходит сам (egress); одну связь всегда описывают две стороны: egress у источника
-# и ingress у получателя. Порты — порты контейнера (targetPort), а не Service: политика проверяет
-# пакет после DNAT, когда адрес уже IP пода.
-# Вход снаружи (прокси Envoy) открывает overlay, который выбирает реализацию Gateway
-# (overlays/local/network-policy-entry.yaml); seed — свой overlay (overlays/local-seed).
-# kubelet (probes) ходит с узла и политиками не ограничивается; pg_isready через exec сеть не использует.
+# Default deny, дальше политика на под; связь описывают обе стороны. Порты — контейнера, а не Service:
+# пакет проверяется после DNAT. Вход Envoy и seed — в overlay; probes kubelet политики не ограничивают.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:

@@ -32,11 +32,9 @@ app.add_middleware(
     allow_headers=["Authorization", "Content-Type"],
 )
 
-# health check
 app.include_router(health_router)
 
 
-# catch-all proxy route: all paths under /api/*
 # Неизвестные пути -> 404, всё кроме публичных эндпоинтов auth требует Bearer access-токен.
 @app.api_route(
     "/api/{full_path:path}", methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"]

@@ -1,6 +1,5 @@
-# Вход в кластер через Gateway API: один адрес для браузера, /api -> ser-gateway, остальное -> фронт.
-# GatewayClass с этим именем задаёт overlay (local: Envoy Gateway, сервис Envoy — NodePort 30080 для kind).
-# Не путать с ser-gateway: это API Gateway приложения (FastAPI), а Gateway здесь — ресурс Kubernetes.
+# Один адрес для браузера: /api -> ser-gateway, остальное -> фронт; GatewayClass задаёт overlay.
+# Не путать с ser-gateway: тот — API Gateway приложения, а Gateway здесь — ресурс Kubernetes.
 apiVersion: gateway.networking.k8s.io/v1
 kind: Gateway
 metadata:

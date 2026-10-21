@@ -1,9 +1,5 @@
-# Вход к фронту и gateway — только от прокси Envoy нашего Gateway "entry". Здесь, а не в base:
-# откуда приходит трафик входа, зависит от реализации GatewayClass (gatewayclass.yaml). Envoy Gateway
-# создаёт прокси в своём namespace envoy-gateway-system; облачная реализация пришла бы из другого места.
-# Остальные политики (default deny, DNS, связи сервисов и баз) — в k8s/base/network-policy.yaml.
-# Две политики, а не одна на оба пода: порты в правиле относятся ко всем выбранным подам,
-# одна открыла бы фронту 8000, а gateway — 8080.
+# Здесь, а не в base: откуда приходит трафик входа, зависит от реализации GatewayClass.
+# Две политики, а не одна: порты правила относятся ко всем выбранным подам — открыли бы фронту 8000, gateway 8080.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:

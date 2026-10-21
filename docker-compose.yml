@@ -1,6 +1,5 @@
-# Общие параметры healthcheck приложений; test (GET /ready: у сервисов — база и схема на месте) задан у каждого.
-# Адрес 127.0.0.1, а не localhost: uvicorn слушает только IPv4.
-# start_interval: на старте проверка раз в секунду, поэтому up --wait не ждёт лишних 10 с
+# 127.0.0.1, а не localhost: uvicorn слушает только IPv4. start_interval — проверка раз в секунду
+# на старте, чтобы up --wait не ждал лишних 10 с; test (GET /ready) задан у каждого сервиса
 x-app-healthcheck: &app-healthcheck
   interval: 10s
   timeout: 3s
@@ -67,7 +66,7 @@ services:
       timeout: 5s
       retries: 5
 
-  # Gateway Service (главный точка входа)
+  # Gateway Service (точка входа)
   ser-gateway:
     build:
       context: .

@@ -95,8 +95,7 @@ def create_task(
     db: Session = Depends(get_db),
     user: CurrentUser = Depends(get_current_user),
 ):
-    # Владелец из токена. Задача в проекте принадлежит владельцу проекта
-    # (admin, создавая задачу в чужом проекте, не становится её владельцем).
+    # Задача в проекте принадлежит владельцу проекта: admin в чужом проекте владельцем не станет.
     # is not None: project_id=0 тоже проверяется, иначе на PostgreSQL 500 от внешнего ключа
     owner_id = user.id
     if task_in.project_id is not None:
@@ -164,7 +163,6 @@ def delete_task(
     return None
 
 
-# convenience change-status endpoint
 @router.post("/tasks/{task_id}/status", response_model=schemas.TaskRead)
 def change_status(
     task_id: int,
