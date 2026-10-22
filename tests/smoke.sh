@@ -1,7 +1,7 @@
 #!/bin/bash
 # Сквозной прогон через gateway: `bash tests/smoke.sh` из корня; объекты создаёт сам, проходит на чистой базе.
-# SMOKE_MODE=compose — 129 проверок, после `docker compose up --build -d --wait`;
-# SMOKE_MODE=k8s — 127, после ./scripts/k8s-deploy.sh, через вход http://127.0.0.1:8080, как браузер.
+# SMOKE_MODE=compose — 135 проверок, после `docker compose up --build -d --wait`;
+# SMOKE_MODE=k8s — 133, после ./scripts/k8s-deploy.sh, через вход http://127.0.0.1:8080, как браузер.
 # В k8s нет четырёх проверок закрытых портов: кластер публикует на хост только 8080, они ничего не доказывают.
 # Изоляцию NetworkPolicy внутри кластера smoke не проверяет.
 # В k8s path traversal проверяется дважды: Envoy нормализует путь до gateway, защита gateway — изнутри его пода.
@@ -12,7 +12,7 @@ case "$MODE" in
   compose)
     G="${SMOKE_G:-http://localhost:8000}"
     CLOSED_PORTS="8001 8002 8003 5432"
-    EXPECTED=129
+    EXPECTED=135
     in_svc() { local s=$1; shift; docker exec "ser-$s" "$@"; }   # in_svc auth|gateway команда...
     in_auth_db() { docker exec ser-auth-db "$@"; }
     ;;
@@ -21,7 +21,7 @@ case "$MODE" in
     KNS=freelance-service
     G="${SMOKE_G:-http://127.0.0.1:8080}"
     CLOSED_PORTS=""
-    EXPECTED=127
+    EXPECTED=133
     in_svc() { local s=$1; shift; kubectl --context "$KCTX" -n "$KNS" exec "deploy/ser-$s" -- "$@"; }
     in_auth_db() { kubectl --context "$KCTX" -n "$KNS" exec auth-db-0 -c postgres -- "$@"; }
     ;;
@@ -229,17 +229,32 @@ PHJ=$(cu -s "$G/api/tasks/projects" -H "Authorization: Bearer $U1" -H "X-User-Ro
 chk "user + X-User-Id: admin -> owner_id from token" "$U1ID" "$(echo "$PHJ" | jq_ 'd["owner_id"]')"
 
 echo "== Время: записи на своих задачах"
-E=$(body "$U1" POST /api/time/time-entries "{\"task_id\":$T1,\"minutes\":5,\"user_id\":999}")
+# даты в прошлом: ручная запись не может уходить в будущее
+T_FROM="2026-01-01T10:00:00Z"; T_TO="2026-01-01T10:05:00Z"
+E=$(body "$U1" POST /api/time/time-entries "{\"task_id\":$T1,\"started_at\":\"$T_FROM\",\"stopped_at\":\"$T_TO\",\"user_id\":999}")
 chk "time entry user_id from token, not body(999)" "$U1ID" "$(echo "$E" | jq_ 'd["user_id"]')"
-R=$(req "$U2" POST /api/time/time-entries "{\"task_id\":$T2,\"minutes\":7}"); chk "user2 time entry on own task" 200 "$R"
-chk "user1 sees only own entries" "[$U1ID]" "$(body "$U1" GET /api/time/time-entries | jq_ 'sorted({e["user_id"] for e in d})' | tr -d ' ')"
-chk "user1 sees entry on own task" 1 "$(body "$U1" GET /api/time/time-entries | jq_ 'int(any(e["task_id"]==int("'"$T1"'") for e in d))')"
-chk "user2 sees only own entries" "[$U2ID]" "$(body "$U2" GET /api/time/time-entries | jq_ 'sorted({e["user_id"] for e in d})' | tr -d ' ')"
+R=$(req "$U2" POST /api/time/time-entries "{\"task_id\":$T2,\"started_at\":\"$T_FROM\",\"stopped_at\":\"$T_TO\"}"); chk "user2 time entry on own task" 201 "$R"
+chk "user1 sees only own entries" "[$U1ID]" "$(body "$U1" GET /api/time/time-entries | jq_ 'sorted({e["user_id"] for e in d["items"]})' | tr -d ' ')"
+# пользователь постоянный, записей за прогоны набралось больше страницы: свою задачу берём фильтром
+chk "user1 sees entry on own task" 1 "$(body "$U1" GET "/api/time/time-entries?task_id=$T1" | jq_ 'int(d["total"]>0)')"
+chk "user2 sees only own entries" "[$U2ID]" "$(body "$U2" GET /api/time/time-entries | jq_ 'sorted({e["user_id"] for e in d["items"]})' | tr -d ' ')"
 chk "user1 ?user_id=user2" 403 "$(code "$G/api/time/time-entries?user_id=$U2ID" -H "Authorization: Bearer $U1")"
 chk "user1 statistics via task" 403 "$(req "$U1" GET /api/tasks/statistics/users)"
 chk "user1 statistics via time" 403 "$(req "$U1" GET /api/time/statistics/users)"
-chk "admin sees all entries (user1 and user2)" "1 1" "$(body "$A" GET /api/time/time-entries | jq_ '" ".join(str(int(any(e["user_id"]==u for e in d))) for u in (int("'"$U1ID"'"),int("'"$U2ID"'")))')"
-chk "admin statistics via time" 200 "$(req "$A" GET /api/time/statistics/users)"
+# база живёт между прогонами, а список постраничный: чужие записи admin берёт по user_id
+A1=$(body "$A" GET "/api/time/time-entries?user_id=$U1ID" | jq_ 'int(d["total"]>0)')
+A2=$(body "$A" GET "/api/time/time-entries?user_id=$U2ID" | jq_ 'int(d["total"]>0)')
+chk "admin sees entries of user1 and user2" "1 1" "$A1 $A2"
+chk "admin statistics via time (entries_count, total_seconds)" 1 "$(body "$A" GET /api/time/statistics/users | jq_ 'int(len(d)>0 and all("entries_count" in r and "total_seconds" in r for r in d))')"
+# правка и удаление: своя запись, чужая — 404, как у задач
+E2=$(body "$U1" POST /api/time/time-entries "{\"task_id\":$T1,\"started_at\":\"$T_FROM\",\"stopped_at\":\"$T_TO\"}")
+E2ID=$(echo "$E2" | jq_ 'd["id"]')
+chk "user1 PATCH own entry recalculates duration" 600 "$(body "$U1" PATCH "/api/time/time-entries/$E2ID" '{"stopped_at":"2026-01-01T10:10:00Z"}' | jq_ 'd["duration_seconds"]')"
+R=$(req "$U1" PATCH "/api/time/time-entries/$E2ID" '{"stopped_at":"2025-12-31T10:00:00Z"}'); chk "user1 PATCH stopped before started" 422 "$R"
+chk "user2 PATCH user1 entry" 404 "$(req "$U2" PATCH "/api/time/time-entries/$E2ID" '{"description":"x"}')"
+chk "user2 DELETE user1 entry" 404 "$(req "$U2" DELETE "/api/time/time-entries/$E2ID")"
+chk "user1 DELETE own entry" 204 "$(req "$U1" DELETE "/api/time/time-entries/$E2ID")"
+chk "user1 DELETE entry again" 404 "$(req "$U1" DELETE "/api/time/time-entries/$E2ID")"
 
 echo "== Таймер"
 R=$(req "$U1" POST /api/time/timer/start "{\"task_id\":$T1}"); chk "timer start" 201 "$R"

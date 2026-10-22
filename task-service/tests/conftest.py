@@ -19,9 +19,10 @@ from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, event, inspect, text
 from sqlalchemy.orm import sessionmaker
 
-from app import api, deps, ready
+from app import deps, ready
 from app.db import Base, engine, make_engine
 from app.main import app
+from app.time_client import get_time_client
 
 TEST_SECRET = "test-secret-key-at-least-32-bytes-long"
 
@@ -76,7 +77,7 @@ def admin_headers():
 
 
 @pytest.fixture
-def time_service(monkeypatch):
+def time_service():
     """Подменяет вызовы task -> time; хранит запросы, ответ задаётся через state."""
     state = {"calls": [], "response": httpx.Response(200, json=[{"user_id": 1, "task_count": 2}])}
 
@@ -86,14 +87,10 @@ def time_service(monkeypatch):
             raise state["response"]
         return state["response"]
 
-    real_client = httpx.AsyncClient
-
-    def fake_client(*args, **kwargs):
-        kwargs["transport"] = httpx.MockTransport(handler)
-        return real_client(*args, **kwargs)
-
-    monkeypatch.setattr(api.httpx, "AsyncClient", fake_client)
-    return state
+    client = httpx.AsyncClient(base_url="http://time", transport=httpx.MockTransport(handler))
+    app.dependency_overrides[get_time_client] = lambda: client
+    yield state
+    app.dependency_overrides.pop(get_time_client, None)
 
 
 SERVICE_ROOT = pathlib.Path(__file__).resolve().parent.parent

@@ -114,20 +114,24 @@
             <thead>
               <tr>
                 <th>👤 Пользователь</th>
-                <th>📧 Email</th>
+                <th>🧾 Записей</th>
                 <th>📝 Задач</th>
-                <th>⏱️ Среднее время (мин)</th>
+                <th>⏱️ Всего (чч:мм)</th>
+                <th>⏱️ Среднее на задачу (чч:мм)</th>
               </tr>
             </thead>
             <tbody>
               <tr v-for="row in usersStats" :key="row.user_id">
-                <td>{{ row.full_name }}</td>
-                <td>{{ row.email }}</td>
+                <td>#{{ row.user_id }}</td>
+                <td class="text-center">{{ row.entries_count }}</td>
                 <td class="text-center">
-                  <n-tag type="info" round>{{ row.task_count }}</n-tag>
+                  <n-tag type="info" round>{{ row.tasks_count }}</n-tag>
                 </td>
                 <td class="text-center">
-                  <n-tag type="success" round>{{ row.avg_minutes || '0' }} мин</n-tag>
+                  <n-tag type="success" round>{{ formatHoursMinutes(row.total_seconds) }}</n-tag>
+                </td>
+                <td class="text-center">
+                  <n-tag type="success" round>{{ formatHoursMinutes(row.avg_seconds_per_task) }}</n-tag>
                 </td>
               </tr>
             </tbody>
@@ -174,7 +178,7 @@
 import { ref, reactive, computed, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '../stores/auth'
-import { useTimerStore } from '../stores/timer'
+import { useTimerStore, formatHoursMinutes } from '../stores/timer'
 import { getProjects, getTasks } from '../services/tasks'
 import ProjectCard from '../components/ProjectCard.vue'
 import ProjectTasksDrawer from '../components/ProjectTasksDrawer.vue'

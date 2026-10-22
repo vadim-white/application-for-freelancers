@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
-import { getTimer, startTimer, stopTimer, type TimeEntry } from '../services/time'
+import { getTimer, startTimer, stopTimer, updateTimeEntry, type TimeEntry } from '../services/time'
 import { getTask, type Task } from '../services/tasks'
 
 export function formatDuration(seconds: number): string {
@@ -9,6 +9,12 @@ export function formatDuration(seconds: number): string {
   const mm = Math.floor((s % 3600) / 60).toString().padStart(2, '0')
   const ss = (s % 60).toString().padStart(2, '0')
   return `${hh}:${mm}:${ss}`
+}
+
+// чч:мм для итогов (статистика): до ближайшей минуты
+export function formatHoursMinutes(seconds: number): string {
+  const m = Math.round(Math.max(0, seconds) / 60)
+  return `${Math.floor(m / 60).toString().padStart(2, '0')}:${(m % 60).toString().padStart(2, '0')}`
 }
 
 // Источник истины — сервер; здесь только его последнее состояние и счёт секунд для показа
@@ -94,6 +100,12 @@ export const useTimerStore = defineStore('timer', () => {
     return r.stopped
   }
 
+  async function updateNote(id: number, description: string | null): Promise<void> {
+    const updated = await updateTimeEntry(id, { description })
+    if (entry.value?.id === id) entry.value = updated
+    if (lastStopped.value?.id === id) lastStopped.value = updated
+  }
+
   return {
     entry,
     lastStopped,
@@ -103,6 +115,7 @@ export const useTimerStore = defineStore('timer', () => {
     runningTitle,
     refresh,
     start,
-    stop
+    stop,
+    updateNote
   }
 })

@@ -16,7 +16,7 @@ def start(client, headers, task_id=5):
 
 
 def entries(client, headers):
-    return client.get("/api/time/time-entries", headers=headers).json()
+    return client.get("/api/time/time-entries", headers=headers).json()["items"]
 
 
 def test_start_asks_task_service_with_user_token(client, user1, task_service):

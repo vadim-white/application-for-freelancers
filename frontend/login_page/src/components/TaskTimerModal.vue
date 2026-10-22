@@ -74,16 +74,16 @@
         <!-- Заметка -->
         <div class="note-section">
           <label style="font-weight: 500; color: var(--color-text-primary); display: block; margin-bottom: 8px">
-            📝 Заметка (опционально, сохраняется при старте)
+            📝 Заметка (опционально, сохраняется сама)
           </label>
           <n-input
-            v-model:value="note"
+            :value="note"
+            @update:value="onNoteInput"
             type="textarea"
             placeholder="Добавьте описание работы..."
             rows="3"
             maxlength="200"
             show-count
-            :disabled="running"
           />
         </div>
 
@@ -135,6 +135,7 @@ watch(
 function updateShow(v: boolean) {
   innerShow.value = v
   emit('update:show', v)
+  if (!v) void flushNote()
 }
 
 const busy = ref<'start' | 'stop' | 'done' | null>(null)
@@ -146,7 +147,6 @@ watch(
   () => props.task,
   (t) => {
     status.value = t?.status ?? null
-    note.value = ''
   },
   { immediate: true }
 )
@@ -154,6 +154,38 @@ watch(
 const running = computed(() => !!props.task && timer.entry?.task_id === props.task.id)
 const otherRunning = computed(() => !!timer.entry && !running.value)
 const paused = computed(() => !!props.task && timer.lastStopped?.task_id === props.task.id)
+
+// запись, к которой относится заметка: идущая, а после паузы — последняя закрытая
+const noteEntry = computed(() => (running.value ? timer.entry : paused.value ? timer.lastStopped : null))
+
+// смена задачи или записи подставляет её заметку; пока записи нет, заметка уйдёт со стартом
+watch(
+  () => [props.task?.id, noteEntry.value?.id],
+  () => {
+    note.value = noteEntry.value?.description ?? ''
+  },
+  { immediate: true }
+)
+
+let noteTimer: number | null = null
+
+function onNoteInput(v: string) {
+  note.value = v
+  if (noteTimer !== null) clearTimeout(noteTimer)
+  if (noteEntry.value) noteTimer = window.setTimeout(flushNote, 600)
+}
+
+async function flushNote() {
+  if (noteTimer !== null) clearTimeout(noteTimer)
+  noteTimer = null
+  const target = noteEntry.value
+  if (!target || (target.description ?? '') === note.value) return
+  try {
+    await timer.updateNote(target.id, note.value || null)
+  } catch {
+    message.error('Не удалось сохранить заметку')
+  }
+}
 
 const formattedElapsed = computed(() => {
   if (running.value) return timer.formatted
@@ -208,6 +240,7 @@ async function onPause() {
   try {
     const stopped = await timer.stop()
     if (stopped) message.success(`Записано ${formatDuration(stopped.duration_seconds ?? 0)}`)
+    await flushNote()
   } catch {
     message.error('Не удалось остановить таймер')
     timer.refresh().catch(() => {})
@@ -233,8 +266,7 @@ async function onMarkDone() {
 }
 
 function onClose() {
-  innerShow.value = false
-  emit('update:show', false)
+  updateShow(false)
 }
 </script>
 

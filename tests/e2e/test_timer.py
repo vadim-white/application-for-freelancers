@@ -22,6 +22,10 @@ START = is_api("POST", "/api/time/timer/start")
 STOP = is_api("POST", "/api/time/timer/stop")
 
 
+def is_entry_patch(r: Response) -> bool:
+    return r.request.method == "PATCH" and api_path(r.url).startswith("/api/time/time-entries/")
+
+
 def prepare(s: Session, run_label: str, kind: str, titles: list[str]) -> tuple[dict, str, dict]:
     """Вход user1, остановка его таймера, проект с задачами; возвращает заголовки, имя, id задач."""
     login(s.page, USER1)
@@ -108,10 +112,23 @@ def test_short_entry_is_saved(open_session, run_label):
         start(s.page, modal)
         # раньше запись короче 30 с уходила как minutes: 0 и получала 422
         expect(modal.locator(".timer-value")).to_have_text(re.compile(r"00:00:(0[6-9]|[1-5]\d)"))
+        # заметку можно менять во время работы и после стопа: окно шлёт PATCH записи
+        note = modal.get_by_placeholder("Добавьте описание работы...")
+        with s.page.expect_response(is_entry_patch) as patched:
+            note.fill("во время работы")
+        assert patched.value.status == 200, f"PATCH заметки: {patched.value.status}"
+        assert patched.value.json()["description"] == "во время работы"
         stopped = pause(s.page, modal)["stopped"]
         assert stopped["task_id"] == ids["задача"]
         assert stopped["duration_seconds"] >= 5, stopped
         assert stopped["stopped_at"] is not None
+        with s.page.expect_response(is_entry_patch) as patched:
+            note.fill("после стопа")
+        assert patched.value.status == 200, f"PATCH заметки после стопа: {patched.value.status}"
+        saved = s.page.request.get(
+            "/api/time/time-entries", headers=headers, params={"task_id": ids["задача"]}
+        ).json()["items"]
+        assert [e["description"] for e in saved] == ["после стопа"], saved
         assert [r for r in s.net.responses if r[2] == 422] == [], s.net.responses
     finally:
         stop_timer(s, headers)
@@ -165,7 +182,7 @@ def test_time_of_task_a_is_not_written_to_b(open_session, run_label):
                 "/api/time/time-entries", headers=headers, params={"task_id": ids[key]}
             )
             assert r.status == 200, f"записи задачи {key}: {r.status}"
-            entries[key] = r.json()
+            entries[key] = r.json()["items"]
         assert len(entries["А"]) == 1 and len(entries["Б"]) == 1, entries
         # запись Б начинается не раньше, чем закрыта запись А: время А в Б не попало
         b_started = datetime.fromisoformat(entries["Б"][0]["started_at"])

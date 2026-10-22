@@ -1,24 +1,29 @@
 from datetime import datetime
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import AwareDatetime, BaseModel, ConfigDict, model_validator
 
 
-class TimeEntryBase(BaseModel):
+class TimeEntryCreate(BaseModel):
+    # user_id не принимается от клиента: берётся из токена (лишнее поле в теле игнорируется)
     task_id: int
-    minutes: int = Field(..., gt=0, description="Количество минут > 0")
+    started_at: AwareDatetime
+    stopped_at: AwareDatetime
     description: str | None = None
 
-    @field_validator("minutes")
-    @classmethod
-    def validate_minutes(cls, v):
-        if v is None or v <= 0:
-            raise ValueError("minutes must be greater than 0")
-        return int(v)
 
+class TimeEntryUpdate(BaseModel):
+    # нет поля — не трогать; null допустим только у description (очистить заметку)
+    task_id: int | None = None
+    started_at: AwareDatetime | None = None
+    stopped_at: AwareDatetime | None = None
+    description: str | None = None
 
-class TimeEntryCreate(TimeEntryBase):
-    # user_id не принимается от клиента: берётся из токена (лишнее поле в теле игнорируется)
-    pass
+    @model_validator(mode="after")
+    def no_null_for_required(self):
+        for name in ("task_id", "started_at", "stopped_at"):
+            if name in self.model_fields_set and getattr(self, name) is None:
+                raise ValueError(f"{name} cannot be null")
+        return self
 
 
 class TimeEntryRead(BaseModel):
@@ -57,3 +62,18 @@ class TimerStarted(BaseModel):
 class TimerStopped(BaseModel):
     stopped: TimeEntryRead | None
     server_time: datetime
+
+
+class TimeEntryList(BaseModel):
+    items: list[TimeEntryRead]
+    total: int
+    limit: int
+    offset: int
+
+
+class UserStatistics(BaseModel):
+    user_id: int
+    entries_count: int
+    tasks_count: int
+    total_seconds: int
+    avg_seconds_per_task: int

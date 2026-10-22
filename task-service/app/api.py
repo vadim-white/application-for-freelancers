@@ -6,8 +6,8 @@ from sqlalchemy.orm import Session
 
 from . import crud, models, schemas
 from .core.auth import CurrentUser, get_current_user, require_admin
-from .core.config import settings
 from .deps import get_db
+from .time_client import get_time_client
 
 logger = logging.getLogger(__name__)
 
@@ -182,18 +182,18 @@ def change_status(
 
 # --- Statistics ---
 @router.get("/statistics/users")
-async def get_users_statistics(user: CurrentUser = Depends(require_admin)):
+async def get_users_statistics(
+    user: CurrentUser = Depends(require_admin),
+    client: httpx.AsyncClient = Depends(get_time_client),
+):
     """Статистика по пользователям: кол-во задач и среднее время (только admin)"""
     logger.info("Getting users statistics")
 
     # time-service сам проверяет токен, поэтому пробрасываем Authorization пользователя
     try:
-        async with httpx.AsyncClient() as client:
-            response = await client.get(
-                f"{settings.TIME_SERVICE_URL}/api/time/statistics/users",
-                headers={"Authorization": user.authorization},
-                timeout=10.0,
-            )
+        response = await client.get(
+            "/api/time/statistics/users", headers={"Authorization": user.authorization}
+        )
     except httpx.HTTPError as e:
         logger.error(f"Error getting statistics from time-service: {e}")
         raise HTTPException(status_code=502, detail="Time service unavailable") from e

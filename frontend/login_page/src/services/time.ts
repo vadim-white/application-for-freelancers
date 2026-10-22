@@ -44,3 +44,9 @@ export async function stopTimer(): Promise<TimerStopped> {
   const r = await api.post('/api/time/timer/stop')
   return r.data
 }
+
+// описание можно менять и у идущей записи, и у закрытой; null очищает
+export async function updateTimeEntry(id: number, payload: { description: string | null }): Promise<TimeEntry> {
+  const r = await api.patch(`/api/time/time-entries/${id}`, payload)
+  return r.data
+}

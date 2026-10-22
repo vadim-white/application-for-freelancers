@@ -2,6 +2,10 @@
 
 Проекты и задачи; каждый пользователь видит только свои, администратор — все. Порт — 8002. OpenAPI: http://127.0.0.1:8002/docs
 
+## Статистика
+
+`GET /api/tasks/statistics/users` (admin) проксирует `GET /api/time/statistics/users` time-service с токеном пользователя и отдаёт ответ как есть (поля — в [README time-service](../time-service/README.md)); сетевая ошибка или не-200 от time — 502 без деталей, причина в логе. Клиент — один `httpx.AsyncClient` на процесс (lifespan, `app/time_client.py`, `base_url` = `TIME_SERVICE_URL`), таймауты: соединение 2 с, ответ 7 с — time обрывает запрос к базе через 5 с (`statement_timeout`), gateway ждёт 30 с.
+
 ## Локальный запуск
 
 1. Скопируйте `.env.example` в `.env`. `SECRET_KEY` должен совпадать во всех бэкенд-сервисах; `TIME_SERVICE_URL` — адрес time-service (по умолчанию в примере `http://127.0.0.1:8003`).

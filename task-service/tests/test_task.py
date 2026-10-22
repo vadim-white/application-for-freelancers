@@ -6,6 +6,10 @@ from datetime import timedelta
 
 import httpx
 import pytest
+from fastapi.testclient import TestClient
+
+from app import main
+from app.main import app
 
 from .conftest import auth, make_token
 
@@ -138,6 +142,29 @@ def test_statistics_time_unreachable_502_without_details(client, admin_headers, 
     r = client.get("/api/tasks/statistics/users", headers=admin_headers)
     assert r.status_code == 502
     assert "secret" not in r.text
+
+
+def test_one_time_client_per_app(monkeypatch, admin_headers):
+    # настоящий клиент из lifespan и настоящая зависимость, только транспорт — мок
+    created, seen = [], []
+    real_client = httpx.AsyncClient
+
+    def counting_client(*args, **kwargs):
+        def handler(request):
+            seen.append(str(request.url))
+            return httpx.Response(200, json=[])
+
+        created.append(real_client(*args, transport=httpx.MockTransport(handler), **kwargs))
+        return created[-1]
+
+    monkeypatch.setattr(main.httpx, "AsyncClient", counting_client)
+    with TestClient(app) as c:
+        for _ in range(2):
+            assert c.get("/api/tasks/statistics/users", headers=admin_headers).status_code == 200
+    assert len(created) == 1
+    assert created[0].timeout == httpx.Timeout(7.0, connect=2.0)
+    assert seen == ["http://time/api/time/statistics/users"] * 2
+    assert created[0].is_closed
 
 
 # --- DATABASE_URL обязателен ---

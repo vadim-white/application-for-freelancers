@@ -100,7 +100,7 @@ def test_start_same_task_is_idempotent(client, user1, clock):
     assert r.status_code == 200
     assert r.json()["entry"] == first
     assert r.json()["stopped"] is None
-    assert len(client.get("/api/time/time-entries", headers=user1).json()) == 1
+    assert client.get("/api/time/time-entries", headers=user1).json()["total"] == 1
 
 
 def test_start_other_task_stops_running(client, user1, clock):
@@ -156,19 +156,9 @@ def test_admin_has_own_timer(client, user1, admin):
     assert current(client, user1)["entry"] is not None
 
 
-def test_old_post_fills_new_fields(client, user1, clock):
-    r = client.post("/api/time/time-entries", json={"task_id": 1, "minutes": 5}, headers=user1)
-    assert r.status_code == 200
-    entry = r.json()
-    assert parse(entry["stopped_at"]) == T0
-    assert parse(entry["started_at"]) == T0 - timedelta(minutes=5)
-    assert (entry["duration_seconds"], entry["minutes"]) == (300, 5)
-    assert current(client, user1)["entry"] is None
-
-
-def test_old_list_has_old_and_new_fields(client, user1, clock):
+def test_list_has_old_and_new_fields(client, user1, clock):
     start(client, user1)
-    [entry] = client.get("/api/time/time-entries", headers=user1).json()
+    [entry] = client.get("/api/time/time-entries", headers=user1).json()["items"]
     old = {"id", "user_id", "task_id", "minutes", "description", "date", "is_active", "created_at"}
     assert old | {"started_at", "stopped_at", "duration_seconds"} <= entry.keys()
     assert entry["is_active"] is True
@@ -193,7 +183,7 @@ def test_rows_from_old_pods_are_not_running(client, user1):
     assert start(client, user1).status_code == 201
     with engine.begin() as conn:
         legacy_insert(conn)
-    entries = client.get("/api/time/time-entries", headers=user1).json()
+    entries = client.get("/api/time/time-entries", headers=user1).json()["items"]
     assert sorted(e["started_at"] is None for e in entries) == [False, True, True, True]
 
 
