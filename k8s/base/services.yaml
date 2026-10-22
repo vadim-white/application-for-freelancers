@@ -263,6 +263,11 @@ spec:
               key: TIME_DB_PASSWORD
         - name: DATABASE_URL
           value: "postgresql+psycopg://time_user:$(DB_PASSWORD)@time-db:5432/time_db"
+        - name: TASK_SERVICE_URL
+          valueFrom:
+            configMapKeyRef:
+              name: service-config
+              key: task-url
         - name: SECRET_KEY
           valueFrom:
             secretKeyRef:

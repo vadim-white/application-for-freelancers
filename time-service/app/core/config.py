@@ -9,6 +9,9 @@ class Settings(BaseSettings):
     SECRET_KEY: str = Field(min_length=1)
     ALGORITHM: str = "HS256"
 
+    # task-service: проверка задачи при старте таймера (в Docker — имя контейнера)
+    TASK_SERVICE_URL: str = "http://127.0.0.1:8002"
+
     model_config = SettingsConfigDict(env_file=".env")
 
 

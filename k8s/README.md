@@ -194,10 +194,12 @@ k exec deploy/ser-gateway -- python -c "import urllib.request as u;print(u.urlop
 По умолчанию запрещено всё (`default-deny-all`: вход и выход каждому поду). Разрешено (порты — порты контейнеров):
 - DNS: все поды → kube-dns в `kube-system`, UDP и TCP 53;
 - вход: поды прокси Envoy нашего Gateway (`envoy-gateway-system`) → `ser-frontend:8080` и `ser-gateway:8000` ([overlays/local/network-policy-entry.yaml](overlays/local/network-policy-entry.yaml));
-- `ser-frontend` → `ser-gateway:8000`; `ser-gateway` → `ser-auth:8001`, `ser-task:8002`, `ser-time:8003`; `ser-task` → `ser-time:8003`;
+- `ser-frontend` → `ser-gateway:8000`; `ser-gateway` → `ser-auth:8001`, `ser-task:8002`, `ser-time:8003`; `ser-task` → `ser-time:8003` (статистика); `ser-time` → `ser-task:8002` (проверка задачи при старте таймера);
 - каждый сервис и его Job миграций → своя база `:5432`; `auth-seed` → `auth-db:5432` ([overlays/local-seed/network-policy-seed.yaml](overlays/local-seed/network-policy-seed.yaml)).
 
 Остальное запрещено: сервис не достанет до чужой базы, фронт — до сервисов в обход gateway, поды — до интернета. Запрещённое соединение не отвергается, а обрывается по таймауту. Поэтому ошибка в политике выглядит как зависание, а не как `connection refused`. Одна политика описывает один под (что он принимает и куда ходит), так что у каждой связи две стороны. Пробы kubelet kindnet не ограничивает.
+
+Связь task ↔ time двусторонняя, но взаимной блокировки нет: вызовы не вложены друг в друга: time, отвечая task на запрос статистики, в task не ходит, а task, отвечая time на проверку задачи, не ходит в time. Добавлять вызов, который замкнёт цепочку (например, проверку задачи внутри статистики), нельзя: два сервиса держали бы запросы друг друга до таймаута. Без правила `ser-time` → `ser-task` старт таймера отвечает 503 через ~2 с (`ConnectTimeout` в логе `ser-time` — таймаут соединения 2 с), с правилом — 201 за ~0,08 с.
 
 ## Диагностика
 
@@ -242,7 +244,7 @@ k describe gateway entry                 # условия Accepted / Programmed 
 k describe networkpolicy ser-task
 ```
 
-Сквозной прогон: `SMOKE_MODE=k8s bash tests/smoke.sh` — 123 проверки через `http://127.0.0.1:8080`. `/health` через вход отдаёт фронт, поэтому smoke проверяет его изнутри пода `ser-gateway` (тело: `upstreams.auth/task/time` все `true`), там же — `/ready` трёх сервисов.
+Сквозной прогон: `SMOKE_MODE=k8s bash tests/smoke.sh` — 127 проверок через `http://127.0.0.1:8080`. `/health` через вход отдаёт фронт, поэтому smoke проверяет его изнутри пода `ser-gateway` (тело: `upstreams.auth/task/time` все `true`), там же — `/ready` трёх сервисов.
 
 Статическая проверка — на выводе kustomize, а не на каталоге `k8s/` (там лежит `kind-config.yaml`, не манифест). kubeconform не знает схем CRD, поэтому четыре ресурса входа пропускаются явно, а проверяет их API-сервер:
 
@@ -272,7 +274,7 @@ Job `kind` в [.github/workflows/ci.yml](../.github/workflows/ci.yml) (разд�
 1. kubectl v1.35.9 скачивается с `dl.k8s.io` со сверкой sha256, закреплённой в workflow. Свой kubectl раннера (1.37) к серверу 1.35 не подходит: разница больше одной минорной версии. kind берётся с раннера, но его версия должна быть v0.33.0, иначе job падает;
 2. `./scripts/kind-up.sh` — кластер, Envoy Gateway (sha256 `install.yaml`), сборка и загрузка образов; checkout чистый, поэтому тег — SHA коммита без `-dirty`;
 3. `./scripts/init-k8s-env.sh` — новые секреты; workflow сразу маскирует их значения и base64 (`::add-mask::`);
-4. `./scripts/k8s-deploy.sh`, затем `SMOKE_MODE=k8s bash tests/smoke.sh` (123) и e2e через вход `http://127.0.0.1:8080` (на Linux `run.sh` работает с `--network host`);
+4. `./scripts/k8s-deploy.sh`, затем `SMOKE_MODE=k8s bash tests/smoke.sh` (127) и e2e через вход `http://127.0.0.1:8080` (на Linux `run.sh` работает с `--network host`);
 5. `kubectl kustomize … | kubectl apply --dry-run=server -f -` для `.deploy/app` и `.deploy/seed` (overlay `local` и `local-seed` с тем тегом, что развёрнут): в лог попадают только строки `unchanged` / `configured`, содержимое манифестов — нет.
 
 Если что-то упало, шаг «диагностика» печатает `get pods,jobs -o wide`, `get deploy -o wide` (виден тег образов), события, `describe gateway entry`, поды и логи контроллера Envoy Gateway, логи подов приложения (`--all-containers`, хвост, и `--previous`, если контейнер перезапускался). Скриншоты и trace e2e — артефакт `e2e-kind`. Шаг 5 проверяет те же манифесты, что применил `k8s-deploy.sh`: с overlay из git (`:latest`) Job миграций дают `field is immutable`, а Deployment — `configured` вместо `unchanged`.

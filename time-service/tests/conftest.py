@@ -9,6 +9,7 @@ from types import SimpleNamespace
 os.environ["SECRET_KEY"] = "test-secret-key-at-least-32-bytes-long"
 os.environ["DATABASE_URL"] = f"sqlite:///{tempfile.mkdtemp()}/time_test.db"
 
+import httpx
 import jwt
 import pytest
 from alembic import command
@@ -20,6 +21,7 @@ from sqlalchemy.orm import sessionmaker
 from app import deps, ready
 from app.db import Base, engine, make_engine
 from app.main import app
+from app.task_client import get_task_client
 
 TEST_SECRET = "test-secret-key-at-least-32-bytes-long"
 
@@ -29,6 +31,37 @@ def clean_db():
     Base.metadata.drop_all(bind=engine)
     Base.metadata.create_all(bind=engine)
     yield
+
+
+def task_body(task_id, is_active=True, project_active=None):
+    """Ответ GET /api/tasks/tasks/{id}; project_active=None — задача без проекта."""
+    project = None if project_active is None else {"id": 1, "is_active": project_active}
+    return {"id": task_id, "is_active": is_active, "project": project}
+
+
+@pytest.fixture(autouse=True)
+def task_service():
+    """task-service на MockTransport: по умолчанию любая задача есть и активна.
+
+    task_service.handler(request) -> httpx.Response — подменить ответ; task_service.calls — запросы.
+    """
+    state = SimpleNamespace(calls=[])
+
+    def active(request):
+        return httpx.Response(200, json=task_body(int(request.url.path.rsplit("/", 1)[1])))
+
+    state.handler = active
+
+    def transport(request):
+        state.calls.append(request)
+        return state.handler(request)
+
+    client = httpx.AsyncClient(
+        base_url="http://task.test", transport=httpx.MockTransport(transport)
+    )
+    app.dependency_overrides[get_task_client] = lambda: client
+    yield state
+    app.dependency_overrides.pop(get_task_client, None)
 
 
 @pytest.fixture

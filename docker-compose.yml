@@ -211,12 +211,15 @@ services:
     # &time-env: те же переменные нужны ser-time-migrate (env.py импортирует настройки сервиса)
     environment: &time-env
       DATABASE_URL: postgresql+psycopg://time_user:${TIME_DB_PASSWORD:?задайте в .env (./scripts/init-env.sh)}@ser-time-db:5432/time_db
+      TASK_SERVICE_URL: http://ser-task:8002
       SECRET_KEY: ${SECRET_KEY:?задайте в .env (./scripts/init-env.sh)}
       ALGORITHM: ${ALGORITHM:-HS256}
     depends_on:
       # таблицы создаёт миграция, приложение стартует после её успешного завершения
       ser-time-migrate:
         condition: service_completed_successfully
+      # ser-task не ждём: task уже ждёт time (статистика), обратная связь — цикл, compose его не запустит;
+      # пока task не поднялся, старт таймера отвечает 503
     networks:
       - ser-network
     restart: unless-stopped

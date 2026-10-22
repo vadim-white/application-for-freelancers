@@ -1,7 +1,7 @@
 #!/bin/bash
 # Сквозной прогон через gateway: `bash tests/smoke.sh` из корня; объекты создаёт сам, проходит на чистой базе.
-# SMOKE_MODE=compose — 125 проверок, после `docker compose up --build -d --wait`;
-# SMOKE_MODE=k8s — 123, после ./scripts/k8s-deploy.sh, через вход http://127.0.0.1:8080, как браузер.
+# SMOKE_MODE=compose — 129 проверок, после `docker compose up --build -d --wait`;
+# SMOKE_MODE=k8s — 127, после ./scripts/k8s-deploy.sh, через вход http://127.0.0.1:8080, как браузер.
 # В k8s нет четырёх проверок закрытых портов: кластер публикует на хост только 8080, они ничего не доказывают.
 # Изоляцию NetworkPolicy внутри кластера smoke не проверяет.
 # В k8s path traversal проверяется дважды: Envoy нормализует путь до gateway, защита gateway — изнутри его пода.
@@ -12,7 +12,7 @@ case "$MODE" in
   compose)
     G="${SMOKE_G:-http://localhost:8000}"
     CLOSED_PORTS="8001 8002 8003 5432"
-    EXPECTED=125
+    EXPECTED=129
     in_svc() { local s=$1; shift; docker exec "ser-$s" "$@"; }   # in_svc auth|gateway команда...
     in_auth_db() { docker exec ser-auth-db "$@"; }
     ;;
@@ -21,7 +21,7 @@ case "$MODE" in
     KNS=freelance-service
     G="${SMOKE_G:-http://127.0.0.1:8080}"
     CLOSED_PORTS=""
-    EXPECTED=123
+    EXPECTED=127
     in_svc() { local s=$1; shift; kubectl --context "$KCTX" -n "$KNS" exec "deploy/ser-$s" -- "$@"; }
     in_auth_db() { kubectl --context "$KCTX" -n "$KNS" exec auth-db-0 -c postgres -- "$@"; }
     ;;
@@ -248,6 +248,14 @@ R=$(body "$U1" POST /api/time/timer/start "{\"task_id\":$TN}")
 chk "timer start other task stops running" "$T1 $TN" "$(echo "$R" | jq_ 'str(d["stopped"]["task_id"])+" "+str(d["entry"]["task_id"])')"
 chk "timer stop" "$TN" "$(body "$U1" POST /api/time/timer/stop | jq_ 'd["stopped"]["task_id"]')"
 chk "timer stop again -> null" None "$(body "$U1" POST /api/time/timer/stop | jq_ 'd["stopped"]')"
+# задачу time спрашивает у task с токеном пользователя
+R=$(req "$U1" POST /api/time/timer/start "{\"task_id\":$T2}"); chk "timer start on user2 task" 404 "$R"
+chk "timer start on nonexistent task" 404 "$(req "$U1" POST /api/time/timer/start '{"task_id":999999}')"
+# идущий таймер архивация задачи не останавливает: стоп после неё закрывает запись
+body "$U1" POST /api/time/timer/start "{\"task_id\":$T1}" >/dev/null
+req "$U1" PUT "/api/tasks/tasks/$T1" '{"is_active":false}' >/dev/null
+R=$(req "$U1" POST /api/time/timer/start "{\"task_id\":$T1}"); chk "timer start on archived task" 409 "$R"
+chk "timer stop after archive" "$T1" "$(body "$U1" POST /api/time/timer/stop | jq_ 'd["stopped"]["task_id"]')"
 
 echo "== Удаление: своё 204, каскад проекта"
 chk "user1 DELETE own task" 204 "$(req "$U1" DELETE "/api/tasks/tasks/$TN")"

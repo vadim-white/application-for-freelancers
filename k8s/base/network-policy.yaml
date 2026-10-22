@@ -130,7 +130,8 @@ spec:
     - protocol: TCP
       port: 5432
 ---
-# task ходит в time за статистикой (TIME_SERVICE_URL)
+# task ↔ time в обе стороны: task берёт у time статистику, time у task проверяет задачу при старте
+# таймера. Вызовы не вложены друг в друга (обработчик одного не ждёт другой) — взаимной блокировки нет.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -148,6 +149,9 @@ spec:
     - podSelector:
         matchLabels:
           app: ser-gateway
+    - podSelector:
+        matchLabels:
+          app: ser-time
     ports:
     - protocol: TCP
       port: 8002
@@ -167,6 +171,7 @@ spec:
     - protocol: TCP
       port: 8003
 ---
+# time: принимает от gateway и task, ходит в свою базу и в task (связь task ↔ time — у ser-task)
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -198,6 +203,13 @@ spec:
     ports:
     - protocol: TCP
       port: 5432
+  - to:
+    - podSelector:
+        matchLabels:
+          app: ser-task
+    ports:
+    - protocol: TCP
+      port: 8002
 ---
 # Базы: принимают только свой сервис и его Job миграций (auth-db ещё seed — overlay local-seed),
 # сами никуда не ходят (egress закрыт default-deny-all, кроме DNS)

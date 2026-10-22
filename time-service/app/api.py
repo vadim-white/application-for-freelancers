@@ -1,5 +1,6 @@
 import logging
 
+import httpx
 from fastapi import APIRouter, Depends, HTTPException, Response
 from sqlalchemy import func
 from sqlalchemy.orm import Session
@@ -7,6 +8,7 @@ from sqlalchemy.orm import Session
 from . import crud, schemas
 from .core.auth import CurrentUser, get_current_user, require_admin
 from .deps import get_db
+from .task_client import fetch_usable_task, get_task_client
 
 logger = logging.getLogger(__name__)
 
@@ -56,14 +58,28 @@ def get_timer(db: Session = Depends(get_db), user: CurrentUser = Depends(get_cur
     return {"entry": crud.get_running(db, user.id), "server_time": crud.now()}
 
 
+async def checked_timer_start(
+    timer_in: schemas.TimerStart,
+    client: httpx.AsyncClient = Depends(get_task_client),
+    user: CurrentUser = Depends(get_current_user),
+) -> schemas.TimerStart:
+    # Асинхронная зависимость: task вызывается в event loop до тела эндпоинта и до транзакции;
+    # эндпоинт остаётся синхронным (база — в пуле потоков), соединение с базой при вызове не занято
+    await fetch_usable_task(client, timer_in.task_id, user.authorization)
+    return timer_in
+
+
 @router.post("/timer/start", response_model=schemas.TimerStarted)
 def start_timer(
-    timer_in: schemas.TimerStart,
     response: Response,
+    timer_in: schemas.TimerStart = Depends(checked_timer_start),
     db: Session = Depends(get_db),
     user: CurrentUser = Depends(get_current_user),
 ):
-    """Новая запись — 201 (идущая на другой задаче закрывается), та же задача уже идёт — 200."""
+    """Новая запись — 201 (идущая на другой задаче закрывается), та же задача уже идёт — 200.
+
+    Задача ушла в архив — 409 даже на ту же идущую: проверка раньше, идущую запись она не трогает.
+    """
     try:
         entry, stopped, created = crud.start_timer(db, user.id, timer_in)
     except crud.TimerConflict as e:

@@ -191,7 +191,7 @@ jobs:
           done
       - name: docker compose up --build -d --wait
         run: docker compose up --build -d --wait
-      - name: smoke (125)
+      - name: smoke (129)
         run: bash tests/smoke.sh
       - name: e2e (Playwright, http://127.0.0.1:5173)
         run: bash tests/e2e/run.sh
@@ -245,7 +245,7 @@ jobs:
           done < <(grep -hE '^[A-Za-z_][A-Za-z0-9_]*=' k8s/overlays/local/app.env k8s/overlays/local/db.env)
       - name: k8s-deploy.sh
         run: ./scripts/k8s-deploy.sh
-      - name: smoke k8s (123)
+      - name: smoke k8s (127)
         run: SMOKE_MODE=k8s bash tests/smoke.sh
       - name: e2e (Playwright, через вход http://127.0.0.1:8080)
         run: E2E_BASE_URL=http://127.0.0.1:8080 bash tests/e2e/run.sh
