@@ -52,14 +52,12 @@ def test_downgraded_to_base_is_not_ready(migrations_db, get_ready):
     assert r.json()["reason"] == "schema not migrated"
 
 
-def test_schema_older_than_code_is_not_ready(migrations_db, get_ready, monkeypatch):
-    # в сервисе одна ревизия; цепочка «текущий head — предок нового» подставляется
-    migrations_db.run(command.upgrade, "head")
-    monkeypatch.setattr(ready, "OLDER", frozenset({ready.HEAD}))
-    monkeypatch.setattr(ready, "HEAD", "f00dcafe0001")
+def test_schema_older_than_code_is_not_ready(migrations_db, get_ready):
+    # база на ревизии до expand, код новее
+    migrations_db.run(command.upgrade, "88fe6764944f")
     r = get_ready(migrations_db.engine)
     assert r.status_code == 503
-    assert "older than code f00dcafe0001" in r.json()["reason"]
+    assert r.json()["reason"] == f"schema revision 88fe6764944f is older than code {ready.HEAD}"
 
 
 def test_unknown_revision_is_ready(migrations_db, get_ready):

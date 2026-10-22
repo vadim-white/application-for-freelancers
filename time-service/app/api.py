@@ -1,6 +1,6 @@
 import logging
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Response
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
@@ -48,6 +48,33 @@ def list_entries(
             raise HTTPException(status_code=403, detail="Cannot view other users' time entries")
         user_id = user.id
     return crud.get_time_entries(db, task_id=task_id, user_id=user_id)
+
+
+# Timer: у каждого, включая admin, — только свой таймер
+@router.get("/timer", response_model=schemas.TimerState)
+def get_timer(db: Session = Depends(get_db), user: CurrentUser = Depends(get_current_user)):
+    return {"entry": crud.get_running(db, user.id), "server_time": crud.now()}
+
+
+@router.post("/timer/start", response_model=schemas.TimerStarted)
+def start_timer(
+    timer_in: schemas.TimerStart,
+    response: Response,
+    db: Session = Depends(get_db),
+    user: CurrentUser = Depends(get_current_user),
+):
+    """Новая запись — 201 (идущая на другой задаче закрывается), та же задача уже идёт — 200."""
+    try:
+        entry, stopped, created = crud.start_timer(db, user.id, timer_in)
+    except crud.TimerConflict as e:
+        raise HTTPException(status_code=409, detail="Timer start conflict, retry") from e
+    response.status_code = 201 if created else 200
+    return {"entry": entry, "stopped": stopped, "server_time": crud.now()}
+
+
+@router.post("/timer/stop", response_model=schemas.TimerStopped)
+def stop_timer(db: Session = Depends(get_db), user: CurrentUser = Depends(get_current_user)):
+    return {"stopped": crud.stop_timer(db, user.id), "server_time": crud.now()}
 
 
 # Statistics

@@ -1,8 +1,15 @@
+from datetime import UTC, datetime
+
 from alembic import command
+from sqlalchemy import inspect, select, text
+from sqlalchemy.orm import Session
+
+from app.models import TimeEntry
 
 TABLES = {"time_entries"}
 # типы enum, которые создаёт миграция в PostgreSQL (в SQLite их нет)
 EXPECTED_ENUMS = set()
+BEFORE_EXPAND = "88fe6764944f"
 
 
 def test_upgrade_head_matches_models(migrations_db):
@@ -25,3 +32,37 @@ def test_downgrade_base_then_upgrade_again(migrations_db):
     db.run(command.upgrade, "head")
     assert db.tables() == {"alembic_version"} | TABLES
     db.run(command.check)
+
+
+def test_expand_fills_old_entries(migrations_db):
+    db = migrations_db
+    db.run(command.upgrade, BEFORE_EXPAND)
+    noon = "2026-10-22 12:00:00" + ("+00" if db.backend == "postgres" else "")
+    with db.engine.begin() as conn:
+        # запись старого фронта: сохранена при остановке, date — её конец
+        conn.execute(
+            text("INSERT INTO time_entries (task_id, user_id, minutes, date) VALUES (1, 1, 5, :d)"),
+            {"d": noon},
+        )
+        conn.execute(
+            text(
+                "INSERT INTO time_entries (task_id, user_id, minutes, date, created_at) "
+                "VALUES (2, 1, 90, NULL, :d)"
+            ),
+            {"d": noon},
+        )
+    db.run(command.upgrade, "head")
+
+    fields = (TimeEntry.started_at, TimeEntry.stopped_at, TimeEntry.duration_seconds)
+    with Session(db.engine) as s:
+        rows = s.execute(select(*fields).order_by(TimeEntry.id)).all()
+    end = datetime(2026, 10, 22, 12, 0, tzinfo=UTC)
+    assert rows == [
+        (datetime(2026, 10, 22, 11, 55, tzinfo=UTC), end, 300),
+        (datetime(2026, 10, 22, 10, 30, tzinfo=UTC), end, 5400),
+    ]
+
+    db.run(command.downgrade, BEFORE_EXPAND)
+    columns = {c["name"]: c for c in inspect(db.engine).get_columns("time_entries")}
+    assert not {"started_at", "stopped_at", "duration_seconds"} & columns.keys()
+    assert columns["minutes"]["nullable"] is False

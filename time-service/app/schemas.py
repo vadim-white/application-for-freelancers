@@ -21,12 +21,39 @@ class TimeEntryCreate(TimeEntryBase):
     pass
 
 
-class TimeEntryRead(TimeEntryBase):
+class TimeEntryRead(BaseModel):
     id: int
     user_id: int
+    task_id: int
+    started_at: datetime | None
+    stopped_at: datetime | None
+    duration_seconds: int | None
+    description: str | None = None
+    minutes: int | None
     date: datetime
     is_active: bool
     created_at: datetime
     updated_at: datetime | None = None
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class TimerStart(BaseModel):
+    task_id: int
+    description: str | None = None
+
+
+class TimerState(BaseModel):
+    entry: TimeEntryRead | None
+    server_time: datetime
+
+
+class TimerStarted(BaseModel):
+    entry: TimeEntryRead
+    stopped: TimeEntryRead | None
+    server_time: datetime
+
+
+class TimerStopped(BaseModel):
+    stopped: TimeEntryRead | None
+    server_time: datetime

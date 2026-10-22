@@ -157,9 +157,11 @@ uv сам поставит Python 3.14 и зависимости из `uv.lock` 
 
 Тест миграций (`tests/test_migrations.py` в auth, task и time: `upgrade head` → `alembic check` → `downgrade base` → `upgrade head`) идёт на двух базах: SQLite (всегда) и PostgreSQL 15 (если задана `TEST_POSTGRES_URL`). Без переменной тесты PostgreSQL помечаются `skipped` с причиной. На PostgreSQL проверяется то, чего не видно на SQLite: после `downgrade base` не остаётся ни таблиц, ни типов enum (`downgrade` вручную удаляет enum, PostgreSQL сам этого не делает), а в task внешний ключ `tasks.project_id` действует: задача с несуществующим проектом даёт `IntegrityError`.
 
-На тех же двух базах идут тесты `/ready` (`tests/test_ready.py`): схема на head → 200; пустая база и база после `downgrade base` → 503; ревизия — предок head → 503 (в сервисах по одной ревизии, поэтому цепочка «текущий head — предок нового» подставляется в тесте); незнакомая ревизия (`UPDATE alembic_version`) → 200; база недоступна → 503. Без PostgreSQL: «молчащая» база (порт принимает TCP и не отвечает) даёт 503 раньше таймаута пробы (`connect_timeout` 2 с), а head и его предки берутся из цепочки `down_revision` (временный каталог с тремя ревизиями). Фикстура пустой базы `migrations_db` общая для обоих файлов — в `tests/conftest.py`.
+На тех же двух базах идут тесты `/ready` (`tests/test_ready.py`): схема на head → 200; пустая база и база после `downgrade base` → 503; ревизия — предок head → 503 (в time — настоящая ревизия до expand; в auth и task по одной ревизии, поэтому цепочка «текущий head — предок нового» подставляется в тесте); незнакомая ревизия (`UPDATE alembic_version`) → 200; база недоступна → 503. Без PostgreSQL: «молчащая» база (порт принимает TCP и не отвечает) даёт 503 раньше таймаута пробы (`connect_timeout` 2 с), а head и его предки берутся из цепочки `down_revision` (временный каталог с тремя ревизиями). Фикстура пустой базы `migrations_db` общая для обоих файлов — в `tests/conftest.py`.
 
 Таймауты к базе на открытом соединении проверяются только на PostgreSQL (фикстура `pg_app` в `tests/conftest.py`: движок как в приложении, `make_engine`, своя схема на head, через него идут сессии API и `/ready`): `SELECT pg_sleep(10)` обрывается `statement_timeout` за ~5 с, `/ready`, ждущий блокировку `alembic_version`, отвечает 503 за ~5 с, а не висит; после `pg_terminate_backend` соединений пула (как перезапуск базы) следующий запрос API — 200 (`pool_pre_ping`). Без базы: параметры соединения из `connect_args` принимает libpq (опечатка в имени не ждёт первого соединения).
+
+Таймер time-service (`tests/test_timer.py`): старт, стоп, повторный стоп, повторный старт той же задачи, автостоп, длительность (округление вниз, `minutes` вверх, запись 0 с), свой таймер у каждого и у admin, старый `POST` с `minutes`, записи старого кода без `started_at` — не таймер; уникальный индекс «один идущий» — на SQLite и PostgreSQL; на PostgreSQL — гонка двух стартов (два соединения: второй ждёт первый на индексе, получает конфликт, повторяет и закрывает его запись). Миграция expand (`test_migrations.py`) заполняет старые записи (`started_at`, `stopped_at`, `duration_seconds` из `date` и `minutes`) и откатывается на SQLite и PostgreSQL.
 
 Каждый тест работает в собственной схеме (`CREATE SCHEMA mig_…` или `app_…` / `DROP SCHEMA … CASCADE` после теста), поэтому база может быть общей для трёх сервисов; важно только, чтобы это была тестовая база, а не база стека. Локально:
 
@@ -185,17 +187,17 @@ docker run --rm -v "$PWD/<service>":/src:ro ghcr.io/astral-sh/uv:0.13.1-python3.
 
 #### Сквозной прогон
 
-[tests/smoke.sh](tests/smoke.sh) — curl-прогон через gateway: авторизация, доступ «только свои», записи времени, `/health`, CORS. Идемпотентен, проходит на чистой базе и повторно. Готовности стека не ждёт.
+[tests/smoke.sh](tests/smoke.sh) — curl-прогон через gateway: авторизация, доступ «только свои», записи времени, таймер, `/health`, CORS. Идемпотентен, проходит на чистой базе и повторно. Готовности стека не ждёт.
 
 ```bash
 docker compose up --build -d --wait
-bash tests/smoke.sh                      # режим compose: 120 проверок
+bash tests/smoke.sh                      # режим compose: 125 проверок
 
 ./scripts/k8s-deploy.sh                  # кластер kind (см. k8s/README.md)
-SMOKE_MODE=k8s bash tests/smoke.sh       # режим k8s: 118 проверок через http://127.0.0.1:8080
+SMOKE_MODE=k8s bash tests/smoke.sh       # режим k8s: 123 проверки через http://127.0.0.1:8080
 ```
 
-`/health` gateway всегда отвечает 200, а доступность сервисов пишет в теле (`upstreams`), поэтому smoke проверяет тело: `auth`, `task`, `time` — все `true`. В k8s запрос идёт изнутри пода `ser-gateway` (через вход `/health` отдаёт фронт). `/ready` auth, task и time проверяется изнутри gateway в обоих режимах: он вне `/api`, через gateway недоступен. Каждый запрос curl ограничен 15 с (`--max-time`), молчащий сервер не повесит прогон. Проксированный ответ проверяется на один заголовок `date` (раньше gateway пересылал ещё и `date` сервиса). В конце smoke сверяет число пройденных проверок с ожидаемым (120 / 118): пропущенная проверка (например, пустой цикл) не даёт FAIL, но и не даёт PASS, и тогда печатается «пройдено N из ожидаемых M». Код выхода 0 — FAIL нет и пройдено ровно ожидаемое число.
+`/health` gateway всегда отвечает 200, а доступность сервисов пишет в теле (`upstreams`), поэтому smoke проверяет тело: `auth`, `task`, `time` — все `true`. В k8s запрос идёт изнутри пода `ser-gateway` (через вход `/health` отдаёт фронт). `/ready` auth, task и time проверяется изнутри gateway в обоих режимах: он вне `/api`, через gateway недоступен. Каждый запрос curl ограничен 15 с (`--max-time`), молчащий сервер не повесит прогон. Проксированный ответ проверяется на один заголовок `date` (раньше gateway пересылал ещё и `date` сервиса). В конце smoke сверяет число пройденных проверок с ожидаемым (125 / 123): пропущенная проверка (например, пустой цикл) не даёт FAIL, но и не даёт PASS, и тогда печатается «пройдено N из ожидаемых M». Код выхода 0 — FAIL нет и пройдено ровно ожидаемое число.
 
 #### e2e в браузере (Playwright)
 
@@ -264,6 +266,8 @@ docker compose run --rm --no-deps --user "$(id -u):$(id -g)" \
 - для enum в `downgrade` после `op.drop_table` добавить `sa.Enum(name='…').drop(op.get_bind(), checkfirst=True)`: PostgreSQL не удаляет тип вместе с таблицей;
 - убрать комментарии «auto generated».
 
+Заполнение данных при смене схемы — в самой миграции (`op.execute`, SQL по диалекту, если SQLite и PostgreSQL расходятся, как в expand time-service), а не в коде сервиса: у запросов приложения лимит 5 с (`statement_timeout`), у миграций его нет. Ломающая смена схемы делится на два шага, expand и contract (см. [k8s/README.md](k8s/README.md#probes)): во время перекатки старые поды работают на новой схеме.
+
 Затем проверьте цикл `alembic upgrade head` → `alembic check` → `alembic downgrade base` → `alembic upgrade head`. Его выполняет `tests/test_migrations.py`: при расхождении моделей и миграций тест падает. Применить новую ревизию к базе стека: `docker compose up --build -d` (migrate-сервис выполнится сам) или `docker compose run --rm --no-deps ser-<service>-migrate alembic upgrade head`. Вне Docker те же команды запускаются в папке сервиса через uv: `uv run alembic upgrade head`, `uv run alembic check` и т. д.
 
 ### Kubernetes
@@ -286,7 +290,7 @@ open http://127.0.0.1:8080       # приложение (вход admin@example.
 - по две реплики у auth, task, time, gateway и frontend, базы — по одной;
 - Pod Security Admission `restricted` (не root, без привилегий, корень только на чтение), NetworkPolicy по умолчанию запрещают всё, кроме нужных связей;
 - readiness сервисов — `/ready` (база и ревизия схемы), liveness — `GET /`: под без базы или до миграций снимается с трафика, но не перезапускается; лимита CPU у приложений нет (вход 0,25–0,3 с вместо ~2,5 с), лимиты памяти есть;
-- сквозной прогон против кластера — `SMOKE_MODE=k8s bash tests/smoke.sh` (118 проверок).
+- сквозной прогон против кластера — `SMOKE_MODE=k8s bash tests/smoke.sh` (123 проверки).
 
 Удалить кластер: `kind delete cluster --name freelance`.
 
@@ -300,8 +304,8 @@ GitHub Actions, workflow [.github/workflows/ci.yml](.github/workflows/ci.yml). �
 | `python` (×4: auth, task, time, gateway) | `uv sync --locked`, `uv run pytest --cov=app`: порог покрытия из `pyproject.toml`, тест миграций на PostgreSQL 15 (service container, `TEST_POSTGRES_URL`). Пропущенный тест роняет job: значит, база не подключилась |
 | `frontend` | Node из `.nvmrc` (24), `npm ci`, `npm run typecheck`, `npm run build` |
 | `static` | `docker compose config --quiet` на `.env` от `init-env.sh`, kubeconform v0.8.0 по выводу `kubectl kustomize` обоих overlay (как в [k8s/README.md](k8s/README.md#диагностика)) |
-| `compose` | с чистого раннера: `init-env.sh` → `docker compose up --build -d --wait` → smoke (120) → e2e (`http://127.0.0.1:5173`), в конце `down -v` |
-| `kind` | `kind-up.sh` → `init-k8s-env.sh` → `k8s-deploy.sh` → smoke k8s (118) → e2e через вход (`http://127.0.0.1:8080`) → `kubectl apply --dry-run=server` обоих overlay с развёрнутым тегом (`k8s/overlays/.deploy/app` и `seed`) |
+| `compose` | с чистого раннера: `init-env.sh` → `docker compose up --build -d --wait` → smoke (125) → e2e (`http://127.0.0.1:5173`), в конце `down -v` |
+| `kind` | `kind-up.sh` → `init-k8s-env.sh` → `k8s-deploy.sh` → smoke k8s (123) → e2e через вход (`http://127.0.0.1:8080`) → `kubectl apply --dry-run=server` обоих overlay с развёрнутым тегом (`k8s/overlays/.deploy/app` и `seed`) |
 
 Где смотреть: вкладка **Actions** репозитория, workflow **CI**, бейдж в начале README показывает статус последнего прогона. Если падают compose или kind, отдельный шаг «диагностика» печатает состояние: для compose — `docker compose ps -a` и последние строки логов, для kind — поды и Job, Deployment с тегами образов, события, `describe gateway entry`, логи подов (и прошлых контейнеров) и контроллера Envoy Gateway. Скриншоты и trace упавших e2e-тестов приходят артефактом прогона (`e2e-compose`, `e2e-kind`, хранятся 7 дней). Повторить job локально можно теми же командами, что в разделах «Тесты», «Линтер» и в [k8s/README.md](k8s/README.md).
 
@@ -359,8 +363,13 @@ GitHub Actions, workflow [.github/workflows/ci.yml](.github/workflows/ci.yml). �
 | GET, PUT, DELETE | `/api/tasks/tasks/{id}` | Задача: своя, у admin — любая, чужая — `404` |
 | POST | `/api/tasks/tasks/{id}/status` | Смена статуса задачи |
 | GET | `/api/tasks/statistics/users` | Статистика по пользователям (только admin) |
-| GET, POST | `/api/time/time-entries` | Записи о времени: `user_id` берётся из токена; пользователь видит только свои записи, admin — все (фильтр `?user_id=`) |
+| GET, POST | `/api/time/time-entries` | Записи о времени: `user_id` берётся из токена; пользователь видит только свои записи, admin — все (фильтр `?user_id=`). `POST {task_id, minutes}` пишет запись, закончившуюся сейчас |
+| GET | `/api/time/timer` | Свой идущий таймер: `{"entry": запись или null, "server_time"}` |
+| POST | `/api/time/timer/start` | `{task_id, description?}` → `{"entry", "stopped", "server_time"}`: новая запись — `201`, идущая на другой задаче закрывается (`stopped`); та же задача уже идёт — `200` с ней; параллельный старт не удался и после повтора — `409` |
+| POST | `/api/time/timer/stop` | → `{"stopped": закрытая запись или null, "server_time"}`, всегда `200` |
 | GET | `/api/time/statistics/users` | Статистика времени по пользователям (только admin) |
+
+Таймер у каждого пользователя свой, один на пользователя (admin — тоже только свой); идущий таймер — запись без `stopped_at`. Запись времени: `id`, `user_id`, `task_id`, `started_at`, `stopped_at`, `duration_seconds` (целые секунды, считает сервер при остановке; запись любой длины сохраняется), `description`, `created_at`, `updated_at` и прежние `minutes` (вверх до минуты, у идущей — 1), `date`, `is_active` — до перехода фронта на таймер. Время в ответах — UTC с поясом (`…Z`), «сейчас» — часы сервиса.
 
 Пример входа:
 
@@ -416,7 +425,8 @@ curl -X POST http://localhost:8000/api/auth/login \
 - Python 3.14 во всех образах. В Docker Compose и Kubernetes сервисы работают с PostgreSQL через psycopg 3 (`postgresql+psycopg://`). Зависимости бэкенда ведёт uv: прямые закреплены точными версиями (`==`) в `pyproject.toml` сервиса, все вместе с транзитивными — в `uv.lock` (версии и хеши), общие пакеты одинаковы во всех сервисах (FastAPI 0.160.0, SQLAlchemy 2.1.6, pydantic-settings 2.16.1; httpx 0.28.1 — в task, time и gateway). Модели auth, task и time описаны через `Mapped[]`/`mapped_column`, nullability колонок совпадает с миграциями (тест `alembic check`). Обновления версий предлагает Dependabot (см. «CI»). Образ ставит их `uv sync --locked` (сборка падает, если `uv.lock` не совпадает с `pyproject.toml`) в `/opt/venv`; сам uv в итоговый образ не попадает. `pytest`, `httpx2` и `pytest-cov` — в dev-группе, в образ не ставятся
 - Схема БД auth-service, task-service и time-service управляется миграциями Alembic (`<service>/migrations/`): в Docker Compose их применяют сервисы `ser-auth-migrate`, `ser-task-migrate` и `ser-time-migrate` до старта своего сервиса, в Kubernetes — Job `auth-migrate`, `task-migrate`, `time-migrate` (один раз на деплой, порядок задаёт `scripts/k8s-deploy.sh`). Тест в каждом из них проверяет, что миграции совпадают с моделями
 - Проекты хранятся только в task-service: дубль проектов в time-service (`/api/time/projects`) удалён, фронтенд создаёт проект одним запросом. `user_id` записи времени обязателен (NOT NULL), фронтенд его не отправляет: сервер берёт `user_id` из токена
-- Автотесты (pytest) есть у всех бэкенд-сервисов (с PostgreSQL: gateway 81, auth 60, task 77, time 52; без `TEST_POSTGRES_URL` тесты миграций, `/ready` и таймаутов к базе на PostgreSQL пропускаются — 81 / 50 + 10 skipped / 66 + 11 skipped / 42 + 10 skipped), покрытие 100 / 95 / 98 / 99 % с порогом в `pyproject.toml`. Python-код проверяет ruff (`ruff.toml`, см. «Линтер»), типы фронтенда — `npm run typecheck` (vue-tsc, 0 ошибок). Сквозные проверки: smoke (`tests/smoke.sh`, compose 120, k8s 118) и e2e в браузере (`tests/e2e/`, 5 тестов: авто-refresh, неудачный refresh, «только свои», счётчик задач, роут `/`). Всё это, а также shellcheck, gitleaks, kubeconform и сквозные прогоны в compose и kind с нуля, выполняет CI (GitHub Actions) на каждый push и pull request (см. «CI»)
+- В time-service есть серверный таймер (`/api/time/timer`, `start`, `stop`): запись хранит `started_at`, `stopped_at` и `duration_seconds`, у пользователя один идущий таймер — это гарантирует частичный уникальный индекс в базе, старт на другой задаче останавливает идущий в той же транзакции, параллельный старт с другой реплики повторяется один раз. Фронтенд пока считает время сам и сохраняет его старым `POST /api/time/time-entries` с `minutes` — он работает, новые поля сервер заполняет сам. Схема перешла на новые поля по схеме expand/contract: в этой версии новые колонки добавлены рядом со старыми (`minutes`, `date`, `is_active` пишутся по-прежнему, чтобы старые поды во время перекатки читали новые записи), старые удаляются в следующей миграции. Перекатка на новую схему под нагрузкой — без ошибок от схемы (подробно — [k8s/README.md](k8s/README.md#probes))
+- Автотесты (pytest) есть у всех бэкенд-сервисов (с PostgreSQL: gateway 81, auth 60, task 77, time 80; без `TEST_POSTGRES_URL` тесты миграций, `/ready`, таймаутов к базе и гонки таймера на PostgreSQL пропускаются — 81 / 50 + 10 skipped / 66 + 11 skipped / 67 + 13 skipped), покрытие 100 / 95 / 98 / 99 % с порогом в `pyproject.toml`. Python-код проверяет ruff (`ruff.toml`, см. «Линтер»), типы фронтенда — `npm run typecheck` (vue-tsc, 0 ошибок). Сквозные проверки: smoke (`tests/smoke.sh`, compose 125, k8s 123) и e2e в браузере (`tests/e2e/`, 5 тестов: авто-refresh, неудачный refresh, «только свои», счётчик задач, роут `/`). Всё это, а также shellcheck, gitleaks, kubeconform и сквозные прогоны в compose и kind с нуля, выполняет CI (GitHub Actions) на каждый push и pull request (см. «CI»)
 - Фронтенд в Docker собирается multi-stage на Node 24 (`npm ci`, `vite build`) и раздаётся nginx без root (`nginx-unprivileged`, слушает 8080): долгий кэш для `/assets/`, `index.html` без кэша, gzip, SPA-роуты отдают `index.html`. Запросы `/api/` nginx проксирует на gateway, поэтому браузер ходит на один адрес и CORS для фронтенда не нужен. В Kubernetes фронтенд описан под этот образ: порт 8080, `GATEWAY_URL` из ConfigMap, startup/liveness/readiness `GET /`, Service `ClusterIP`
 - В Kubernetes вход один — Gateway API (Envoy Gateway v1.9.2) на `http://127.0.0.1:8080`: `/api` → gateway, остальное → фронтенд; `LoadBalancer` и `NodePort` в namespace приложения нет, все сервисы `ClusterIP`. Автомасштабирования нет: у stateless-сервисов (auth, task, time, gateway, frontend) по две реплики, базы — по одной. Остановка подов плавная: `preStop` 5 с (Envoy и kube-proxy успевают убрать под из балансировки), затем uvicorn до 20 с дообрабатывает начатые запросы (`--timeout-graceful-shutdown` в образе; nginx фронта получает `SIGQUIT`), `terminationGracePeriodSeconds` 30; перекатка под непрерывной нагрузкой проходит без ошибок (до этого — 502/503/504 у всех пяти Deployment). Кластер — только локальный kind (`./scripts/kind-up.sh`, ставит и Envoy Gateway, собирает и загружает образы с тегом по SHA коммита, убирает из узла старые), манифесты собираются kustomize (`base` + `overlays/local`), деплой с миграциями и seed — `./scripts/k8s-deploy.sh` (подставляет тег через сгенерированные kustomization вне git, поэтому новая сборка перекатывает поды без `rollout restart`); проверено с нуля (инструкция и ограничения — [k8s/README.md](k8s/README.md)). Облачного overlay (реестр образов, TLS, управляемый Postgres) нет. Базы в кластере проверяются `pg_isready -U … -d …`, `PGDATA` лежит в подпапке тома. Readiness сервисов — `/ready` (база и ревизия схемы; на чистом кластере поды не готовы, пока не прошли миграции), gateway — `/ready` без проверки сервисов, liveness — `GET /` (60 с неудач до перезапуска), таймаут проб 3 с. Лимита CPU у пяти Deployment нет (троттлинг на 200m растягивал вход до ~2,5 с и валил пробы под нагрузкой), requests CPU и лимиты памяти есть
 - В Kubernetes сетевые политики по умолчанию запрещают всё: открыты только DNS, вход от Envoy к фронту и gateway, фронт → gateway, gateway → auth, task, time, task → time и каждый сервис со своими Job → своя база. Сервис не достанет до чужой базы, базы и сервисы не выходят в интернет ([k8s/README.md](k8s/README.md#сетевые-политики))
@@ -426,7 +436,7 @@ curl -X POST http://localhost:8000/api/auth/login \
 
 ## Планы
 
-- Серверное состояние таймера: запуск, пауза и остановка на бэкенде, защита от параллельных таймеров
+- Серверный таймер: API и один таймер на пользователя сделаны; проверка задачи у task-service, фронтенд на серверный таймер, правка и удаление записей, удаление старых колонок схемы
 - Kubernetes: облачный overlay и HPA (плавная остановка подов — `preStop`, сделана)
 - Отчёты по времени и экспорт
 - Лимиты запросов, логирование, метрики
