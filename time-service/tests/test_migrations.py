@@ -1,15 +1,22 @@
+import time
 from datetime import UTC, datetime
 
+import pytest
 from alembic import command
-from sqlalchemy import inspect, select, text
+from alembic.config import Config
+from sqlalchemy import Boolean, inspect, select, text
+from sqlalchemy.exc import IntegrityError, OperationalError
 from sqlalchemy.orm import Session
 
 from app.models import TimeEntry
+
+from .conftest import SERVICE_ROOT
 
 TABLES = {"time_entries"}
 # типы enum, которые создаёт миграция в PostgreSQL (в SQLite их нет)
 EXPECTED_ENUMS = set()
 BEFORE_EXPAND = "88fe6764944f"
+EXPAND = "5ea47ccd8dc7"
 
 
 def test_upgrade_head_matches_models(migrations_db):
@@ -66,3 +73,121 @@ def test_expand_fills_old_entries(migrations_db):
     columns = {c["name"]: c for c in inspect(db.engine).get_columns("time_entries")}
     assert not {"started_at", "stopped_at", "duration_seconds"} & columns.keys()
     assert columns["minutes"]["nullable"] is False
+
+
+def noon(db):
+    return "2026-10-22 12:00:00" + ("+00" if db.backend == "postgres" else "")
+
+
+def running_index_where(engine):
+    [index] = [i for i in inspect(engine).get_indexes("time_entries") if i["unique"]]
+    options = index["dialect_options"]
+    return str(options.get("postgresql_where") or options.get("sqlite_where")).strip("()")
+
+
+def test_contract_fills_rows_from_old_pods(migrations_db):
+    db = migrations_db
+    db.run(command.upgrade, EXPAND)
+    with db.engine.begin() as conn:
+        # так пишет под до expand в окне выкатки: новых колонок он не знает
+        conn.execute(
+            text(
+                "INSERT INTO time_entries (task_id, user_id, minutes, date, is_active) "
+                "VALUES (1, 1, 5, :d, true)"
+            ),
+            {"d": noon(db)},
+        )
+        # идущий таймер нового кода
+        conn.execute(
+            text("INSERT INTO time_entries (task_id, user_id, started_at) VALUES (2, 1, :d)"),
+            {"d": noon(db)},
+        )
+    db.run(command.upgrade, "head")
+
+    fields = (TimeEntry.started_at, TimeEntry.stopped_at, TimeEntry.duration_seconds)
+    with Session(db.engine) as s:
+        rows = s.execute(select(*fields).order_by(TimeEntry.id)).all()
+    end = datetime(2026, 10, 22, 12, 0, tzinfo=UTC)
+    assert rows == [(datetime(2026, 10, 22, 11, 55, tzinfo=UTC), end, 300), (end, None, None)]
+    columns = {c["name"]: c for c in inspect(db.engine).get_columns("time_entries")}
+    assert columns["started_at"]["nullable"] is False
+    assert running_index_where(db.engine) == "stopped_at IS NULL"
+
+    # новый код is_active не пишет, старые поды в окне выкатки читают его как bool
+    with db.engine.begin() as conn:
+        conn.execute(
+            text("INSERT INTO time_entries (task_id, user_id, started_at) VALUES (3, 2, :d)"),
+            {"d": noon(db)},
+        )
+        query = text("SELECT is_active FROM time_entries WHERE task_id = 3")
+        assert conn.execute(query.columns(is_active=Boolean)).scalar_one() is True
+
+
+def test_contract_downgrade_back_to_expand(migrations_db):
+    db = migrations_db
+    db.run(command.upgrade, "head")
+    db.run(command.downgrade, EXPAND)
+    columns = {c["name"]: c for c in inspect(db.engine).get_columns("time_entries")}
+    assert columns["started_at"]["nullable"] is True
+    assert columns["is_active"]["default"] is None
+    with db.engine.begin() as conn:
+        # снова можно, как в окне expand: две записи старых подов одного пользователя
+        # и конец раньше начала (CHECK сняты)
+        for _ in range(2):
+            conn.execute(
+                text("INSERT INTO time_entries (task_id, user_id, minutes) VALUES (1, 1, 5)")
+            )
+        conn.execute(
+            text(
+                "INSERT INTO time_entries (task_id, user_id, started_at, stopped_at) "
+                "VALUES (1, 2, :d, '2000-01-01 00:00:00')"
+            ),
+            {"d": noon(db)},
+        )
+        # такую запись contract не примет: CHECK проверяет и старые строки
+        conn.execute(text("DELETE FROM time_entries WHERE user_id = 2"))
+    db.run(command.upgrade, "head")
+    db.run(command.check)
+
+
+@pytest.mark.parametrize(
+    "values",
+    [
+        "(1, 1, NULL, NULL, NULL)",
+        "(1, 1, '2026-10-22 12:00:00', '2026-10-22 11:59:59', 0)",
+        "(1, 1, '2026-10-22 12:00:00', '2026-10-22 12:00:00', -1)",
+        "(1, 7, '2026-10-22 12:00:00', NULL, NULL)",
+    ],
+    ids=["started_at null", "stopped before started", "negative duration", "second running"],
+)
+def test_contract_constraints(migrations_db, values):
+    db = migrations_db
+    db.run(command.upgrade, "head")
+    with db.engine.begin() as conn:
+        conn.execute(
+            text("INSERT INTO time_entries (task_id, user_id, started_at) VALUES (1, 7, :d)"),
+            {"d": noon(db)},
+        )
+    insert = (
+        "INSERT INTO time_entries (task_id, user_id, started_at, stopped_at, duration_seconds) "
+    )
+    with pytest.raises(IntegrityError), db.engine.begin() as conn:
+        conn.execute(text(insert + "VALUES " + values))
+
+
+def test_contract_gives_up_waiting_for_table_lock(pg_app):
+    def migrate(cmd, revision):
+        cfg = Config(str(SERVICE_ROOT / "alembic.ini"))
+        with pg_app.engine.begin() as connection:
+            cfg.attributes["connection"] = connection
+            cmd(cfg, revision)
+
+    migrate(command.downgrade, EXPAND)
+    with pg_app.engine.connect() as reader:
+        # долгая транзакция держит ACCESS SHARE: ALTER ждал бы её, а все запросы — ALTER
+        reader.execute(text("SELECT count(*) FROM time_entries"))
+        started = time.monotonic()
+        with pytest.raises(OperationalError, match="lock timeout"):
+            migrate(command.upgrade, "head")
+        assert 2.5 < time.monotonic() - started < 4.5
+    migrate(command.upgrade, "head")

@@ -23,10 +23,6 @@ class InvalidEntry(Exception):
     """Время записи не сходится: отдаётся как 422."""
 
 
-class LegacyEntry(Exception):
-    """Запись старого пода без started_at: время правится после contract."""
-
-
 # часы реплик и клиента расходятся: небольшое «будущее» не ошибка
 FUTURE_TOLERANCE = timedelta(minutes=1)
 
@@ -67,8 +63,6 @@ def update_time_entry(db: Session, entry: models.TimeEntry, data: schemas.TimeEn
     if "task_id" in fields:
         entry.task_id = data.task_id
     if fields & {"started_at", "stopped_at"}:
-        if entry.started_at is None:
-            raise LegacyEntry
         if entry.stopped_at is None and "stopped_at" in fields:
             raise InvalidEntry("Cannot set stopped_at on a running entry")
         started_at = data.started_at if "started_at" in fields else entry.started_at
@@ -98,7 +92,7 @@ def list_time_entries(
     limit: int,
     offset: int,
 ):
-    """(items, total). from включительно, to не включительно; записи без started_at — в конце."""
+    """(items, total). from включительно, to не включительно."""
     entry = models.TimeEntry
     conditions = []
     if user_id is not None:
@@ -111,7 +105,7 @@ def list_time_entries(
         conditions.append(entry.started_at < to)
     descending = sort.startswith("-")
     started = entry.started_at.desc() if descending else entry.started_at.asc()
-    order = [started.nulls_last(), entry.id.desc() if descending else entry.id.asc()]
+    order = [started, entry.id.desc() if descending else entry.id.asc()]
     total = db.scalar(select(func.count()).select_from(entry).where(*conditions))
     items = db.scalars(
         select(entry).where(*conditions).order_by(*order).limit(limit).offset(offset)
@@ -120,7 +114,7 @@ def list_time_entries(
 
 
 def users_statistics(db: Session) -> list[dict]:
-    """По закрытым записям: идущие и записи старых подов (без duration_seconds) не считаются."""
+    """По закрытым записям: у идущих duration_seconds ещё нет."""
     entry = models.TimeEntry
     rows = db.execute(
         select(
@@ -156,8 +150,6 @@ def get_running(db: Session, user_id: int, lock: bool = False) -> models.TimeEnt
 
 def set_duration(entry: models.TimeEntry) -> None:
     entry.duration_seconds = math.floor((entry.stopped_at - entry.started_at).total_seconds())
-    # minutes — пока старые поды читают записи; уходит в contract
-    entry.minutes = max(1, math.ceil(entry.duration_seconds / 60))
 
 
 def close_entry(entry: models.TimeEntry, at: datetime) -> None:
@@ -176,13 +168,11 @@ def _start_once(db: Session, user_id: int, timer_in: schemas.TimerStart):
         close_entry(running, at)
         # UPDATE раньше INSERT явно, а не по порядку unit of work: иначе — уникальный индекс
         db.flush()
-    # minutes = 1: старые поды в окне выкатки валидируют minutes > 0 при чтении
     entry = models.TimeEntry(
         task_id=timer_in.task_id,
         user_id=user_id,
         description=timer_in.description,
         started_at=at,
-        minutes=1,
     )
     db.add(entry)
     db.commit()

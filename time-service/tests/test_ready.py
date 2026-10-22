@@ -52,12 +52,13 @@ def test_downgraded_to_base_is_not_ready(migrations_db, get_ready):
     assert r.json()["reason"] == "schema not migrated"
 
 
-def test_schema_older_than_code_is_not_ready(migrations_db, get_ready):
-    # база на ревизии до expand, код новее
-    migrations_db.run(command.upgrade, "88fe6764944f")
+# до expand и до contract: новый под не принимает запросы, пока миграция не применена
+@pytest.mark.parametrize("revision", ["88fe6764944f", "5ea47ccd8dc7"])
+def test_schema_older_than_code_is_not_ready(migrations_db, get_ready, revision):
+    migrations_db.run(command.upgrade, revision)
     r = get_ready(migrations_db.engine)
     assert r.status_code == 503
-    assert r.json()["reason"] == f"schema revision 88fe6764944f is older than code {ready.HEAD}"
+    assert r.json()["reason"] == f"schema revision {revision} is older than code {ready.HEAD}"
 
 
 def test_unknown_revision_is_ready(migrations_db, get_ready):

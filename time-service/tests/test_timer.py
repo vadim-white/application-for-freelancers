@@ -8,7 +8,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import sessionmaker
 
 from app import crud, schemas
-from app.db import SessionLocal, engine
+from app.db import SessionLocal
 from app.models import TimeEntry, UTCDateTime
 
 T0 = datetime(2026, 10, 22, 12, 0, tzinfo=UTC)
@@ -70,8 +70,6 @@ def test_start_get_stop(client, user1, clock):
     assert (entry["task_id"], entry["user_id"], entry["description"]) == (5, 1, "note")
     assert parse(entry["started_at"]) == T0
     assert (entry["stopped_at"], entry["duration_seconds"]) == (None, None)
-    # идущая запись читается и старыми подами: у них minutes > 0 обязателен
-    assert entry["minutes"] == 1
     assert current(client, user1)["entry"] == entry
 
     clock.at = T0 + timedelta(minutes=3)
@@ -80,7 +78,7 @@ def test_start_get_stop(client, user1, clock):
     stopped = r.json()["stopped"]
     assert stopped["id"] == entry["id"]
     assert parse(stopped["stopped_at"]) == clock.at
-    assert (stopped["duration_seconds"], stopped["minutes"]) == (180, 3)
+    assert stopped["duration_seconds"] == 180
     assert current(client, user1)["entry"] is None
 
 
@@ -110,24 +108,19 @@ def test_start_other_task_stops_running(client, user1, clock):
     assert r.status_code == 201
     body = r.json()
     assert body["stopped"]["id"] == first["id"]
-    assert (body["stopped"]["duration_seconds"], body["stopped"]["minutes"]) == (90, 2)
+    assert body["stopped"]["duration_seconds"] == 90
     assert body["stopped"]["stopped_at"] == body["entry"]["started_at"]
     assert body["entry"]["task_id"] == 6
     assert current(client, user1)["entry"]["id"] == body["entry"]["id"]
 
 
-@pytest.mark.parametrize(
-    "elapsed,seconds,minutes",
-    [(0, 0, 1), (59.9, 59, 1), (60, 60, 1), (61.5, 61, 2)],
-)
-def test_duration_is_floored_and_minutes_rounded_up(
-    client, user1, clock, elapsed, seconds, minutes
-):
+@pytest.mark.parametrize("elapsed,seconds", [(0, 0), (59.9, 59), (60, 60), (61.5, 61)])
+def test_duration_is_floored(client, user1, clock, elapsed, seconds):
     # запись любой длины сохраняется, в том числе 0 с (раньше короче 30 с — 422)
     start(client, user1)
     clock.at = T0 + timedelta(seconds=elapsed)
     stopped = stop(client, user1).json()["stopped"]
-    assert (stopped["duration_seconds"], stopped["minutes"]) == (seconds, minutes)
+    assert stopped["duration_seconds"] == seconds
 
 
 def test_stop_before_start_by_clock_skew_gives_zero(client, user1, clock):
@@ -156,43 +149,28 @@ def test_admin_has_own_timer(client, user1, admin):
     assert current(client, user1)["entry"] is not None
 
 
-def test_list_has_old_and_new_fields(client, user1, clock):
+def test_entry_fields(client, user1, clock):
     start(client, user1)
     [entry] = client.get("/api/time/time-entries", headers=user1).json()["items"]
-    old = {"id", "user_id", "task_id", "minutes", "description", "date", "is_active", "created_at"}
-    assert old | {"started_at", "stopped_at", "duration_seconds"} <= entry.keys()
-    assert entry["is_active"] is True
-
-
-def legacy_insert(conn, user_id=1):
-    # так пишет старый под в окне выкатки: новых колонок он не знает
-    conn.execute(
-        text(
-            "INSERT INTO time_entries (task_id, user_id, minutes, is_active) "
-            "VALUES (1, :u, 5, true)"
-        ),
-        {"u": user_id},
-    )
-
-
-def test_rows_from_old_pods_are_not_running(client, user1):
-    with engine.begin() as conn:
-        legacy_insert(conn)
-        legacy_insert(conn)
-    assert current(client, user1)["entry"] is None
-    assert start(client, user1).status_code == 201
-    with engine.begin() as conn:
-        legacy_insert(conn)
-    entries = client.get("/api/time/time-entries", headers=user1).json()["items"]
-    assert sorted(e["started_at"] is None for e in entries) == [False, True, True, True]
+    assert entry.keys() == {
+        "id",
+        "user_id",
+        "task_id",
+        "started_at",
+        "stopped_at",
+        "duration_seconds",
+        "description",
+        "created_at",
+        "updated_at",
+    }
 
 
 def assert_one_running_per_user(session_factory):
     with session_factory() as db:
-        db.add(TimeEntry(task_id=1, user_id=1, started_at=T0, minutes=1))
-        db.add(TimeEntry(task_id=1, user_id=2, started_at=T0, minutes=1))
+        db.add(TimeEntry(task_id=1, user_id=1, started_at=T0))
+        db.add(TimeEntry(task_id=1, user_id=2, started_at=T0))
         db.commit()
-        db.add(TimeEntry(task_id=2, user_id=1, started_at=T0, minutes=1))
+        db.add(TimeEntry(task_id=2, user_id=1, started_at=T0))
         with pytest.raises(IntegrityError):
             db.commit()
 
@@ -238,7 +216,7 @@ def test_parallel_start_on_postgres_keeps_one_running(pg_app):
     Session = sessionmaker(autoflush=False, bind=pg_app.engine)
     # первый старт другой реплики: запись вставлена, транзакция ещё открыта
     first = Session()
-    first.add(TimeEntry(task_id=1, user_id=1, started_at=crud.now(), minutes=1))
+    first.add(TimeEntry(task_id=1, user_id=1, started_at=crud.now()))
     first.flush()
     result = {}
 

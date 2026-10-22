@@ -30,13 +30,10 @@ class TimeEntryRead(BaseModel):
     id: int
     user_id: int
     task_id: int
-    started_at: datetime | None
+    started_at: datetime
     stopped_at: datetime | None
     duration_seconds: int | None
     description: str | None = None
-    minutes: int | None
-    date: datetime
-    is_active: bool
     created_at: datetime
     updated_at: datetime | None = None
 

@@ -15,9 +15,31 @@ if config.config_file_name is not None:
 
 target_metadata = Base.metadata
 
+# Уже не в модели, но ещё в базе: старые поды читают их в окне выкатки, удаляет следующая миграция
+PENDING_DROP = {
+    ("time_entries", "minutes"),
+    ("time_entries", "date"),
+    ("time_entries", "is_active"),
+}
+
+
+def include_object(obj, name, type_, reflected, compare_to):
+    return not (
+        type_ == "column"
+        and reflected
+        and compare_to is None
+        and (obj.table.name, name) in PENDING_DROP
+    )
+
+
 # render_as_batch: в SQLite ALTER TABLE ограничен, Alembic пересоздаёт таблицу
 # compare_type: autogenerate и alembic check замечают смену типа колонки
-CONFIGURE_OPTS = {"target_metadata": target_metadata, "render_as_batch": True, "compare_type": True}
+CONFIGURE_OPTS = {
+    "target_metadata": target_metadata,
+    "render_as_batch": True,
+    "compare_type": True,
+    "include_object": include_object,
+}
 
 
 def run_migrations_offline() -> None:

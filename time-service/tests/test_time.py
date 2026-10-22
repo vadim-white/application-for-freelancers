@@ -6,10 +6,6 @@ from datetime import UTC, datetime, timedelta
 
 import httpx
 import pytest
-from sqlalchemy.orm import sessionmaker
-
-from app.db import SessionLocal
-from app.models import TimeEntry
 
 from .conftest import auth, make_token
 
@@ -121,23 +117,22 @@ def test_admin_sees_all_and_can_filter(client, user1, user2, admin):
 # --- Ручная запись ---
 
 
-def test_create_fills_duration_and_minutes(client, user1):
+def test_create_fills_duration(client, user1):
     r = create(client, user1, minutes=5, description="manual")
     assert r.status_code == 201
     entry = r.json()
     assert (entry["task_id"], entry["description"]) == (1, "manual")
     assert datetime.fromisoformat(entry["started_at"]) == A
     assert datetime.fromisoformat(entry["stopped_at"]) == A + timedelta(minutes=5)
-    # minutes пишется вместе с новыми полями: старые поды в окне выкатки читают его
-    assert (entry["duration_seconds"], entry["minutes"]) == (300, 5)
+    assert entry["duration_seconds"] == 300
 
 
-@pytest.mark.parametrize("seconds,minutes", [(0, 1), (1, 1), (60, 1), (61, 2)])
-def test_create_dual_write_minutes_rounds_up(client, user1, seconds, minutes):
+@pytest.mark.parametrize("seconds", [0, 1, 61.9])
+def test_create_any_length_duration_floored(client, user1, seconds):
     body = {"started_at": iso(A), "stopped_at": iso(A + timedelta(seconds=seconds))}
     r = client.post("/api/time/time-entries", json={"task_id": 1, **body}, headers=user1)
     assert r.status_code == 201
-    assert (r.json()["duration_seconds"], r.json()["minutes"]) == (seconds, minutes)
+    assert r.json()["duration_seconds"] == int(seconds)
 
 
 def test_create_accepts_time_with_offset(client, user1):
@@ -266,19 +261,6 @@ def test_list_limit_200_allowed(client, user1):
     assert client.get("/api/time/time-entries?limit=200", headers=user1).json()["limit"] == 200
 
 
-def test_list_rows_from_old_pods_go_last_and_miss_time_filters(client, user1):
-    # так пишет старый под в окне выкатки: новых колонок он не знает
-    with SessionLocal() as db:
-        db.add(TimeEntry(task_id=1, user_id=1, minutes=5))
-        db.commit()
-    seed(client, user1, count=2)
-    for sort in ("started_at", "-started_at"):
-        assert items(client, user1, f"?sort={sort}")[-1]["started_at"] is None
-    assert len(items(client, user1, "?from=2000-01-01T00:00:00Z")) == 2
-    assert len(items(client, user1, "?to=2100-01-01T00:00:00Z")) == 2
-    assert client.get("/api/time/time-entries", headers=user1).json()["total"] == 3
-
-
 # --- PATCH ---
 
 
@@ -292,7 +274,7 @@ def test_patch_description_only_keeps_times(client, user1):
     assert r.status_code == 200
     updated = r.json()
     assert updated["description"] == "new"
-    for field in ("started_at", "stopped_at", "duration_seconds", "minutes", "task_id"):
+    for field in ("started_at", "stopped_at", "duration_seconds", "task_id"):
         assert updated[field] == entry[field]
 
 
@@ -301,12 +283,12 @@ def test_patch_null_description_clears_it(client, user1):
     assert patch(client, user1, entry["id"], description=None).json()["description"] is None
 
 
-def test_patch_times_recalculates_duration_and_minutes(client, user1):
+def test_patch_times_recalculates_duration(client, user1):
     entry = create(client, user1, minutes=5).json()
     r = patch(client, user1, entry["id"], stopped_at=iso(A + timedelta(seconds=125)))
-    assert (r.json()["duration_seconds"], r.json()["minutes"]) == (125, 3)
+    assert r.json()["duration_seconds"] == 125
     r = patch(client, user1, entry["id"], started_at=iso(A + timedelta(seconds=5)))
-    assert (r.json()["duration_seconds"], r.json()["minutes"]) == (120, 2)
+    assert r.json()["duration_seconds"] == 120
 
 
 def test_patch_stopped_before_started_422(client, user1):
@@ -374,19 +356,9 @@ def test_patch_running_entry(client, user1):
     # начало идущей можно сдвинуть: длительность появится при остановке
     earlier = iso(datetime.now(UTC) - timedelta(minutes=10))
     r = patch(client, user1, entry["id"], started_at=earlier)
-    assert (r.status_code, r.json()["duration_seconds"], r.json()["minutes"]) == (200, None, 1)
+    assert (r.status_code, r.json()["duration_seconds"]) == (200, None)
     stopped = client.post("/api/time/timer/stop", headers=user1).json()["stopped"]
     assert stopped["duration_seconds"] >= 600
-
-
-def test_patch_row_from_old_pod_time_409_description_ok(client, user1):
-    with SessionLocal() as db:
-        old = TimeEntry(task_id=1, user_id=1, minutes=5)
-        db.add(old)
-        db.commit()
-        entry_id = old.id
-    assert patch(client, user1, entry_id, description="ok").status_code == 200
-    assert patch(client, user1, entry_id, stopped_at=iso(A)).status_code == 409
 
 
 # --- DELETE ---
@@ -455,9 +427,6 @@ def test_statistics_fields(client, user1, user2, admin):
 def test_statistics_count_only_closed_entries(client, user1, admin):
     create(client, user1, minutes=2)
     client.post("/api/time/timer/start", json={"task_id": 2}, headers=user1)
-    with SessionLocal() as db:
-        db.add(TimeEntry(task_id=3, user_id=1, minutes=5))
-        db.commit()
     [row] = client.get("/api/time/statistics/users", headers=admin).json()
     assert (row["entries_count"], row["tasks_count"], row["total_seconds"]) == (1, 1, 120)
 
@@ -504,16 +473,12 @@ def test_pool_reconnects_after_database_restart(pg_app, client, user1):
 
 
 def test_list_and_statistics_on_postgres(pg_app, client, user1, admin):
-    with sessionmaker(bind=pg_app.engine)() as db:
-        db.add(TimeEntry(task_id=1, user_id=1, minutes=5))
-        db.commit()
     seed(client, user1, count=3)
     client.post("/api/time/timer/start", json={"task_id": 9}, headers=user1)
-    # записи без started_at — в конце при обеих сортировках, как на SQLite
-    for sort in ("started_at", "-started_at"):
-        assert items(client, user1, f"?sort={sort}")[-1]["started_at"] is None
+    # идущая начата последней: первая при сортировке по убыванию
+    assert items(client, user1)[0]["stopped_at"] is None
     body = client.get("/api/time/time-entries?limit=2&offset=1", headers=user1).json()
-    assert (body["total"], len(body["items"])) == (5, 2)
+    assert (body["total"], len(body["items"])) == (4, 2)
     [row] = client.get("/api/time/statistics/users", headers=admin).json()
     assert row == {
         "user_id": 1,

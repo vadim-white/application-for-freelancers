@@ -99,8 +99,6 @@ def update_entry(
         return crud.update_time_entry(db, entry, entry_in)
     except crud.InvalidEntry as e:
         raise HTTPException(status_code=422, detail=str(e)) from e
-    except crud.LegacyEntry as e:
-        raise HTTPException(status_code=409, detail="Entry is not migrated yet, retry later") from e
 
 
 @router.delete("/time-entries/{entry_id}", status_code=204)
