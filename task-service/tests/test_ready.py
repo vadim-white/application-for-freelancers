@@ -2,10 +2,12 @@ import socket
 import threading
 import time
 
+import psycopg
 import pytest
 from alembic import command
 from alembic.config import Config
 from sqlalchemy import create_engine, text
+from sqlalchemy.exc import OperationalError
 
 from app import ready
 from app.db import connect_args
@@ -101,12 +103,51 @@ def test_silent_database_fails_within_connect_timeout(get_ready):
     "url, expected",
     [
         ("sqlite:///x.db", {"check_same_thread": False}),
-        ("postgresql+psycopg://u:p@db/x", {"connect_timeout": 2}),
+        (
+            "postgresql+psycopg://u:p@db/x",
+            {
+                "connect_timeout": 2,
+                "options": "-c statement_timeout=5000",
+                "keepalives": 1,
+                "keepalives_idle": 5,
+                "keepalives_interval": 2,
+                "keepalives_count": 3,
+                "tcp_user_timeout": 5000,
+            },
+        ),
         ("mysql://u:p@db/x", {}),
     ],
 )
 def test_connect_args(url, expected):
     assert connect_args(url) == expected
+
+
+def test_postgres_connect_args_are_known_to_libpq():
+    # опечатка в имени параметра иначе всплыла бы только при соединении с базой
+    args = connect_args("postgresql+psycopg://u:p@db/x")
+    conninfo = psycopg.conninfo.make_conninfo("", **args)
+    assert psycopg.conninfo.conninfo_to_dict(conninfo) == {k: str(v) for k, v in args.items()}
+
+
+def test_slow_query_is_cancelled_by_statement_timeout(pg_app, client):
+    started = time.monotonic()
+    with (
+        pytest.raises(OperationalError, match="statement timeout"),
+        pg_app.engine.connect() as conn,
+    ):
+        conn.execute(text("SELECT pg_sleep(10)"))
+    assert 4.5 < time.monotonic() - started < 7
+
+    # /ready ждёт блокировку alembic_version, как зависший запрос: 503 по statement_timeout
+    with pg_app.engine.begin() as locker:
+        locker.execute(text("LOCK TABLE alembic_version IN ACCESS EXCLUSIVE MODE"))
+        started = time.monotonic()
+        r = client.get("/ready")
+        elapsed = time.monotonic() - started
+    assert r.status_code == 503
+    assert r.json()["reason"] == "database unavailable"
+    assert 4.5 < elapsed < 7
+    assert client.get("/ready").status_code == 200
 
 
 def test_load_revisions_returns_head_and_its_ancestors(tmp_path):

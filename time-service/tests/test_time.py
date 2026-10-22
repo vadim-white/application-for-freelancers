@@ -178,3 +178,10 @@ def test_settings_require_database_url(tmp_path):
     )
     assert r.returncode != 0
     assert "DATABASE_URL" in r.stderr
+
+
+def test_pool_reconnects_after_database_restart(pg_app, client, user1):
+    assert client.get("/api/time/time-entries", headers=user1).status_code == 200
+    # соединение осталось в пуле, а база его закрыла: без pre-ping первый запрос получил бы 500
+    assert pg_app.terminate() >= 1
+    assert client.get("/api/time/time-entries", headers=user1).status_code == 200

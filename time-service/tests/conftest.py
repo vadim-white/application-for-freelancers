@@ -11,11 +11,14 @@ os.environ["DATABASE_URL"] = f"sqlite:///{tempfile.mkdtemp()}/time_test.db"
 
 import jwt
 import pytest
+from alembic import command
 from alembic.config import Config
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine, inspect, text
+from sqlalchemy import create_engine, event, inspect, text
+from sqlalchemy.orm import sessionmaker
 
-from app.db import Base, engine
+from app import deps, ready
+from app.db import Base, engine, make_engine
 from app.main import app
 
 TEST_SECRET = "test-secret-key-at-least-32-bytes-long"
@@ -125,3 +128,49 @@ def migrations_db(request, tmp_path):
         with admin.connect() as conn:
             conn.execute(text(f"DROP SCHEMA {schema} CASCADE"))
         admin.dispose()
+
+
+@pytest.fixture
+def pg_app(monkeypatch):
+    """Приложение на PostgreSQL из TEST_POSTGRES_URL: движок из make_engine, своя схема на head.
+
+    Сессии API и /ready идут через этот движок; без переменной тест пропускается.
+    terminate() обрывает его соединения со стороны сервера — как перезапуск базы.
+    """
+    url = os.environ.get("TEST_POSTGRES_URL")
+    if not url:
+        pytest.skip("TEST_POSTGRES_URL не задана: тест на PostgreSQL пропущен")
+    schema = f"app_{uuid.uuid4().hex[:12]}"
+    admin = create_engine(url, isolation_level="AUTOCOMMIT")
+    with admin.connect() as conn:
+        conn.execute(text(f"CREATE SCHEMA {schema}"))
+    engine = make_engine(url)
+    pids = []
+
+    # options занят statement_timeout, поэтому схема задаётся командой после соединения
+    @event.listens_for(engine, "connect")
+    def on_connect(dbapi_conn, _record):
+        dbapi_conn.execute(f"SET search_path TO {schema}")
+        dbapi_conn.commit()
+        pids.append(dbapi_conn.info.backend_pid)
+
+    cfg = Config(str(SERVICE_ROOT / "alembic.ini"))
+    with engine.begin() as connection:
+        cfg.attributes["connection"] = connection
+        command.upgrade(cfg, "head")
+
+    def terminate():
+        with admin.connect() as conn:
+            query = text(
+                "SELECT count(*) FILTER (WHERE pg_terminate_backend(pid)) FROM unnest(:pids) AS pid"
+            )
+            return conn.execute(query, {"pids": pids}).scalar_one()
+
+    monkeypatch.setattr(deps, "SessionLocal", sessionmaker(autoflush=False, bind=engine))
+    monkeypatch.setattr(ready, "engine", engine)
+    yield SimpleNamespace(engine=engine, terminate=terminate)
+
+    engine.dispose()
+    with admin.connect() as conn:
+        conn.execute(text(f"DROP SCHEMA {schema} CASCADE"))
+    admin.dispose()

@@ -401,3 +401,10 @@ def test_admin_move_task(client, user_headers, other_headers, admin_headers):
     assert r.status_code == 200
     assert r.json()["project_id"] == p1b
     assert r.json()["owner_id"] == 1
+
+
+def test_pool_reconnects_after_database_restart(pg_app, client, user_headers):
+    assert client.get("/api/tasks/projects", headers=user_headers).status_code == 200
+    # соединение осталось в пуле, а база его закрыла: без pre-ping первый запрос получил бы 500
+    assert pg_app.terminate() >= 1
+    assert client.get("/api/tasks/projects", headers=user_headers).status_code == 200
