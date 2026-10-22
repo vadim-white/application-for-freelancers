@@ -51,11 +51,11 @@ Gateway держит один HTTP-клиент на процесс (`httpx.Asyn
 
 ## Стек
 
-- Python 3.14, FastAPI, SQLAlchemy 2.0, Pydantic 2, драйвер PostgreSQL psycopg 3
+- Python 3.14, FastAPI 0.160, SQLAlchemy 2.1 (модели на `Mapped[]`), Pydantic 2, драйвер PostgreSQL psycopg 3
 - uv — зависимости Python (`pyproject.toml` + `uv.lock` в каждом сервисе), pytest
 - PostgreSQL 15 (в Docker), SQLite для локальной разработки без контейнеров
 - JWT (PyJWT), хеширование паролей — pwdlib с bcrypt
-- Vue 3, TypeScript, Pinia, Vue Router, Axios, Vite, Naive UI; Node.js 24 (сборка фронтенда), проверка типов — vue-tsc
+- Vue 3.5, TypeScript 5.9, Pinia 2, Vue Router 4, Axios 1, Vite 5, Naive UI 2; Node.js 24 (сборка фронтенда), проверка типов — vue-tsc
 - nginx (раздача собранного фронтенда и прокси `/api`)
 - Docker, Docker Compose, Kubernetes
 
@@ -314,6 +314,8 @@ GitHub Actions, workflow [.github/workflows/ci.yml](.github/workflows/ci.yml). �
 - инструменты — образы по digest (shellcheck, actionlint, gitleaks, kubeconform) и бинарники с проверкой sha256: uv 0.13.1 (`checksum` у setup-uv), kubectl v1.35.9 (на раннере kubectl 1.37, а сервер kind — 1.35, это больше допустимой разницы в одну минорную версию). У kind проверяется версия на раннере (v0.33.0): если образ раннера её поменяет, job упадёт с понятной ошибкой;
 - PostgreSQL в job `python` — `postgres:15-alpine`, тот же тег, что в compose и манифестах.
 
+Обновления зависимостей предлагает Dependabot ([.github/dependabot.yml](.github/dependabot.yml)) раз в неделю (понедельник): uv (четыре сервиса — одной группой), npm (фронтенд), GitHub Actions (SHA и комментарий с версией обновляются вместе), Docker (`FROM` в Dockerfile, тег и digest). Патчи и минорные приходят одним PR на экосистему, мажорные — отдельными PR. e2e (`tests/e2e/uv.lock` и образ Playwright) — один общий PR (`multi-ecosystem-groups`): пакет `playwright` и образ должны быть одного релиза. Не предлагаются минорные и мажорные версии образа `python` и мажорные `node`: они меняются вместе с `requires-python`, `.nvmrc` и CI. PR вливаются вручную после зелёного CI. Вне Dependabot (обновляются руками): образы инструментов и версии uv, kubectl, kind в `ci.yml` (`env`), `postgres:15-alpine` в compose и манифестах (мажорная версия базы требует переноса данных), образ uv в рецептах README.
+
 ## Конфигурация
 
 Основные переменные окружения. Для Docker Compose общие переменные (`SECRET_KEY`, `ALGORITHM`, `ACCESS_TOKEN_EXPIRE_MINUTES`, пароли баз, `BIND_ADDR`, `CORS_ORIGINS`, `SEED_TEST_USERS`) задаются в корневом `.env`: шаблон — [.env.example](.env.example), создаёт файл `./scripts/init-env.sh`, в git `.env` не попадает. Остальное (адреса сервисов, `GATEWAY_URL` фронтенда, `DATABASE_URL`, который собирается из паролей в `.env`) задано в `docker-compose.yml`. В Kubernetes `SECRET_KEY` берётся из `k8s/overlays/local/app.env` (Secret `app-secrets`), пароли баз — из `db.env` (Secret `db-credentials`), `DATABASE_URL` собирается в манифесте подстановкой `$(DB_PASSWORD)`, а несекретное (`ALGORITHM`, `ACCESS_TOKEN_EXPIRE_MINUTES`, адреса сервисов) лежит в ConfigMap `service-config`. Для запуска без Docker все переменные с описанием собраны в файлах `.env.example` в папке каждого сервиса и в `frontend/login_page`.
@@ -388,7 +390,7 @@ curl -X POST http://localhost:8000/api/auth/login \
 │   ├── smoke.sh         curl-прогон через gateway, режимы compose и k8s
 │   └── e2e/             e2e в браузере (pytest-playwright): авто-refresh, «только свои», счётчик задач, роут `/`; run.sh — запуск в Docker
 ├── scripts/             вспомогательные скрипты (init-env.sh — .env, init-k8s-env.sh — секреты кластера, kind-up.sh — кластер kind и образы, k8s-deploy.sh — деплой в кластер)
-├── .github/workflows/   CI (GitHub Actions): ci.yml
+├── .github/             CI (GitHub Actions): workflows/ci.yml; dependabot.yml — еженедельные обновления зависимостей
 ├── .env.example         шаблон общих переменных для Docker Compose
 ├── .git-blame-ignore-revs коммиты форматирования, которые пропускает git blame
 ├── .gitleaks.toml       allowlist gitleaks: фиктивные JWT-ключи тестов
@@ -411,7 +413,7 @@ curl -X POST http://localhost:8000/api/auth/login \
 - `SECRET_KEY` обязателен во всех сервисах, `DATABASE_URL` обязателен в auth, task и time: значений по умолчанию (в том числе SQLite-файла) нет, без них сервис не стартует. CORS настроен только в gateway и разрешает лишь адреса из `CORS_ORIGINS`
 - Фронтенд сам обновляет access-токен: на ответ 401 он один раз запрашивает `/api/auth/refresh` (параллельные запросы ждут один общий refresh) и повторяет запрос. Если refresh не удался, токены удаляются и открывается страница входа. Оба сценария проверяет e2e-тест в браузере (`tests/e2e/`, compose и kind). Refresh-токен живёт 7 дней и не обновляется, после этого нужно войти заново
 - Кнопка «Выполнено» в списке задач проекта ставит статус `done`, а не удаляет задачу. Выполненные задачи показываются отдельным сворачиваемым блоком под текущими
-- Python 3.14 во всех образах. В Docker Compose и Kubernetes сервисы работают с PostgreSQL через psycopg 3 (`postgresql+psycopg://`). Зависимости бэкенда ведёт uv: прямые закреплены точными версиями (`==`) в `pyproject.toml` сервиса, все вместе с транзитивными — в `uv.lock` (версии и хеши), общие пакеты одинаковы во всех сервисах. Образ ставит их `uv sync --locked` (сборка падает, если `uv.lock` не совпадает с `pyproject.toml`) в `/opt/venv`; сам uv в итоговый образ не попадает. `pytest`, `httpx2` и `pytest-cov` — в dev-группе, в образ не ставятся
+- Python 3.14 во всех образах. В Docker Compose и Kubernetes сервисы работают с PostgreSQL через psycopg 3 (`postgresql+psycopg://`). Зависимости бэкенда ведёт uv: прямые закреплены точными версиями (`==`) в `pyproject.toml` сервиса, все вместе с транзитивными — в `uv.lock` (версии и хеши), общие пакеты одинаковы во всех сервисах (FastAPI 0.160.0, SQLAlchemy 2.1.6, pydantic-settings 2.16.1; httpx 0.28.1 — в task, time и gateway). Модели auth, task и time описаны через `Mapped[]`/`mapped_column`, nullability колонок совпадает с миграциями (тест `alembic check`). Обновления версий предлагает Dependabot (см. «CI»). Образ ставит их `uv sync --locked` (сборка падает, если `uv.lock` не совпадает с `pyproject.toml`) в `/opt/venv`; сам uv в итоговый образ не попадает. `pytest`, `httpx2` и `pytest-cov` — в dev-группе, в образ не ставятся
 - Схема БД auth-service, task-service и time-service управляется миграциями Alembic (`<service>/migrations/`): в Docker Compose их применяют сервисы `ser-auth-migrate`, `ser-task-migrate` и `ser-time-migrate` до старта своего сервиса, в Kubernetes — Job `auth-migrate`, `task-migrate`, `time-migrate` (один раз на деплой, порядок задаёт `scripts/k8s-deploy.sh`). Тест в каждом из них проверяет, что миграции совпадают с моделями
 - Проекты хранятся только в task-service: дубль проектов в time-service (`/api/time/projects`) удалён, фронтенд создаёт проект одним запросом. `user_id` записи времени обязателен (NOT NULL), фронтенд его не отправляет: сервер берёт `user_id` из токена
 - Автотесты (pytest) есть у всех бэкенд-сервисов (с PostgreSQL: gateway 81, auth 60, task 77, time 52; без `TEST_POSTGRES_URL` тесты миграций, `/ready` и таймаутов к базе на PostgreSQL пропускаются — 81 / 50 + 10 skipped / 66 + 11 skipped / 42 + 10 skipped), покрытие 100 / 95 / 98 / 99 % с порогом в `pyproject.toml`. Python-код проверяет ruff (`ruff.toml`, см. «Линтер»), типы фронтенда — `npm run typecheck` (vue-tsc, 0 ошибок). Сквозные проверки: smoke (`tests/smoke.sh`, compose 120, k8s 118) и e2e в браузере (`tests/e2e/`, 5 тестов: авто-refresh, неудачный refresh, «только свои», счётчик задач, роут `/`). Всё это, а также shellcheck, gitleaks, kubeconform и сквозные прогоны в compose и kind с нуля, выполняет CI (GitHub Actions) на каждый push и pull request (см. «CI»)

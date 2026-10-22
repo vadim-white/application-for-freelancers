@@ -31,7 +31,7 @@ def make_engine(url: str):
 
 engine = make_engine(SQLALCHEMY_DATABASE_URL)
 
-SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+SessionLocal = sessionmaker(autoflush=False, bind=engine)
 
 
 class Base(DeclarativeBase):

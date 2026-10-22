@@ -1,6 +1,8 @@
 import enum
+from datetime import datetime
 
-from sqlalchemy import Boolean, Column, DateTime, Enum, Integer, String, func
+from sqlalchemy import DateTime, Enum, func
+from sqlalchemy.orm import Mapped, mapped_column
 
 from .db import Base
 
@@ -13,10 +15,12 @@ class UserRole(enum.Enum):
 class User(Base):
     __tablename__ = "users"
 
-    id = Column(Integer, primary_key=True, index=True)
-    email = Column(String, unique=True, index=True, nullable=False)
-    hashed_password = Column(String, nullable=False)
-    created_at = Column(DateTime(timezone=True), server_default=func.now())
-    full_name = Column(String, nullable=True)
-    is_active = Column(Boolean, default=True, nullable=False)
-    role = Column(Enum(UserRole), default=UserRole.user, nullable=False)
+    id: Mapped[int] = mapped_column(primary_key=True, index=True)
+    email: Mapped[str] = mapped_column(unique=True, index=True)
+    hashed_password: Mapped[str]
+    created_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    full_name: Mapped[str | None]
+    is_active: Mapped[bool] = mapped_column(default=True)
+    role: Mapped[UserRole] = mapped_column(Enum(UserRole), default=UserRole.user)

@@ -1,0 +1,74 @@
+# Раз в неделю: патчи и минорные — один PR на экосистему, мажорные — отдельными PR.
+# PR вливаются вручную после зелёного CI.
+version: 2
+
+multi-ecosystem-groups:
+  # пакет playwright и образ Playwright должны быть одного релиза — обновляются одним PR
+  e2e:
+    schedule:
+      interval: weekly
+      day: monday
+
+updates:
+  - package-ecosystem: uv
+    # одна группа на все сервисы: общие пакеты остаются одинаковых версий
+    directories:
+      - /auth-service
+      - /task-service
+      - /time-service
+      - /gateway-service
+    schedule:
+      interval: weekly
+      day: monday
+    groups:
+      python-minor-patch:
+        update-types: [minor, patch]
+
+  - package-ecosystem: npm
+    directory: /frontend/login_page
+    schedule:
+      interval: weekly
+      day: monday
+    groups:
+      npm-minor-patch:
+        update-types: [minor, patch]
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    groups:
+      actions-minor-patch:
+        update-types: [minor, patch]
+
+  - package-ecosystem: docker
+    directories:
+      - /auth-service
+      - /task-service
+      - /time-service
+      - /gateway-service
+      - /frontend
+    schedule:
+      interval: weekly
+      day: monday
+    groups:
+      docker-minor-patch:
+        update-types: [minor, patch]
+    ignore:
+      # версия Python меняется вместе с requires-python, образом uv тестов и CI — отдельным шагом
+      - dependency-name: python
+        update-types: [version-update:semver-minor, version-update:semver-major]
+      # мажорная Node — вместе с .nvmrc, которую CI берёт для сборки
+      - dependency-name: node
+        update-types: [version-update:semver-major]
+
+  - package-ecosystem: uv
+    directory: /tests/e2e
+    patterns: ["*"]
+    multi-ecosystem-group: e2e
+
+  - package-ecosystem: docker
+    directory: /tests/e2e
+    patterns: ["*"]
+    multi-ecosystem-group: e2e
