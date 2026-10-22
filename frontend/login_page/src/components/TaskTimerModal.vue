@@ -24,6 +24,12 @@
           {{ task.description }}
         </div>
 
+        <!-- Таймер идёт на другой задаче -->
+        <n-alert v-if="otherRunning" type="warning" class="other-timer">
+          Идёт таймер на «{{ timer.runningTitle }}» — {{ timer.formatted }}.
+          Старт остановит его и запустит эту задачу.
+        </n-alert>
+
         <!-- Таймер -->
         <div class="timer-display">
           <div class="timer-value">{{ formattedElapsed }}</div>
@@ -36,45 +42,48 @@
 
         <!-- Кнопки управления -->
         <div class="timer-controls">
-          <n-button 
+          <n-button
             type="primary"
-            @click="onStart" 
-            :disabled="running"
+            @click="onStart"
+            :disabled="running || busy"
+            :loading="busy === 'start'"
             class="control-btn"
           >
-            ▶ Старт
+            {{ paused ? '▶ Продолжить' : '▶ Старт' }}
           </n-button>
-          <n-button 
+          <n-button
             type="warning"
-            @click="onPause" 
-            :disabled="!running"
+            @click="onPause"
+            :disabled="!running || busy"
+            :loading="busy === 'stop'"
             class="control-btn"
           >
             ⏸ Пауза
           </n-button>
-          <n-button 
-            type="error"
-            @click="onStop" 
-            :disabled="!hasRun || saving"
-            :loading="saving"
+          <n-button
+            type="success"
+            @click="onMarkDone"
+            :disabled="status === 'done' || busy"
+            :loading="busy === 'done'"
             class="control-btn"
           >
-            ⏹ Сохранить
+            ✓ Выполнена
           </n-button>
         </div>
 
         <!-- Заметка -->
         <div class="note-section">
           <label style="font-weight: 500; color: var(--color-text-primary); display: block; margin-bottom: 8px">
-            📝 Заметка (опционально)
+            📝 Заметка (опционально, сохраняется при старте)
           </label>
-          <n-input 
-            v-model:value="note" 
+          <n-input
+            v-model:value="note"
             type="textarea"
             placeholder="Добавьте описание работы..."
             rows="3"
             maxlength="200"
             show-count
+            :disabled="running"
           />
         </div>
 
@@ -82,7 +91,7 @@
         <div class="task-info">
           <div class="info-item">
             <span class="info-label">Статус:</span>
-            <n-tag type="info" round size="small">{{ task.status || 'pending' }}</n-tag>
+            <n-tag type="info" round size="small" class="task-status">{{ status || 'pending' }}</n-tag>
           </div>
         </div>
       </div>
@@ -97,132 +106,136 @@
 </template>
 
 <script setup lang="ts">
-import { ref, watch, computed, onUnmounted } from 'vue'
-import { createTimeEntry } from '../services/time'
-import { updateTask } from '../services/tasks'
+import { ref, watch, computed, type PropType } from 'vue'
+import { isAxiosError } from 'axios'
+import { updateTask, type Task } from '../services/tasks'
+import { useTimerStore, formatDuration } from '../stores/timer'
 import { useMessage } from 'naive-ui'
 
 const props = defineProps({
   show: Boolean,
-  task: Object
+  task: Object as PropType<Task | null>
 })
-const emit = defineEmits(['update:show', 'stopped'])
+const emit = defineEmits(['update:show', 'changed'])
 
 const message = useMessage()
+const timer = useTimerStore()
 
-const innerShow = ref(props.show)
-watch(() => props.show, (v) => (innerShow.value = v))
+const innerShow = ref(false)
+watch(
+  () => props.show,
+  (v) => {
+    innerShow.value = v
+    // другая вкладка могла запустить или остановить таймер
+    if (v) timer.refresh().catch(() => {})
+  },
+  { immediate: true }
+)
 
 function updateShow(v: boolean) {
   innerShow.value = v
   emit('update:show', v)
 }
 
-/* timer state */
-const running = ref(false)
-const startTs = ref<number | null>(null)
-const pausedAccum = ref(0) // seconds accumulated before current run
-const elapsed = ref(0) // seconds total
-let intervalId: number | null = null
-const saving = ref(false)
+const busy = ref<'start' | 'stop' | 'done' | null>(null)
 const note = ref('')
+const status = ref<string | null>(null)
 
-const status = computed(() => props.task?.status ?? 'todo')
-const hasRun = computed(() => elapsed.value > 0)
+// окно одно на дашборд: при смене задачи сбрасываем всё, что относилось к прежней
+watch(
+  () => props.task,
+  (t) => {
+    status.value = t?.status ?? null
+    note.value = ''
+  },
+  { immediate: true }
+)
+
+const running = computed(() => !!props.task && timer.entry?.task_id === props.task.id)
+const otherRunning = computed(() => !!timer.entry && !running.value)
+const paused = computed(() => !!props.task && timer.lastStopped?.task_id === props.task.id)
 
 const formattedElapsed = computed(() => {
-  const s = Math.floor(elapsed.value)
-  const hh = Math.floor(s / 3600).toString().padStart(2, '0')
-  const mm = Math.floor((s % 3600) / 60).toString().padStart(2, '0')
-  const ss = (s % 60).toString().padStart(2, '0')
-  return `${hh}:${mm}:${ss}`
+  if (running.value) return timer.formatted
+  if (paused.value) return formatDuration(timer.lastStopped?.duration_seconds ?? 0)
+  return formatDuration(0)
 })
 
-function tick() {
-  if (!startTs.value) return
-  const now = Date.now()
-  elapsed.value = pausedAccum.value + Math.floor((now - startTs.value) / 1000)
+function startErrorText(err: unknown): string {
+  if (isAxiosError(err)) {
+    const code = err.response?.status
+    const detail = err.response?.data?.detail
+    if (code === 404) return 'Задача не найдена — возможно, её удалили'
+    if (code === 409 && detail === 'Task is archived') return 'Задача или проект в архиве — таймер не запустить'
+    if (code === 409) return 'Таймер запустили одновременно в другом месте, попробуйте ещё раз'
+    if (code === 503) return 'Сервис задач недоступен, попробуйте позже'
+  }
+  return 'Не удалось запустить таймер'
 }
 
-function onStart() {
-  if (!props.task) return
-  if (running.value) return
-  // set backend status to in_progress
-  updateTask(props.task.id, { status: 'in_progress' }).catch(() => {})
-  startTs.value = Date.now()
-  running.value = true
-  intervalId = window.setInterval(tick, 500)
-}
-
-function onPause() {
-  if (!running.value) return
-  running.value = false
-  if (intervalId) {
-    clearInterval(intervalId)
-    intervalId = null
-  }
-  // accumulate elapsed
-  if (startTs.value) {
-    pausedAccum.value = pausedAccum.value + Math.floor((Date.now() - startTs.value) / 1000)
-  }
-  startTs.value = null
-  elapsed.value = pausedAccum.value
-}
-
-async function onStop() {
-  if (!props.task) return
-  // stop if running
-  if (running.value) {
-    onPause()
-  }
-  if (!hasRun.value) {
-    message.warning('Таймер не запущен')
-    return
-  }
-
-  // Конвертируем секунды в минуты
-  const minutes = Math.round(elapsed.value / 60)
-  const payload = {
-    task_id: props.task.id,
-    minutes,
-    description: note.value || props.task.title
-  }
-
-  saving.value = true
+async function onStart() {
+  const task = props.task
+  if (!task || running.value) return
+  const prevTitle = timer.runningTitle
+  busy.value = 'start'
   try {
-    await createTimeEntry(payload)
-    // Optionally mark task done — here не навязываем, но можно:
-    await updateTask(props.task.id, { status: 'done' })
-    message.success('Время сохранено и задача помечена как выполненная')
-    emit('stopped', payload)
-    // reset timer state
-    pausedAccum.value = 0
-    elapsed.value = 0
-    startTs.value = null
-    note.value = ''
-    innerShow.value = false
-    emit('update:show', false)
+    const stopped = await timer.start(task, note.value || undefined)
+    if (stopped && stopped.task_id !== task.id) {
+      message.info(`Таймер на «${prevTitle}» остановлен`)
+    }
   } catch (err) {
-    console.error('Error creating time entry:', err)
-    message.error('Ошибка при сохранении времени')
+    message.error(startErrorText(err))
+    timer.refresh().catch(() => {})
+    return
   } finally {
-    saving.value = false
+    busy.value = null
+  }
+
+  if (status.value === 'todo') {
+    try {
+      const updated = await updateTask(task.id, { status: 'in_progress' })
+      status.value = updated.status
+      emit('changed')
+    } catch {
+      message.warning('Таймер идёт, но статус задачи не изменился')
+    }
+  }
+}
+
+async function onPause() {
+  if (!running.value) return
+  busy.value = 'stop'
+  try {
+    const stopped = await timer.stop()
+    if (stopped) message.success(`Записано ${formatDuration(stopped.duration_seconds ?? 0)}`)
+  } catch {
+    message.error('Не удалось остановить таймер')
+    timer.refresh().catch(() => {})
+  } finally {
+    busy.value = null
+  }
+}
+
+async function onMarkDone() {
+  const task = props.task
+  if (!task) return
+  busy.value = 'done'
+  try {
+    const updated = await updateTask(task.id, { status: 'done' })
+    status.value = updated.status
+    message.success('Задача выполнена')
+    emit('changed')
+  } catch {
+    message.error('Не удалось завершить задачу')
+  } finally {
+    busy.value = null
   }
 }
 
 function onClose() {
-  // stop interval to avoid leaks
-  if (intervalId) {
-    clearInterval(intervalId)
-    intervalId = null
-  }
   innerShow.value = false
   emit('update:show', false)
 }
-
-onUnmounted(() => {
-  if (intervalId) clearInterval(intervalId)
-})
 </script>
 
 <style scoped>
@@ -233,6 +246,10 @@ onUnmounted(() => {
 
 .modal-content {
   padding: 24px 0;
+}
+
+.other-timer {
+  margin-bottom: 24px;
 }
 
 .task-description {

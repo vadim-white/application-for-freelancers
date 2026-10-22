@@ -1,19 +1,46 @@
 import api from './api'
 
-export async function createTimeEntry(entry: {
+// Запись времени из time-service; stopped_at = null — таймер идёт
+export interface TimeEntry {
+  id: number
+  user_id: number
   task_id: number
-  minutes: number
-  description?: string
-}) {
-  // гарантируем числа
-  entry.task_id = Number(entry.task_id)
-  entry.minutes = Number(entry.minutes)
-  
-  try {
-    const r = await api.post('/api/time/time-entries', entry)
-    return r.data
-  } catch (error: any) {
-    console.error('Failed to create time entry:', error.response?.data || error.message)
-    throw error
-  }
+  started_at: string
+  stopped_at: string | null
+  duration_seconds: number | null
+  description: string | null
+  created_at: string
+  updated_at: string | null
+}
+
+export interface TimerState {
+  entry: TimeEntry | null
+  server_time: string
+}
+
+export interface TimerStarted {
+  entry: TimeEntry
+  // запись, закрытая автостопом, если таймер шёл на другой задаче
+  stopped: TimeEntry | null
+  server_time: string
+}
+
+export interface TimerStopped {
+  stopped: TimeEntry | null
+  server_time: string
+}
+
+export async function getTimer(): Promise<TimerState> {
+  const r = await api.get('/api/time/timer')
+  return r.data
+}
+
+export async function startTimer(payload: { task_id: number; description?: string }): Promise<TimerStarted> {
+  const r = await api.post('/api/time/timer/start', payload)
+  return r.data
+}
+
+export async function stopTimer(): Promise<TimerStopped> {
+  const r = await api.post('/api/time/timer/stop')
+  return r.data
 }

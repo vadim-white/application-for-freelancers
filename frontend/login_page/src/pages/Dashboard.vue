@@ -53,6 +53,16 @@
     </n-layout-header>
 
     <n-layout-content class="dashboard-content">
+      <!-- Идущий таймер -->
+      <n-button
+        v-if="timer.entry"
+        type="warning"
+        class="running-timer"
+        @click="openRunningTimer"
+      >
+        ⏱️ {{ timer.runningTitle }} · {{ timer.formatted }}
+      </n-button>
+
       <!-- TAB: TASKS -->
       <div v-if="currentTab === 'tasks'" class="fade-in">
         <div class="section-header">
@@ -148,7 +158,7 @@
       :task="selectedTask"
       :show="taskModalShow"
       @update:show="taskModalShow = $event"
-      @stopped="onTaskStopped"
+      @changed="onTaskChanged"
     />
 
     <!-- Модал создания проекта -->
@@ -161,9 +171,10 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, computed, onMounted } from 'vue'
+import { ref, reactive, computed, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '../stores/auth'
+import { useTimerStore } from '../stores/timer'
 import { getProjects, getTasks } from '../services/tasks'
 import ProjectCard from '../components/ProjectCard.vue'
 import ProjectTasksDrawer from '../components/ProjectTasksDrawer.vue'
@@ -174,6 +185,7 @@ import api from '../services/api'
 
 const router = useRouter()
 const auth = useAuthStore()
+const timer = useTimerStore()
 const message = useMessage()
 
 const isAdmin = computed(() => {
@@ -233,9 +245,24 @@ function openTaskModal(task: any) {
   taskModalShow.value = true
 }
 
-function onTaskStopped(payload: any) {
+function openRunningTimer() {
+  const entry = timer.entry
+  if (!entry) return
+  // задачу могли удалить: окно всё равно открывается, чтобы таймер можно было остановить
+  selectedTask.value =
+    timer.runningTask?.id === entry.task_id
+      ? timer.runningTask
+      : { id: entry.task_id, title: timer.runningTitle, description: null, status: null }
+  taskModalShow.value = true
+}
+
+function onTaskChanged() {
   load()
   tasksDrawer.value?.loadTasks()
+}
+
+function onVisibilityChange() {
+  if (document.visibilityState === 'visible') timer.refresh().catch(() => {})
 }
 
 function onLogout() {
@@ -259,10 +286,16 @@ onMounted(async () => {
   if (!auth.user) {
     await auth.fetchMe()
   }
+  document.addEventListener('visibilitychange', onVisibilityChange)
+  timer.refresh().catch(() => message.error('Не удалось загрузить таймер'))
   await load()
   if (isAdmin.value) {
     await loadStatistics()
   }
+})
+
+onUnmounted(() => {
+  document.removeEventListener('visibilitychange', onVisibilityChange)
 })
 </script>
 
@@ -329,6 +362,10 @@ onMounted(async () => {
 
 .section-header {
   margin-bottom: 28px;
+}
+
+.running-timer {
+  margin-bottom: 20px;
 }
 
 .section-header h2 {
