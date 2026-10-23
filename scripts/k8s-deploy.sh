@@ -38,6 +38,32 @@ TAG="$(cat "$OVERLAY/image-tag")"
 case "$TAG" in
   ""|*[!A-Za-z0-9._-]*) die "некорректный тег в k8s/overlays/local/image-tag — выполните ./scripts/kind-up.sh" ;;
 esac
+# Тег должен быть собран из текущего дерева: иначе (например, docker start узла без kind-up.sh)
+# в кластер молча встают образы прошлого коммита. ALLOW_STALE_TAG=1 — выкатить такой тег намеренно.
+stale=""
+if git -C "$ROOT" rev-parse --git-dir >/dev/null 2>&1; then
+  head="$(git -C "$ROOT" rev-parse --short=12 HEAD)"
+  if [ -z "$(git -C "$ROOT" status --porcelain)" ]; then
+    [ "$TAG" = "$head" ] || stale="дерево чистое, HEAD $head"
+  else
+    case "$TAG" in
+      "$head"-dirty-*)
+        # правки после сборки: файл новее image-tag, который kind-up.sh пишет после загрузки образов
+        # shellcheck disable=SC2016
+        newer="$(cd "$ROOT" && git ls-files -m -o --exclude-standard -z \
+          | xargs -0 sh -c 'for f; do [ "$f" -nt "$0" ] && echo "$f"; done' "$OVERLAY/image-tag" | head -n 3)"
+        [ -z "$newer" ] || stale="файлы изменены после сборки: $(echo "$newer" | paste -sd ' ' -)" ;;
+      *) stale="в дереве незакоммиченные правки поверх HEAD $head" ;;
+    esac
+  fi
+fi
+if [ -n "$stale" ]; then
+  if [ "${ALLOW_STALE_TAG:-}" = 1 ]; then
+    echo "ПРЕДУПРЕЖДЕНИЕ: тег $TAG не соответствует рабочему дереву ($stale), ALLOW_STALE_TAG=1 — выкатываю" >&2
+  else
+    die "тег $TAG из image-tag не соответствует рабочему дереву ($stale) — выполните ./scripts/kind-up.sh (выкатить этот тег намеренно: ALLOW_STALE_TAG=1)"
+  fi
+fi
 # с imagePullPolicy: Never под без образа в узле висит в ErrImageNeverPull до таймаута rollout
 for image in $IMAGES; do
   docker exec "$NODE" crictl inspecti "$image:$TAG" >/dev/null 2>&1 \
