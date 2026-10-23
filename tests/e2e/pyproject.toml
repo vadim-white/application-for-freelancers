@@ -6,7 +6,7 @@ description = "Сквозные тесты фронта в браузере (Pla
 requires-python = "==3.12.*"
 dependencies = [
     # версия пакета = версии образа Playwright: драйвер пакета и браузеры образа из одного релиза
-    "playwright==1.63.0",
+    "playwright==1.64.0",
     "pytest-playwright==0.10.0",
     "pytest==9.1.1",
 ]
