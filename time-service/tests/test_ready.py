@@ -52,8 +52,8 @@ def test_downgraded_to_base_is_not_ready(migrations_db, get_ready):
     assert r.json()["reason"] == "schema not migrated"
 
 
-# до expand и до contract: новый под не принимает запросы, пока миграция не применена
-@pytest.mark.parametrize("revision", ["88fe6764944f", "5ea47ccd8dc7"])
+# каждая прошлая ревизия: новый под не принимает запросы, пока миграция не применена
+@pytest.mark.parametrize("revision", ["88fe6764944f", "5ea47ccd8dc7", "1a3e7ba4c4e7"])
 def test_schema_older_than_code_is_not_ready(migrations_db, get_ready, revision):
     migrations_db.run(command.upgrade, revision)
     r = get_ready(migrations_db.engine)

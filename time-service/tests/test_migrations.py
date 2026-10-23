@@ -17,6 +17,8 @@ TABLES = {"time_entries"}
 EXPECTED_ENUMS = set()
 BEFORE_EXPAND = "88fe6764944f"
 EXPAND = "5ea47ccd8dc7"
+CONTRACT = "1a3e7ba4c4e7"
+OLD_COLUMNS = {"minutes", "date", "is_active"}
 
 
 def test_upgrade_head_matches_models(migrations_db):
@@ -58,7 +60,8 @@ def test_expand_fills_old_entries(migrations_db):
             ),
             {"d": noon},
         )
-    db.run(command.upgrade, "head")
+    # не head: откат удаления колонок вернёт minutes пустым, откат expand (NOT NULL) не пройдёт
+    db.run(command.upgrade, EXPAND)
 
     fields = (TimeEntry.started_at, TimeEntry.stopped_at, TimeEntry.duration_seconds)
     with Session(db.engine) as s:
@@ -102,7 +105,7 @@ def test_contract_fills_rows_from_old_pods(migrations_db):
             text("INSERT INTO time_entries (task_id, user_id, started_at) VALUES (2, 1, :d)"),
             {"d": noon(db)},
         )
-    db.run(command.upgrade, "head")
+    db.run(command.upgrade, CONTRACT)
 
     fields = (TimeEntry.started_at, TimeEntry.stopped_at, TimeEntry.duration_seconds)
     with Session(db.engine) as s:
@@ -150,6 +153,52 @@ def test_contract_downgrade_back_to_expand(migrations_db):
     db.run(command.check)
 
 
+def columns_of(engine):
+    return {c["name"]: c for c in inspect(engine).get_columns("time_entries")}
+
+
+def test_drop_old_columns_and_back(migrations_db):
+    db = migrations_db
+    db.run(command.upgrade, CONTRACT)
+    with db.engine.begin() as conn:
+        conn.execute(
+            text(
+                "INSERT INTO time_entries (task_id, user_id, started_at, stopped_at, "
+                "duration_seconds, minutes, date) VALUES (1, 1, :d, :d, 0, 1, :d)"
+            ),
+            {"d": noon(db)},
+        )
+    db.run(command.upgrade, "head")
+    assert not OLD_COLUMNS & columns_of(db.engine).keys()
+    # SQLite пересоздаёт таблицу ради DROP COLUMN: CHECK и частичный индекс должны пережить это
+    checks = {c["name"] for c in inspect(db.engine).get_check_constraints("time_entries")}
+    assert checks == {
+        "ck_time_entries_stopped_after_started",
+        "ck_time_entries_duration_not_negative",
+    }
+    assert running_index_where(db.engine) == "stopped_at IS NULL"
+    with Session(db.engine) as s:
+        assert s.scalars(select(TimeEntry.duration_seconds)).all() == [0]
+
+    db.run(command.downgrade, CONTRACT)
+    columns = columns_of(db.engine)
+    assert all(columns[name]["nullable"] for name in OLD_COLUMNS)
+    with db.engine.begin() as conn:
+        conn.execute(
+            text("INSERT INTO time_entries (task_id, user_id, started_at) VALUES (2, 1, :d)"),
+            {"d": noon(db)},
+        )
+        query = text("SELECT task_id, minutes, date, is_active FROM time_entries ORDER BY id")
+        rows = conn.execute(query.columns(is_active=Boolean)).all()
+    # у старой строки date пустой, а не время отката; is_active — true, как ждёт код до contract
+    assert [(r.task_id, r.minutes, r.date is None, r.is_active) for r in rows] == [
+        (1, None, True, True),
+        (2, None, False, True),
+    ]
+    db.run(command.upgrade, "head")
+    db.run(command.check)
+
+
 @pytest.mark.parametrize(
     "values",
     [
@@ -175,19 +224,22 @@ def test_contract_constraints(migrations_db, values):
         conn.execute(text(insert + "VALUES " + values))
 
 
-def test_contract_gives_up_waiting_for_table_lock(pg_app):
+@pytest.mark.parametrize(
+    "before, after", [(EXPAND, CONTRACT), (CONTRACT, "head")], ids=["contract", "drop columns"]
+)
+def test_migration_gives_up_waiting_for_table_lock(pg_app, before, after):
     def migrate(cmd, revision):
         cfg = Config(str(SERVICE_ROOT / "alembic.ini"))
         with pg_app.engine.begin() as connection:
             cfg.attributes["connection"] = connection
             cmd(cfg, revision)
 
-    migrate(command.downgrade, EXPAND)
+    migrate(command.downgrade, before)
     with pg_app.engine.connect() as reader:
         # долгая транзакция держит ACCESS SHARE: ALTER ждал бы её, а все запросы — ALTER
         reader.execute(text("SELECT count(*) FROM time_entries"))
         started = time.monotonic()
         with pytest.raises(OperationalError, match="lock timeout"):
-            migrate(command.upgrade, "head")
+            migrate(command.upgrade, after)
         assert 2.5 < time.monotonic() - started < 4.5
     migrate(command.upgrade, "head")
