@@ -10,7 +10,7 @@
   },
   "dependencies": {
     "vue": "^3.3.4",
-    "pinia": "^2.0.33",
+    "pinia": "^4.1.0",
     "naive-ui": "^2.34.0",
     "vue-router": "^4.2.4",
     "axios": "^1.4.0"
