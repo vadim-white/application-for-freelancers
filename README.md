@@ -104,7 +104,7 @@ docker compose down -v
 
 ### Локальный запуск без Docker
 
-Нужны [uv](https://docs.astral.sh/uv/) (проверено на 0.13.1) и Node.js 24 (версия в `frontend/login_page/.nvmrc`). Python 3.14 (версия в `.python-version`) uv при необходимости скачает сам. Каждый сервис запускается в отдельном терминале со своим виртуальным окружением: `uv sync` создаёт `.venv` в папке сервиса и ставит в него зависимости строго по `uv.lock` (вместе с dev-группой для тестов), `uv run <команда>` выполняет команду в этом окружении, активировать его не нужно. Окружение `.venv`, созданное раньше через `python -m venv` с другой версией Python, uv пересоздаст сам. Добавить или обновить зависимость — `uv add 'пакет==версия'` в папке сервиса (меняет `pyproject.toml` и `uv.lock`, оба файла коммитятся вместе). В auth-service, task-service и time-service таблицы создаёт `uv run alembic upgrade head` (выполнить перед первым запуском и после обновления кода). Если `auth.db`, `task.db` или `time_service.db` осталась от версии без миграций, удалите её: на таблицах, созданных без Alembic, `alembic upgrade head` падает с ошибкой вида `table users already exists`. Базу выбирает обязательная переменная `DATABASE_URL`: для локального запуска в `.env.example` указан SQLite-файл в папке сервиса.
+Нужны [uv](https://docs.astral.sh/uv/) (проверено на 0.13.5) и Node.js 24 (версия в `frontend/login_page/.nvmrc`). Python 3.14 (версия в `.python-version`) uv при необходимости скачает сам. Каждый сервис запускается в отдельном терминале со своим виртуальным окружением: `uv sync` создаёт `.venv` в папке сервиса и ставит в него зависимости строго по `uv.lock` (вместе с dev-группой для тестов), `uv run <команда>` выполняет команду в этом окружении, активировать его не нужно. Окружение `.venv`, созданное раньше через `python -m venv` с другой версией Python, uv пересоздаст сам. Добавить или обновить зависимость — `uv add 'пакет==версия'` в папке сервиса (меняет `pyproject.toml` и `uv.lock`, оба файла коммитятся вместе). В auth-service, task-service и time-service таблицы создаёт `uv run alembic upgrade head` (выполнить перед первым запуском и после обновления кода). Если `auth.db`, `task.db` или `time_service.db` осталась от версии без миграций, удалите её: на таблицах, созданных без Alembic, `alembic upgrade head` падает с ошибкой вида `table users already exists`. Базу выбирает обязательная переменная `DATABASE_URL`: для локального запуска в `.env.example` указан SQLite-файл в папке сервиса.
 
 Перед первым запуском скопируйте в каждой папке сервиса и в `frontend/login_page` файл `.env.example` в `.env`. В `.env` всех четырёх бэкенд-сервисов впишите один и тот же `SECRET_KEY`. `DATABASE_URL` в auth, task и time уже есть в примере (SQLite). Без `SECRET_KEY` и `DATABASE_URL` сервисы не стартуют: значений по умолчанию нет, сервис сразу падает с ошибкой валидации настроек. Сгенерировать ключ: `python3 -c "import secrets; print(secrets.token_urlsafe(32))"`. Остальные значения из примеров подходят для локального запуска.
 
@@ -185,7 +185,7 @@ docker stop pg-test
 Без uv на машине — в Docker, в официальном образе uv с Python 3.14 на том же Debian, что и `python:3.14-slim` у сервисов:
 
 ```bash
-docker run --rm -v "$PWD/<service>":/src:ro ghcr.io/astral-sh/uv:0.13.1-python3.14-trixie-slim sh -c \
+docker run --rm -v "$PWD/<service>":/src:ro ghcr.io/astral-sh/uv:0.13.5-python3.14-trixie-slim sh -c \
   "cp -r /src /app && cd /app && rm -rf .env .venv && uv run --locked pytest -q"
 ```
 
@@ -243,7 +243,7 @@ uvx ruff@0.17.1 check --fix .        # исправить то, что ruff ум
 uvx ruff@0.17.1 format .             # отформатировать
 ```
 
-Без uv на машине — тот же образ, что для тестов: `docker run --rm -v "$PWD":/repo -w /repo ghcr.io/astral-sh/uv:0.13.1-python3.14-trixie-slim uvx ruff@0.17.1 check --no-cache .` (`--no-cache` — чтобы не появлялся `.ruff_cache`).
+Без uv на машине — тот же образ, что для тестов: `docker run --rm -v "$PWD":/repo -w /repo ghcr.io/astral-sh/uv:0.13.5-python3.14-trixie-slim uvx ruff@0.17.1 check --no-cache .` (`--no-cache` — чтобы не появлялся `.ruff_cache`).
 
 Отключены `B008` (`Depends()` / `Query()` в значениях по умолчанию — обычный приём FastAPI) и `UP042` (`class X(str, Enum)` → `StrEnum` меняет `str()` у значений). В `tests/conftest.py` импорты приложения стоят после `os.environ[...] = …`: config и engine читают окружение при импорте. Порядок этих строк менять нельзя, а `E402` такие присваивания нарушением не считает. У `tests/e2e/` свой `[tool.ruff]` в `pyproject.toml`: правила из корневого `ruff.toml`, но `target-version = "py312"`. e2e работает на Python 3.12 из образа Playwright, а с py314 `ruff format` переписывает `except (A, B):` в синтаксис 3.14 без скобок.
 
@@ -323,7 +323,7 @@ GitHub Actions, workflow [.github/workflows/ci.yml](.github/workflows/ci.yml). �
 
 Версии закреплены так же, как локально:
 - actions — полным SHA коммита с версией в комментарии (`actions/checkout@3d3c42e… # v7.0.1`): тег можно перевесить на другой код, SHA — нет. При обновлении берётся SHA из тега релиза, комментарий меняется вместе с ним. actionlint не проверяет входы actions, закреплённых по SHA, поэтому входы сверяются с `action.yml` этой версии вручную;
-- инструменты — образы по digest (shellcheck, actionlint, gitleaks, kubeconform) и бинарники с проверкой sha256: uv 0.13.1 (`checksum` у setup-uv), kubectl v1.35.9 (на раннере kubectl 1.37, а сервер kind — 1.35, это больше допустимой разницы в одну минорную версию). У kind проверяется версия на раннере (v0.33.0): если образ раннера её поменяет, job упадёт с понятной ошибкой;
+- инструменты — образы по digest (shellcheck, actionlint, gitleaks, kubeconform) и бинарники с проверкой sha256: uv 0.13.5 (`checksum` у setup-uv), kubectl v1.35.9 (на раннере kubectl 1.37, а сервер kind — 1.35, это больше допустимой разницы в одну минорную версию). У kind проверяется версия на раннере (v0.33.0): если образ раннера её поменяет, job упадёт с понятной ошибкой;
 - PostgreSQL в job `python` — `postgres:15-alpine`, тот же тег, что в compose и манифестах.
 
 Обновления зависимостей предлагает Dependabot ([.github/dependabot.yml](.github/dependabot.yml)) раз в неделю (понедельник): uv (четыре сервиса — одной группой), npm (фронтенд), GitHub Actions (SHA и комментарий с версией обновляются вместе), Docker (`FROM` в Dockerfile, тег и digest). Патчи и минорные приходят одним PR на экосистему, мажорные — отдельными PR. e2e (`tests/e2e/uv.lock` и образ Playwright) — один общий PR (`multi-ecosystem-groups`): пакет `playwright` и образ должны быть одного релиза. Не предлагаются минорные и мажорные версии образа `python` и мажорные `node`: они меняются вместе с `requires-python`, `.nvmrc` и CI. PR вливаются вручную после зелёного CI.
