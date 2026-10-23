@@ -226,7 +226,7 @@ E2E_BASE_URL=http://127.0.0.1:8080 bash tests/e2e/run.sh    # кластер kin
 bash tests/e2e/run.sh -k refresh -v                         # аргументы передаются pytest
 ```
 
-`run.sh` собирает образ `freelance-e2e` из [tests/e2e/Dockerfile](tests/e2e/Dockerfile) и запускает в нём pytest. База — `mcr.microsoft.com/playwright/python:v1.63.0-noble` (браузеры, Python 3.12). Python-зависимости ставятся `uv sync --locked` строго по `tests/e2e/uv.lock`, uv берётся бинарником из `ghcr.io/astral-sh/uv:0.13.1`. Оба образа закреплены по digest. Версия пакета `playwright` (1.63.0) равна версии образа. Сеть:
+`run.sh` собирает образ `freelance-e2e` из [tests/e2e/Dockerfile](tests/e2e/Dockerfile) и запускает в нём pytest. База — `mcr.microsoft.com/playwright/python:v1.64.1-noble` (браузеры, Python 3.12). Python-зависимости ставятся `uv sync --locked` строго по `tests/e2e/uv.lock`, uv берётся бинарником из `ghcr.io/astral-sh/uv:0.13.5`. Оба образа закреплены по digest. Версия пакета `playwright` (1.64.1) равна версии образа. Сеть:
 - **macOS** (Docker Desktop): host-сети нет, порты стека опубликованы на `127.0.0.1` хоста. Внутри контейнера поднимается TCP-форвардер `127.0.0.1:<порт>` → `host.docker.internal:<порт>` ([forward.py](tests/e2e/forward.py)), и браузер открывает тот же адрес, что и на хосте;
 - **Linux**: `docker run --network host`, форвардер не нужен.
 
