@@ -16,7 +16,7 @@
     "axios": "^1.4.0"
   },
   "devDependencies": {
-    "typescript": "~5.9.3",
+    "typescript": "~7.0.2",
     "vite": "^5.1.0",
     "@vitejs/plugin-vue": "^4.2.3",
     "vue-tsc": "3.3.13"
