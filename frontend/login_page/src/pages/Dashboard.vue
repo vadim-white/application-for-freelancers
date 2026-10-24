@@ -125,7 +125,7 @@
             </thead>
             <tbody>
               <tr v-for="row in usersStats" :key="row.user_id">
-                <td>#{{ row.user_id }}</td>
+                <td>{{ userLabel(row.user_id) }}</td>
                 <td class="text-center">{{ row.entries_count }}</td>
                 <td class="text-center">
                   <n-tag type="info" round>{{ row.tasks_count }}</n-tag>
@@ -189,6 +189,7 @@ import TaskTimerModal from '../components/TaskTimerModal.vue'
 import CreateProjectModal from '../components/CreateProjectModal.vue'
 import { useMessage } from 'naive-ui'
 import api from '../services/api'
+import { listUsers, type UserItem } from '../services/users'
 
 const router = useRouter()
 const auth = useAuthStore()
@@ -202,6 +203,7 @@ const isAdmin = computed(() => {
 const projects = ref<any[]>([])
 const projectTasks = reactive<Record<number, any[]>>({})
 const usersStats = ref<any[]>([])
+const statsUsers = reactive<Record<number, UserItem>>({})
 
 const currentTab = ref('tasks')
 
@@ -221,7 +223,27 @@ async function loadStatistics() {
   } catch (err) {
     console.error('Error loading statistics:', err)
     message.error('Ошибка загрузки статистики')
+    return
   }
+  await loadStatsUsers(usersStats.value.map((row) => row.user_id))
+}
+
+// email и имя из auth порциями по 200 (лимит фильтра id); не нашёлся или auth ответил ошибкой — «#id»
+async function loadStatsUsers(ids: number[]) {
+  for (let i = 0; i < ids.length; i += 200) {
+    try {
+      const page = await listUsers({ id: ids.slice(i, i + 200), limit: 200 })
+      for (const u of page.items) statsUsers[u.id] = u
+    } catch (err) {
+      console.error('Error loading statistics users:', err)
+    }
+  }
+}
+
+function userLabel(id: number) {
+  const u = statsUsers[id]
+  if (!u) return `#${id}`
+  return u.full_name ? `${u.email} · ${u.full_name}` : u.email
 }
 
 async function load() {

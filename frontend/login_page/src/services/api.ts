@@ -27,7 +27,7 @@ const NO_REFRESH_PATHS = ['/api/auth/login', '/api/auth/register', '/api/auth/re
 // один общий запрос refresh на все параллельные 401
 let refreshPromise: Promise<string> | null = null
 
-async function refreshAccessToken(): Promise<string> {
+async function requestRefresh(): Promise<string> {
   const refreshToken = localStorage.getItem('refresh_token')
   if (!refreshToken) throw new Error('No refresh token')
   // голый axios, а не api: без интерцепторов и без рекурсии
@@ -35,6 +35,14 @@ async function refreshAccessToken(): Promise<string> {
   const token = r.data.access_token as string
   localStorage.setItem('access_token', token)
   return token
+}
+
+// общий refresh для интерцептора 401 и для сверки роли в сторе: параллельные вызовы ждут один запрос
+export function refreshAccessToken(): Promise<string> {
+  refreshPromise ??= requestRefresh().finally(() => {
+    refreshPromise = null
+  })
+  return refreshPromise
 }
 
 function forceLogout() {
@@ -58,10 +66,7 @@ api.interceptors.response.use(
     }
     config._retry = true
     try {
-      refreshPromise ??= refreshAccessToken().finally(() => {
-        refreshPromise = null
-      })
-      await refreshPromise
+      await refreshAccessToken()
     } catch {
       forceLogout()
       return Promise.reject(error)

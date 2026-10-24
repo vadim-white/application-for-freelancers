@@ -24,13 +24,15 @@ export interface UserListParams {
   role?: UserRole
   is_active?: boolean
   q?: string
+  id?: number[]
   sort?: 'created_at' | '-created_at' | 'email' | '-email'
   limit?: number
   offset?: number
 }
 
 export async function listUsers(params: UserListParams = {}): Promise<UserList> {
-  const r = await api.get('/api/auth/users', { params })
+  // id повторяется (?id=1&id=2), а не id[]=1: так его ждёт FastAPI
+  const r = await api.get('/api/auth/users', { params, paramsSerializer: { indexes: null } })
   return r.data
 }
 
