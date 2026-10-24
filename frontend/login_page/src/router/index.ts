@@ -3,6 +3,7 @@ import LoginPage from '../pages/Login.vue'
 import RegisterPage from '../pages/Register.vue'
 import Dashboard from '../pages/Dashboard.vue'
 import Profile from '../pages/Profile.vue'
+import Users from '../pages/Users.vue'
 import { useAuthStore } from '../stores/auth'
 
 const routes = [
@@ -10,7 +11,8 @@ const routes = [
   { path: '/login', component: LoginPage, meta: { guestOnly: true } },
   { path: '/register', component: RegisterPage, meta: { guestOnly: true } },
   { path: '/dashboard', component: Dashboard, meta: { requiresAuth: true } },
-  { path: '/profile', component: Profile, meta: { requiresAuth: true } }
+  { path: '/profile', component: Profile, meta: { requiresAuth: true } },
+  { path: '/users', component: Users, meta: { requiresAuth: true, requiresAdmin: true } }
 ]
 
 const router = createRouter({
@@ -19,14 +21,18 @@ const router = createRouter({
 })
 
 // navigation guard
-router.beforeEach((to, from, next) => {
+router.beforeEach(async (to) => {
   const auth = useAuthStore()
   if (to.meta.requiresAuth && !auth.isAuthenticated) {
-    next('/login')
-  } else if (to.meta.guestOnly && auth.isAuthenticated) {
-    next('/dashboard')
-  } else {
-    next()
+    return '/login'
+  }
+  if (to.meta.requiresAdmin) {
+    // роль известна только из /me: при открытии страницы по прямой ссылке ждём ответ
+    if (!auth.user) await auth.fetchMe()
+    if (auth.user?.role !== 'admin') return '/dashboard'
+  }
+  if (to.meta.guestOnly && auth.isAuthenticated) {
+    return '/dashboard'
   }
 })
 

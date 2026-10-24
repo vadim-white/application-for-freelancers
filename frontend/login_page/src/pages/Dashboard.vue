@@ -22,6 +22,9 @@
             >
               📈 Статистика
             </n-button>
+            <n-button v-if="isAdmin" type="tertiary" @click="router.push('/users')">
+              👥 Пользователи
+            </n-button>
           </n-button-group>
         </div>
 
