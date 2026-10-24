@@ -1,7 +1,7 @@
 #!/bin/bash
 # Сквозной прогон через gateway: `bash tests/smoke.sh` из корня; объекты создаёт сам, проходит на чистой базе.
-# SMOKE_MODE=compose — 164 проверки, после `docker compose up --build -d --wait`;
-# SMOKE_MODE=k8s — 162, после ./scripts/k8s-deploy.sh, через вход http://127.0.0.1:8080, как браузер.
+# SMOKE_MODE=compose — 174 проверки, после `docker compose up --build -d --wait`;
+# SMOKE_MODE=k8s — 172, после ./scripts/k8s-deploy.sh, через вход http://127.0.0.1:8080, как браузер.
 # В k8s нет четырёх проверок закрытых портов: кластер публикует на хост только 8080, они ничего не доказывают.
 # Изоляцию NetworkPolicy внутри кластера smoke не проверяет.
 # В k8s path traversal проверяется дважды: Envoy нормализует путь до gateway, защита gateway — изнутри его пода.
@@ -12,7 +12,7 @@ case "$MODE" in
   compose)
     G="${SMOKE_G:-http://localhost:8000}"
     CLOSED_PORTS="8001 8002 8003 5432"
-    EXPECTED=164
+    EXPECTED=174
     in_svc() { local s=$1; shift; docker exec "ser-$s" "$@"; }   # in_svc auth|gateway команда...
     in_auth_db() { docker exec ser-auth-db "$@"; }
     ;;
@@ -21,7 +21,7 @@ case "$MODE" in
     KNS=freelance-service
     G="${SMOKE_G:-http://127.0.0.1:8080}"
     CLOSED_PORTS=""
-    EXPECTED=162
+    EXPECTED=172
     in_svc() { local s=$1; shift; kubectl --context "$KCTX" -n "$KNS" exec "deploy/ser-$s" -- "$@"; }
     in_auth_db() { kubectl --context "$KCTX" -n "$KNS" exec auth-db-0 -c postgres -- "$@"; }
     ;;
@@ -174,7 +174,7 @@ chk "user2 creates task in own project" "$U2ID" "$(echo "$T2J" | jq_ 'd["owner_i
 TNJ=$(body "$U1" POST /api/tasks/tasks "{\"title\":\"TN $SFX\"}")
 TN=$(echo "$TNJ" | jq_ 'd["id"]')
 chk "user1 creates task without project" "$U1ID" "$(echo "$TNJ" | jq_ 'd["owner_id"]')"
-chk "user1 PUT status done" "done" "$(body "$U1" PUT "/api/tasks/tasks/$T1" '{"status":"done"}' | jq_ 'd["status"]')"
+chk "user1 PATCH status done" "done" "$(body "$U1" PATCH "/api/tasks/tasks/$T1" '{"status":"done"}' | jq_ 'd["status"]')"
 chk "user1 POST /status in_progress" 200 "$(req "$U1" POST "/api/tasks/tasks/$T1/status" '{"status":"in_progress"}')"
 
 echo "== Списки: user видит только свои, admin — всё"
@@ -212,11 +212,11 @@ chk "user1 ?status=done&status=in_progress in P1" "$T1" "$(body "$U1" GET "/api/
 
 echo "== Чужое -> 404 (user1 на объекты user2 и admin)"
 chk "user1 GET user2 project" 404 "$(req "$U1" GET "/api/tasks/projects/$P2")"
-chk "user1 PUT user2 project" 404 "$(req "$U1" PUT "/api/tasks/projects/$P2" '{"name":"hack"}')"
+chk "user1 PATCH user2 project" 404 "$(req "$U1" PATCH "/api/tasks/projects/$P2" '{"name":"hack"}')"
 chk "user1 DELETE user2 project" 404 "$(req "$U1" DELETE "/api/tasks/projects/$P2")"
 chk "user1 GET admin project" 404 "$(req "$U1" GET "/api/tasks/projects/$PA")"
 chk "user1 GET user2 task" 404 "$(req "$U1" GET "/api/tasks/tasks/$T2")"
-chk "user1 PUT user2 task" 404 "$(req "$U1" PUT "/api/tasks/tasks/$T2" '{"title":"hack"}')"
+chk "user1 PATCH user2 task" 404 "$(req "$U1" PATCH "/api/tasks/tasks/$T2" '{"title":"hack"}')"
 chk "user1 POST /status user2 task" 404 "$(req "$U1" POST "/api/tasks/tasks/$T2/status" '{"status":"done"}')"
 chk "user1 DELETE user2 task" 404 "$(req "$U1" DELETE "/api/tasks/tasks/$T2")"
 chk "user2 GET user1 project" 404 "$(req "$U2" GET "/api/tasks/projects/$P1")"
@@ -230,10 +230,10 @@ R=$(req "$U1" POST /api/tasks/tasks "{\"title\":\"x\",\"project_id\":$P2}"); chk
 R=$(req "$U1" POST /api/tasks/tasks "{\"title\":\"x\",\"project_id\":$PA}"); chk "user1 task in admin project" 404 "$R"
 chk "user1 task in project 0" 404 "$(req "$U1" POST /api/tasks/tasks '{"title":"x","project_id":0}')"
 chk "admin task in project 999999" 404 "$(req "$A" POST /api/tasks/tasks '{"title":"x","project_id":999999}')"
-R=$(req "$U1" PUT "/api/tasks/tasks/$T1" "{\"project_id\":$P2}"); chk "user1 move own task to user2 project" 404 "$R"
-chk "user1 move own task to project 0" 404 "$(req "$U1" PUT "/api/tasks/tasks/$T1" '{"project_id":0}')"
+R=$(req "$U1" PATCH "/api/tasks/tasks/$T1" "{\"project_id\":$P2}"); chk "user1 move own task to user2 project" 404 "$R"
+chk "user1 move own task to project 0" 404 "$(req "$U1" PATCH "/api/tasks/tasks/$T1" '{"project_id":0}')"
 chk "task stayed in own project" "$P1" "$(body "$U1" GET "/api/tasks/tasks/$T1" | jq_ 'd["project_id"]')"
-R=$(req "$A" PUT "/api/tasks/tasks/$T1" "{\"project_id\":$P2}"); chk "admin move user1 task to user2 project (other owner)" 400 "$R"
+R=$(req "$A" PATCH "/api/tasks/tasks/$T1" "{\"project_id\":$P2}"); chk "admin move user1 task to user2 project (other owner)" 400 "$R"
 TAJ=$(body "$A" POST /api/tasks/tasks "{\"title\":\"by admin $SFX\",\"project_id\":$P1}")
 TA=$(echo "$TAJ" | jq_ 'd["id"]')
 chk "admin task in user1 project -> owner = user1" "$U1ID" "$(echo "$TAJ" | jq_ 'd["owner_id"]')"
@@ -244,10 +244,30 @@ chk "user1 P1 sort=-title" "$T1 $TA" "$(body "$U1" GET "/api/tasks/tasks?project
 p1card() { body "$U1" GET /api/tasks/projects | jq_ 'next(" ".join([str(p["tasks_count"])]+[str(t["id"]) for t in p["tasks_preview"]]) for p in d["items"] if p["id"]=='"$P1"')'; }
 chk "user1 P1 in projects list: tasks_count and preview" "2 $T1 $TA" "$(p1card)"
 
+echo "== PATCH: нет поля - не трогать, null - очистить; PUT удалён"
+chk "PUT task -> 405" 405 "$(req "$U1" PUT "/api/tasks/tasks/$TN" '{"title":"x"}')"
+chk "PUT project -> 405" 405 "$(req "$U1" PUT "/api/tasks/projects/$P1" '{"name":"x"}')"
+chk "PATCH task unknown field" 422 "$(req "$U1" PATCH "/api/tasks/tasks/$TN" '{"titel":"x"}')"
+chk "PATCH task title null" 422 "$(req "$U1" PATCH "/api/tasks/tasks/$TN" '{"title":null}')"
+chk "PATCH task title empty" 422 "$(req "$U1" PATCH "/api/tasks/tasks/$TN" '{"title":"   "}')"
+LONG=$(python3 -c 'print("x" * 256)')
+chk "PATCH task title 256 chars" 422 "$(req "$U1" PATCH "/api/tasks/tasks/$TN" "{\"title\":\"$LONG\"}")"
+R1=$(body "$U1" PATCH "/api/tasks/tasks/$TN" '{"description":"note"}' | jq_ 'd["description"]')
+R2=$(body "$U1" PATCH "/api/tasks/tasks/$TN" '{"description":null}' | jq_ 'd["description"]')
+chk "TN description set, then null clears" "note None" "$R1 $R2"
+R1=$(body "$U1" PATCH "/api/tasks/tasks/$TN" '{"deadline":"2026-03-01T12:00:00Z"}' | jq_ 'd["deadline"]')
+R2=$(body "$U1" PATCH "/api/tasks/tasks/$TN" '{"deadline":null}' | jq_ 'd["deadline"]')
+chk "TN deadline with Z set, then null clears" "2026-03-01T12:00:00Z None" "$R1 $R2"
+# TN в P1 и обратно до второй проверки p1card: счётчик P1 не меняется
+R1=$(body "$U1" PATCH "/api/tasks/tasks/$TN" "{\"project_id\":$P1}" | jq_ 'd["project_id"]')
+R2=$(body "$U1" PATCH "/api/tasks/tasks/$TN" '{"project_id":null}' | jq_ 'd["project_id"]')
+R3=$(has "$(body "$U1" GET "/api/tasks/tasks?project_id=none" | ids)" "$TN")
+chk "TN into P1, then project_id null -> back without project" "$P1 None 1" "$R1 $R2 $R3"
+
 echo "== admin видит и меняет всё"
 chk "admin GET user1 project" 200 "$(req "$A" GET "/api/tasks/projects/$P1")"
 chk "admin GET user2 task" 200 "$(req "$A" GET "/api/tasks/tasks/$T2")"
-chk "admin PUT user2 task (owner kept)" "$U2ID" "$(body "$A" PUT "/api/tasks/tasks/$T2" '{"description":"by admin"}' | jq_ 'd["owner_id"]')"
+chk "admin PATCH user2 task (owner kept)" "$U2ID" "$(body "$A" PATCH "/api/tasks/tasks/$T2" '{"description":"by admin"}' | jq_ 'd["owner_id"]')"
 chk "admin statistics via task (time reached)" 200 "$(req "$A" GET /api/tasks/statistics/users)"
 
 echo "== Подделанные заголовки"
@@ -256,6 +276,10 @@ chk "user + X-User-Role: admin -> statistics" 403 "$(code "$G/api/tasks/statisti
 chk "user + X-User-Role: admin -> admin project still 404" 404 "$(code "$G/api/tasks/projects/$PA" -H "Authorization: Bearer $U1" -H "X-User-Role: admin" -H "X-User-Id: $AID")"
 PHJ=$(cu -s "$G/api/tasks/projects" -H "Authorization: Bearer $U1" -H "X-User-Role: admin" -H "X-User-Id: $AID" -H "$J" -d "{\"name\":\"hdr $SFX\"}")
 chk "user + X-User-Id: admin -> owner_id from token" "$U1ID" "$(echo "$PHJ" | jq_ 'd["owner_id"]')"
+# PATCH имени архивного проекта не снимает архив: PUT без is_active снимал
+PH=$(echo "$PHJ" | jq_ 'd["id"]')
+req "$U1" PATCH "/api/tasks/projects/$PH" '{"is_active":false}' >/dev/null
+chk "PATCH name of archived project keeps archive" False "$(body "$U1" PATCH "/api/tasks/projects/$PH" "{\"name\":\"hdr2 $SFX\"}" | jq_ 'd["is_active"]')"
 
 echo "== Время: записи на своих задачах"
 # даты в прошлом: ручная запись не может уходить в будущее
@@ -297,7 +321,7 @@ R=$(req "$U1" POST /api/time/timer/start "{\"task_id\":$T2}"); chk "timer start 
 chk "timer start on nonexistent task" 404 "$(req "$U1" POST /api/time/timer/start '{"task_id":999999}')"
 # идущий таймер архивация задачи не останавливает: стоп после неё закрывает запись
 body "$U1" POST /api/time/timer/start "{\"task_id\":$T1}" >/dev/null
-req "$U1" PUT "/api/tasks/tasks/$T1" '{"is_active":false}' >/dev/null
+req "$U1" PATCH "/api/tasks/tasks/$T1" '{"is_active":false}' >/dev/null
 R=$(req "$U1" POST /api/time/timer/start "{\"task_id\":$T1}"); chk "timer start on archived task" 409 "$R"
 chk "timer stop after archive" "$T1" "$(body "$U1" POST /api/time/timer/stop | jq_ 'd["stopped"]["task_id"]')"
 chk "user1 P1 ?is_active=false -> archived T1" "$T1" "$(body "$U1" GET "/api/tasks/tasks?project_id=$P1&is_active=false" | ids)"

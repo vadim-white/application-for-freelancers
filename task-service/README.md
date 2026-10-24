@@ -8,6 +8,12 @@
 
 У каждого проекта списка есть `tasks_count` и `tasks_preview` — по активным задачам проекта (архивные не считаются): `COUNT(*) … GROUP BY project_id` и `ROW_NUMBER() OVER (PARTITION BY project_id ORDER BY created_at, id)` с `rn <= 3`, оба по `id` страницы, то есть два запроса на любое число проектов; пустая страница их не делает. Схема — `ProjectListItem`, а `ProjectRead` (одиночный проект и вложенный `project` у задачи) полей не получает. Задачи проекта принадлежат его владельцу, поэтому у admin счётчики чужих проектов верные, а у user чужих проектов в списке нет.
 
+## Правка (`PATCH`)
+
+`PATCH /api/tasks/projects/{id}` и `PATCH /api/tasks/tasks/{id}` — merge-patch: схемы `ProjectPatch` и `TaskPatch` (`extra="forbid"`: неизвестное поле, в том числе `owner_id`, — 422), `crud` пишет только поля из `model_fields_set`, поэтому нет поля — не трогать, явный `null` — очистить (`description`, `deadline`, `project_id` задачи — вынос из проекта, владелец прежний; `description` проекта). `null` у `title`, `status`, `is_active`, `name` модель пропускает, 422 даёт валидатор по `model_fields_set` (как `UserAdminUpdate` в auth). Значение, равное текущему, SQLAlchemy изменением не считает: `UPDATE` нет, `updated_at` прежний. Перенос задачи проверяется, только когда `project_id` прислан и не `null`: в чужой проект user — 404, admin в проект другого владельца — 400. Лог правки задачи пишет имена полей, не значения. `PUT` удалён — 405.
+
+Название (`title`, `name`) в `…Create` и `…Patch` — тип `Title`: пробелы по краям обрезаются, затем 1–255 символов (колонка `VARCHAR(255)`: без ограничения PostgreSQL отвечал 500, SQLite пропускал). Ограничение только на вводе: ответы (`…Read` от `…Base`) отдают сохранённые названия как есть. `deadline` в `TaskCreate` и `TaskPatch` — `AwareDatetime`, без пояса — 422.
+
 ## Статистика
 
 `GET /api/tasks/statistics/users` (admin) проксирует `GET /api/time/statistics/users` time-service с токеном пользователя и отдаёт ответ как есть (поля — в [README time-service](../time-service/README.md)); сетевая ошибка или не-200 от time — 502 без деталей, причина в логе. Клиент — один `httpx.AsyncClient` на процесс (lifespan, `app/time_client.py`, `base_url` = `TIME_SERVICE_URL`), таймауты: соединение 2 с, ответ 7 с — time обрывает запрос к базе через 5 с (`statement_timeout`), gateway ждёт 30 с.
@@ -36,7 +42,7 @@
 uv run pytest -q
 ```
 
-Запущенные сервисы не нужны. Тесты миграций, `/ready`, таймаутов к базе и порядка списков на PostgreSQL идут, только если задана `TEST_POSTGRES_URL` — см. [«Тесты» в корневом README](../README.md#тесты).
+Запущенные сервисы не нужны. Тесты миграций, `/ready`, таймаутов к базе, порядка списков, длины названия и очистки полей на PostgreSQL идут, только если задана `TEST_POSTGRES_URL` — см. [«Тесты» в корневом README](../README.md#тесты).
 
 ## Переменные окружения
 

@@ -141,9 +141,9 @@ def test_stop_does_not_mark_task_done(open_session, run_label):
     try:
         modal = open_task(s.page, f"{run_label} задача")
         # старт переводит задачу из todo в in_progress отдельным запросом в task
-        with s.page.expect_response(is_api("PUT", task_path)) as put:
+        with s.page.expect_response(is_api("PATCH", task_path)) as patch:
             start(s.page, modal)
-        assert put.value.status == 200 and put.value.json()["status"] == "in_progress"
+        assert patch.value.status == 200 and patch.value.json()["status"] == "in_progress"
         expect(modal.locator(".task-status")).to_have_text("in_progress")
 
         pause(s.page, modal)

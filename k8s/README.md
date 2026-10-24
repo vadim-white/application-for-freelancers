@@ -246,7 +246,7 @@ k describe gateway entry                 # условия Accepted / Programmed 
 k describe networkpolicy ser-task
 ```
 
-Сквозной прогон: `SMOKE_MODE=k8s bash tests/smoke.sh` — 162 проверки через `http://127.0.0.1:8080`. `/health` через вход отдаёт фронт, поэтому smoke проверяет его изнутри пода `ser-gateway` (тело: `upstreams.auth/task/time` все `true`), там же — `/ready` трёх сервисов. Строки журнала прав `user_audit` smoke считает через `psql` в поде `auth-db-0`.
+Сквозной прогон: `SMOKE_MODE=k8s bash tests/smoke.sh` — 172 проверки через `http://127.0.0.1:8080`. `/health` через вход отдаёт фронт, поэтому smoke проверяет его изнутри пода `ser-gateway` (тело: `upstreams.auth/task/time` все `true`), там же — `/ready` трёх сервисов. Строки журнала прав `user_audit` smoke считает через `psql` в поде `auth-db-0`.
 
 Статическая проверка — на выводе kustomize, а не на каталоге `k8s/` (там лежит `kind-config.yaml`, не манифест). kubeconform не знает схем CRD, поэтому четыре ресурса входа пропускаются явно, а проверяет их API-сервер:
 
@@ -276,7 +276,7 @@ Job `kind` в [.github/workflows/ci.yml](../.github/workflows/ci.yml) (разд�
 1. kubectl v1.35.9 скачивается с `dl.k8s.io` со сверкой sha256, закреплённой в workflow. Свой kubectl раннера (1.37) к серверу 1.35 не подходит: разница больше одной минорной версии. kind берётся с раннера, но его версия должна быть v0.33.0, иначе job падает;
 2. `./scripts/kind-up.sh` — кластер, Envoy Gateway (sha256 `install.yaml`), сборка и загрузка образов; checkout чистый, поэтому тег — SHA коммита без `-dirty`;
 3. `./scripts/init-k8s-env.sh` — новые секреты; workflow сразу маскирует их значения и base64 (`::add-mask::`);
-4. `./scripts/k8s-deploy.sh`, затем `SMOKE_MODE=k8s bash tests/smoke.sh` (162) и e2e через вход `http://127.0.0.1:8080` (на Linux `run.sh` работает с `--network host`);
+4. `./scripts/k8s-deploy.sh`, затем `SMOKE_MODE=k8s bash tests/smoke.sh` (172) и e2e через вход `http://127.0.0.1:8080` (на Linux `run.sh` работает с `--network host`);
 5. `kubectl kustomize … | kubectl apply --dry-run=server -f -` для `.deploy/app` и `.deploy/seed` (overlay `local` и `local-seed` с тем тегом, что развёрнут): в лог попадают только строки `unchanged` / `configured`, содержимое манифестов — нет.
 
 Если что-то упало, шаг «диагностика» печатает `get pods,jobs -o wide`, `get deploy -o wide` (виден тег образов), события, `describe gateway entry`, поды и логи контроллера Envoy Gateway, логи подов приложения (`--all-containers`, хвост, и `--previous`, если контейнер перезапускался). Скриншоты и trace e2e — артефакт `e2e-kind`. Шаг 5 проверяет те же манифесты, что применил `k8s-deploy.sh`: с overlay из git (`:latest`) Job миграций дают `field is immutable`, а Deployment — `configured` вместо `unchanged`.

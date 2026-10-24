@@ -385,7 +385,8 @@ async function addTask() {
     message.error('Нет проекта')
     return
   }
-  if (!newTask.value.title) {
+  // сервер обрезает пробелы: название из одних пробелов — 422
+  if (!newTask.value.title.trim()) {
     message.error('Введите название')
     return
   }

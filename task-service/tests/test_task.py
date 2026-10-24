@@ -19,13 +19,13 @@ PROTECTED = [
     ("get", "/api/tasks/tasks"),
     ("post", "/api/tasks/tasks"),
     ("get", "/api/tasks/tasks/1"),
-    ("put", "/api/tasks/tasks/1"),
+    ("patch", "/api/tasks/tasks/1"),
     ("delete", "/api/tasks/tasks/1"),
     ("post", "/api/tasks/tasks/1/status"),
     ("get", "/api/tasks/projects"),
     ("post", "/api/tasks/projects"),
     ("get", "/api/tasks/projects/1"),
-    ("put", "/api/tasks/projects/1"),
+    ("patch", "/api/tasks/projects/1"),
     ("delete", "/api/tasks/projects/1"),
     ("get", "/api/tasks/statistics/users"),
 ]
@@ -101,7 +101,7 @@ def test_user_can_manage_own_project(client, user_headers):
     pid = r.json()["id"]
     assert r.json()["owner_id"] == 1
     assert (
-        client.put(
+        client.patch(
             f"/api/tasks/projects/{pid}", json={"name": "x"}, headers=user_headers
         ).status_code
         == 200
@@ -209,26 +209,29 @@ def test_task_without_project_owner_from_token(client, user_headers):
     assert client.get("/api/tasks/tasks", headers=user_headers).json()["items"][0]["owner_id"] == 1
 
 
-def test_owner_id_in_body_ignored(client, user_headers, admin_headers):
+def test_owner_id_in_body_ignored_on_create_422_on_patch(client, user_headers, admin_headers):
     r = client.post("/api/tasks/projects", json={"name": "p", "owner_id": 5}, headers=admin_headers)
     assert r.status_code == 201
     pid = r.json()["id"]
     assert r.json()["owner_id"] == 99
-    r = client.put(
+    # в PATCH неизвестное поле — 422 (extra="forbid"), а не молчаливый пропуск
+    r = client.patch(
         f"/api/tasks/projects/{pid}", json={"name": "x", "owner_id": 5}, headers=admin_headers
     )
-    assert r.status_code == 200
-    assert r.json()["owner_id"] == 99
+    assert r.status_code == 422
+    p = client.get(f"/api/tasks/projects/{pid}", headers=admin_headers).json()
+    assert (p["name"], p["owner_id"]) == ("p", 99)
 
     r = client.post("/api/tasks/tasks", json={"title": "t", "owner_id": 5}, headers=user_headers)
     assert r.status_code == 201
     tid = r.json()["id"]
     assert r.json()["owner_id"] == 1
-    r = client.put(
+    r = client.patch(
         f"/api/tasks/tasks/{tid}", json={"title": "x", "owner_id": 5}, headers=user_headers
     )
-    assert r.status_code == 200
-    assert r.json()["owner_id"] == 1
+    assert r.status_code == 422
+    t = client.get(f"/api/tasks/tasks/{tid}", headers=user_headers).json()
+    assert (t["title"], t["owner_id"]) == ("t", 1)
 
 
 def test_admin_task_in_foreign_project_gets_project_owner(client, user_headers, admin_headers):
@@ -277,7 +280,7 @@ def test_foreign_project_404(client, user_headers, other_headers):
     pid = _project(client, other_headers, "чужой")
     assert client.get(f"/api/tasks/projects/{pid}", headers=user_headers).status_code == 404
     assert (
-        client.put(
+        client.patch(
             f"/api/tasks/projects/{pid}", json={"name": "x"}, headers=user_headers
         ).status_code
         == 404
@@ -295,7 +298,7 @@ def test_admin_reads_updates_deletes_foreign_project(client, user_headers, admin
     pid = _project(client, user_headers)
     tid = _task(client, user_headers, project_id=pid)
     assert client.get(f"/api/tasks/projects/{pid}", headers=admin_headers).status_code == 200
-    r = client.put(f"/api/tasks/projects/{pid}", json={"name": "x"}, headers=admin_headers)
+    r = client.patch(f"/api/tasks/projects/{pid}", json={"name": "x"}, headers=admin_headers)
     assert r.status_code == 200
     assert r.json()["owner_id"] == 1  # владелец не меняется
     assert client.delete(f"/api/tasks/projects/{pid}", headers=admin_headers).status_code == 204
@@ -332,10 +335,8 @@ def test_tasks_list_only_own_and_filters_inside_own(
 def test_foreign_task_404(client, user_headers, other_headers):
     tid = _task(client, other_headers, "чужая")
     assert client.get(f"/api/tasks/tasks/{tid}", headers=user_headers).status_code == 404
-    assert (
-        client.put(f"/api/tasks/tasks/{tid}", json={"title": "x"}, headers=user_headers).status_code
-        == 404
-    )
+    r = client.patch(f"/api/tasks/tasks/{tid}", json={"title": "x"}, headers=user_headers)
+    assert r.status_code == 404
     assert (
         client.post(
             f"/api/tasks/tasks/{tid}/status", json={"status": "done"}, headers=user_headers
@@ -350,7 +351,7 @@ def test_foreign_task_404(client, user_headers, other_headers):
 def test_admin_reads_updates_deletes_foreign_task(client, user_headers, admin_headers):
     tid = _task(client, user_headers)
     assert client.get(f"/api/tasks/tasks/{tid}", headers=admin_headers).status_code == 200
-    r = client.put(f"/api/tasks/tasks/{tid}", json={"title": "x"}, headers=admin_headers)
+    r = client.patch(f"/api/tasks/tasks/{tid}", json={"title": "x"}, headers=admin_headers)
     assert r.status_code == 200
     assert r.json()["owner_id"] == 1
     r = client.post(
@@ -384,7 +385,7 @@ def test_move_task_to_own_project(client, user_headers):
     p1 = _project(client, user_headers, "a")
     p2 = _project(client, user_headers, "b")
     tid = _task(client, user_headers, project_id=p1)
-    r = client.put(f"/api/tasks/tasks/{tid}", json={"project_id": p2}, headers=user_headers)
+    r = client.patch(f"/api/tasks/tasks/{tid}", json={"project_id": p2}, headers=user_headers)
     assert r.status_code == 200
     assert r.json()["project_id"] == p2
 
@@ -397,7 +398,7 @@ def test_user_move_task_to_foreign_or_missing_project_404(
     if target == "foreign":
         target = _project(client, other_headers)
     tid = _task(client, user_headers, project_id=p1)
-    r = client.put(
+    r = client.patch(
         f"/api/tasks/tasks/{tid}", json={"project_id": target, "title": "x"}, headers=user_headers
     )
     assert r.status_code == 404
@@ -412,16 +413,16 @@ def test_admin_move_task(client, user_headers, other_headers, admin_headers):
     tid = _task(client, user_headers, project_id=p1)
     # в проект другого владельца — 400:
     # иначе задача пользователя 1 окажется в проекте пользователя 2
-    r = client.put(f"/api/tasks/tasks/{tid}", json={"project_id": p2}, headers=admin_headers)
+    r = client.patch(f"/api/tasks/tasks/{tid}", json={"project_id": p2}, headers=admin_headers)
     assert r.status_code == 400
     for missing in (0, 99999):
-        r = client.put(
+        r = client.patch(
             f"/api/tasks/tasks/{tid}", json={"project_id": missing}, headers=admin_headers
         )
         assert r.status_code == 404
     assert client.get(f"/api/tasks/tasks/{tid}", headers=user_headers).json()["project_id"] == p1
     # в другой проект владельца задачи — можно
-    r = client.put(f"/api/tasks/tasks/{tid}", json={"project_id": p1b}, headers=admin_headers)
+    r = client.patch(f"/api/tasks/tasks/{tid}", json={"project_id": p1b}, headers=admin_headers)
     assert r.status_code == 200
     assert r.json()["project_id"] == p1b
     assert r.json()["owner_id"] == 1

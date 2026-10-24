@@ -19,6 +19,15 @@ def _order_by(sort: str, columns: dict, id_column) -> list:
     return [first.nulls_last(), id_column.desc() if descending else id_column.asc()]
 
 
+def _apply_patch(obj, patch) -> None:
+    """Только присланные поля; явный null пишется — очищает поле.
+
+    Значение, равное текущему, SQLAlchemy не считает изменением: UPDATE нет, updated_at прежний.
+    """
+    for name, value in patch.model_dump(exclude_unset=True).items():
+        setattr(obj, name, value)
+
+
 # Projects
 def create_project(db: Session, project_in: schemas.ProjectCreate, owner_id: int) -> models.Project:
     project = models.Project(
@@ -111,14 +120,9 @@ def _task_summaries(db: Session, project_ids: list[int]) -> tuple[dict, dict]:
 
 
 def update_project(
-    db: Session, project: models.Project, update_in: schemas.ProjectUpdate
+    db: Session, project: models.Project, patch: schemas.ProjectPatch
 ) -> models.Project:
-    if update_in.name is not None:
-        project.name = update_in.name
-    if update_in.description is not None:
-        project.description = update_in.description
-    if update_in.is_active is not None:
-        project.is_active = update_in.is_active
+    _apply_patch(project, patch)
     db.add(project)
     db.commit()
     db.refresh(project)
@@ -196,19 +200,8 @@ def list_tasks(
     return list(items), total
 
 
-def update_task(db: Session, task: models.Task, update_in: schemas.TaskUpdate) -> models.Task:
-    if update_in.title is not None:
-        task.title = update_in.title
-    if update_in.description is not None:
-        task.description = update_in.description
-    if update_in.status is not None:
-        task.status = update_in.status
-    if update_in.deadline is not None:
-        task.deadline = update_in.deadline
-    if update_in.project_id is not None:
-        task.project_id = update_in.project_id
-    if update_in.is_active is not None:
-        task.is_active = update_in.is_active
+def update_task(db: Session, task: models.Task, patch: schemas.TaskPatch) -> models.Task:
+    _apply_patch(task, patch)
     db.add(task)
     db.commit()
     db.refresh(task)

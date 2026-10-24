@@ -325,7 +325,6 @@ function onPageChange(p: number) {
 async function toggleArchive(p: ProjectListItem) {
   busyId.value = p.id
   try {
-    // is_active шлём явно: PUT без него снимает архив
     await updateProject(p.id, { is_active: !p.is_active })
     await load()
   } catch (err) {

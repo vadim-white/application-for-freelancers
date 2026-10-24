@@ -71,8 +71,15 @@ export async function createProject(payload: { name: string; description?: strin
   return r.data
 }
 
-export async function updateProject(projectId: number | string, payload: any) {
-  const r = await api.put(`/api/tasks/projects/${projectId}`, payload)
+// PATCH — merge-patch: нет поля — не трогать, null — очистить; неизвестное поле — 422
+export interface ProjectPatch {
+  name?: string
+  description?: string | null
+  is_active?: boolean
+}
+
+export async function updateProject(projectId: number | string, payload: ProjectPatch): Promise<Project> {
+  const r = await api.patch(`/api/tasks/projects/${projectId}`, payload)
   return r.data
 }
 
@@ -116,8 +123,18 @@ export async function createTask(payload: { title: string; description?: string;
   return r.data
 }
 
-export async function updateTask(taskId: number | string, payload: any) {
-  const r = await api.put(`/api/tasks/tasks/${taskId}`, payload)
+// project_id: null — вынос задачи из проекта; deadline — с часовым поясом (toISOString)
+export interface TaskPatch {
+  title?: string
+  description?: string | null
+  status?: TaskStatus
+  deadline?: string | null
+  project_id?: number | null
+  is_active?: boolean
+}
+
+export async function updateTask(taskId: number | string, payload: TaskPatch): Promise<Task> {
+  const r = await api.patch(`/api/tasks/tasks/${taskId}`, payload)
   return r.data
 }
 

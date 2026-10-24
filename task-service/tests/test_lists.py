@@ -217,7 +217,7 @@ def test_tasks_query_count_does_not_grow_with_projects(client, user_headers):
 def test_projects_envelope_total_and_filter(client, user_headers):
     active = [_project(client, user_headers, f"p{i}") for i in range(3)]
     archived = _project(client, user_headers, "archived")
-    r = client.put(f"{PROJECTS}/{archived}", json={"is_active": False}, headers=user_headers)
+    r = client.patch(f"{PROJECTS}/{archived}", json={"is_active": False}, headers=user_headers)
     assert r.status_code == 200
     body = _get(client, user_headers, PROJECTS, limit=2)
     assert sorted(body) == ["items", "limit", "offset", "total"]
@@ -292,9 +292,10 @@ def _preview_dataset(client, headers):
     tasks = [_task(client, headers, f"a{4 - i}", project_id=pids[0]) for i in range(5)]
     statuses = ["todo", "in_progress", "done", "blocked", "todo"]
     for tid, st in zip(tasks, statuses, strict=True):
-        assert client.put(f"{TASKS}/{tid}", json={"status": st}, headers=headers).status_code == 200
+        r = client.patch(f"{TASKS}/{tid}", json={"status": st}, headers=headers)
+        assert r.status_code == 200
     archived = _task(client, headers, "archived", project_id=pids[0])
-    r = client.put(f"{TASKS}/{archived}", json={"is_active": False}, headers=headers)
+    r = client.patch(f"{TASKS}/{archived}", json={"is_active": False}, headers=headers)
     assert r.status_code == 200
     single = _task(client, headers, "single", project_id=pids[1])
     # задачи без проекта в счётчик не попадают

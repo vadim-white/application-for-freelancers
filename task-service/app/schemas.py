@@ -1,8 +1,26 @@
 from datetime import datetime
+from typing import Annotated
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import AwareDatetime, BaseModel, ConfigDict, StringConstraints, model_validator
 
 from .models import TaskStatus
+
+# Название на вводе: пробелы по краям обрезаются, затем 1–255 символов (колонка VARCHAR(255):
+# длиннее на PostgreSQL — 500). Только в схемах ввода: ответы наследуют …Base и отдают
+# уже сохранённые названия как есть
+Title = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=255)]
+
+# merge-patch (PATCH): нет поля — не трогать, null — очистить (где поле может быть пустым);
+# неизвестное поле — 422, иначе опечатка или owner_id молча ничего не меняют
+PATCH_CONFIG = ConfigDict(extra="forbid")
+
+
+def _no_null(model: BaseModel, *names: str) -> BaseModel:
+    """null у обязательного поля — 422: модель его пропускает, видно только по model_fields_set."""
+    for name in model.model_fields_set.intersection(names):
+        if getattr(model, name) is None:
+            raise ValueError(f"{name} cannot be null")
+    return model
 
 
 # Project schemas
@@ -13,11 +31,20 @@ class ProjectBase(BaseModel):
 
 
 class ProjectCreate(ProjectBase):
-    pass
+    name: Title
 
 
-class ProjectUpdate(ProjectBase):
-    name: str | None = None
+# Без значений по умолчанию: ProjectUpdate наследовал is_active=True, и PUT без него снимал архив
+class ProjectPatch(BaseModel):
+    model_config = PATCH_CONFIG
+
+    name: Title | None = None
+    description: str | None = None
+    is_active: bool | None = None
+
+    @model_validator(mode="after")
+    def no_null(self):
+        return _no_null(self, "name", "is_active")
 
 
 # owner_id только в ответах: владельца задаёт токен, поле в теле запроса игнорируется
@@ -62,17 +89,26 @@ class TaskBase(BaseModel):
     is_active: bool | None = True
 
 
+# deadline только с часовым поясом: без него PostgreSQL считает время UTC, SQLite хранит как есть
 class TaskCreate(TaskBase):
-    pass
+    title: Title
+    deadline: AwareDatetime | None = None
 
 
-class TaskUpdate(BaseModel):
-    title: str | None = None
+# null у project_id — вынос из проекта, владелец задачи прежний
+class TaskPatch(BaseModel):
+    model_config = PATCH_CONFIG
+
+    title: Title | None = None
     description: str | None = None
     status: TaskStatus | None = None
-    deadline: datetime | None = None
+    deadline: AwareDatetime | None = None
     project_id: int | None = None
     is_active: bool | None = None
+
+    @model_validator(mode="after")
+    def no_null(self):
+        return _no_null(self, "title", "status", "is_active")
 
 
 class TaskStatusUpdate(BaseModel):

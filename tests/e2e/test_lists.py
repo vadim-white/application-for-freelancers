@@ -37,9 +37,9 @@ def choose(page: Page, select: str, label: str) -> None:
     page.locator(".n-base-select-option").filter(has_text=label).click()
 
 
-def put_ok(page: Page, path: str):
-    """Ожидание PUT по пути; проверка кода после действия."""
-    return page.expect_response(lambda r: r.request.method == "PUT" and api_path(r.url) == path)
+def patch_ok(page: Page, path: str):
+    """Ожидание PATCH по пути; проверка кода после действия."""
+    return page.expect_response(lambda r: r.request.method == "PATCH" and api_path(r.url) == path)
 
 
 def test_project_archive_and_restore(open_session, base_url, run_label):
@@ -50,7 +50,7 @@ def test_project_archive_and_restore(open_session, base_url, run_label):
     card = page.locator(".project-card").filter(has_text=name)
     expect(card).to_have_count(1)
 
-    with put_ok(page, f"/api/tasks/projects/{project_id}") as archived:
+    with patch_ok(page, f"/api/tasks/projects/{project_id}") as archived:
         card.get_by_role("button", name="В архив").click()
     assert archived.value.status == 200, f"в архив: {archived.value.status}"
     expect(card).to_have_count(0)
@@ -58,7 +58,7 @@ def test_project_archive_and_restore(open_session, base_url, run_label):
     switch = page.locator(".project-filters").get_by_role("switch")
     switch.click()
     expect(card).to_have_count(1)
-    with put_ok(page, f"/api/tasks/projects/{project_id}") as restored:
+    with patch_ok(page, f"/api/tasks/projects/{project_id}") as restored:
         card.get_by_role("button", name="Восстановить").click()
     assert restored.value.status == 200, f"восстановить: {restored.value.status}"
     expect(card).to_have_count(0)
@@ -86,7 +86,7 @@ def test_task_archive_and_restore(open_session, base_url, run_label):
     row = page.locator(".n-drawer .task-item").filter(has_text=title)
     expect(row).to_have_count(1)
 
-    with put_ok(page, f"/api/tasks/tasks/{ids[title]}") as archived:
+    with patch_ok(page, f"/api/tasks/tasks/{ids[title]}") as archived:
         row.get_by_role("button", name="В архив").click()
     assert archived.value.status == 200, f"в архив: {archived.value.status}"
     expect(row).to_have_count(0)
@@ -98,7 +98,7 @@ def test_task_archive_and_restore(open_session, base_url, run_label):
     expect(row.get_by_role("button", name="⏱️")).to_have_count(0)
     expect(row.get_by_role("button", name="✓")).to_have_count(0)
 
-    with put_ok(page, f"/api/tasks/tasks/{ids[title]}") as restored:
+    with patch_ok(page, f"/api/tasks/tasks/{ids[title]}") as restored:
         row.get_by_role("button", name="Восстановить").click()
     assert restored.value.status == 200, f"восстановить: {restored.value.status}"
     expect(row).to_have_count(0)

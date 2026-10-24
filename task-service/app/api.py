@@ -78,15 +78,15 @@ def get_project(
     return get_owned_project(db, project_id, user)
 
 
-@router.put("/projects/{project_id}", response_model=schemas.ProjectRead)
+@router.patch("/projects/{project_id}", response_model=schemas.ProjectRead)
 def update_project(
     project_id: int,
-    update_in: schemas.ProjectUpdate,
+    patch: schemas.ProjectPatch,
     db: Session = Depends(get_db),
     user: CurrentUser = Depends(get_current_user),
 ):
     p = get_owned_project(db, project_id, user)
-    return crud.update_project(db, p, update_in)
+    return crud.update_project(db, p, patch)
 
 
 @router.delete("/projects/{project_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -164,22 +164,24 @@ def get_task(
     return get_owned_task(db, task_id, user)
 
 
-@router.put("/tasks/{task_id}", response_model=schemas.TaskRead)
+@router.patch("/tasks/{task_id}", response_model=schemas.TaskRead)
 def update_task(
     task_id: int,
-    update_in: schemas.TaskUpdate,
+    patch: schemas.TaskPatch,
     db: Session = Depends(get_db),
     user: CurrentUser = Depends(get_current_user),
 ):
-    logger.info(f"Updating task: id={task_id}, update={update_in.model_dump()}")
+    # только имена полей: значения (описание) в лог не пишем
+    logger.info(f"Updating task: id={task_id}, fields={sorted(patch.model_fields_set)}")
     t = get_owned_task(db, task_id, user)
     # Перенос только в проект владельца задачи. user в чужой проект получает 404 из
-    # get_owned_project; admin видит все проекты, поэтому для него отдельный 400
-    if update_in.project_id is not None:
-        target = get_owned_project(db, update_in.project_id, user)
+    # get_owned_project; admin видит все проекты, поэтому для него отдельный 400.
+    # project_id: null — вынос из проекта, проверять нечего
+    if "project_id" in patch.model_fields_set and patch.project_id is not None:
+        target = get_owned_project(db, patch.project_id, user)
         if target.owner_id != t.owner_id:
             raise HTTPException(status_code=400, detail="Project belongs to another owner")
-    result = crud.update_task(db, t, update_in)
+    result = crud.update_task(db, t, patch)
     logger.info(f"Task updated: id={task_id}, new_status={result.status}")
     return result
 
