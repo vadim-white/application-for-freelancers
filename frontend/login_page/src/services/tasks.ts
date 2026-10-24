@@ -27,6 +27,9 @@ export interface Project {
   created_at: string | null
 }
 
+// Вместо проекта в панели задач: задачи вне проекта (project_id=none), карточка «Без проекта»
+export const NO_PROJECT_ID = 'none'
+
 // Задача в превью карточки проекта
 export interface TaskPreview {
   id: number
@@ -118,7 +121,8 @@ export async function getTask(taskId: number | string) {
   return r.data
 }
 
-export async function createTask(payload: { title: string; description?: string; project_id: number }) {
+// без project_id задача создаётся вне проекта
+export async function createTask(payload: { title: string; description?: string; project_id?: number }) {
   const r = await api.post('/api/tasks/tasks', payload)
   return r.data
 }

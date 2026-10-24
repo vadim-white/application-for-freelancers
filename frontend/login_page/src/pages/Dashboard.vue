@@ -87,6 +87,8 @@
         </div>
 
         <div class="projects-grid">
+          <!-- Задачи вне проекта: всегда первая, не зависит от страницы, сортировки и архива -->
+          <NoProjectCard :total="noProjectTotal" :preview="noProjectPreview" @open="openNoProject" />
           <!-- Карточки проектов -->
           <ProjectCard
             v-for="p in projects"
@@ -214,9 +216,17 @@ import { ref, reactive, computed, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '../stores/auth'
 import { useTimerStore, formatHoursMinutes } from '../stores/timer'
-import { getProjects, updateProject, type ProjectListItem } from '../services/tasks'
+import {
+  NO_PROJECT_ID,
+  getProjects,
+  getTasks,
+  updateProject,
+  type ProjectListItem,
+  type Task
+} from '../services/tasks'
 import { errorText } from '../services/errors'
 import ProjectCard from '../components/ProjectCard.vue'
+import NoProjectCard from '../components/NoProjectCard.vue'
 import ProjectTasksDrawer from '../components/ProjectTasksDrawer.vue'
 import TaskTimerModal from '../components/TaskTimerModal.vue'
 import CreateProjectModal from '../components/CreateProjectModal.vue'
@@ -250,8 +260,12 @@ const sort = ref<'created_at' | '-created_at' | 'name' | '-name'>('-created_at')
 // выкл. — только активные, вкл. — только архивные
 const showArchive = ref(false)
 const busyId = ref<number | null>(null)
+// карточка «Без проекта»: активные задачи вне проекта — число и первые три
+const noProjectTotal = ref(0)
+const noProjectPreview = ref<Task[]>([])
 // ответ устаревшего запроса не должен затереть более новый
 let requestSeq = 0
+let noProjectSeq = 0
 const usersStats = ref<any[]>([])
 const statsUsers = reactive<Record<number, UserItem>>({})
 
@@ -304,7 +318,25 @@ function userLabel(id: number) {
   return u.full_name ? `${u.email} · ${u.full_name}` : u.email
 }
 
+// список проектов и карточка «Без проекта» — два независимых запроса; ошибка одного не мешает другому
 async function load() {
+  await Promise.all([loadProjects(), loadNoProject()])
+}
+
+async function loadNoProject() {
+  const seq = ++noProjectSeq
+  try {
+    const data = await getTasks({ project_id: NO_PROJECT_ID, is_active: true, limit: 3, sort: 'created_at' })
+    if (seq !== noProjectSeq) return
+    noProjectTotal.value = data.total
+    noProjectPreview.value = data.items
+  } catch (err) {
+    if (seq !== noProjectSeq) return
+    message.error(errorText(err, 'Ошибка загрузки задач без проекта'))
+  }
+}
+
+async function loadProjects() {
   const seq = ++requestSeq
   try {
     // превью задач и счётчик для карточек приходят в том же ответе
@@ -321,7 +353,7 @@ async function load() {
     const lastPage = Math.max(1, Math.ceil(data.total / PAGE_SIZE))
     if (page.value > lastPage) {
       page.value = lastPage
-      await load()
+      await loadProjects()
     }
   } catch (err) {
     if (seq !== requestSeq) return
@@ -329,26 +361,33 @@ async function load() {
   }
 }
 
+// страница и сортировка карточки «Без проекта» не касаются
 function onFilterChange() {
   page.value = 1
-  load()
+  loadProjects()
 }
 
 function onPageChange(p: number) {
   page.value = p
-  load()
+  loadProjects()
 }
 
 async function toggleArchive(p: ProjectListItem) {
   busyId.value = p.id
   try {
     await updateProject(p.id, { is_active: !p.is_active })
-    await load()
+    await loadProjects()
   } catch (err) {
     message.error(errorText(err, 'Не удалось изменить проект'))
   } finally {
     busyId.value = null
   }
+}
+
+function openNoProject() {
+  // новый объект при каждом открытии: панель перечитывает списки
+  activeProject.value = { id: NO_PROJECT_ID, name: 'Без проекта' }
+  drawerShow.value = true
 }
 
 function openProject(p: any) {

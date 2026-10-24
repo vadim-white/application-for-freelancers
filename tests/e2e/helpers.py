@@ -98,5 +98,18 @@ def login(page: Page, email: str) -> list[dict]:
     return body
 
 
+def wait_responses(s: Session, method: str, path: str, count: int) -> None:
+    """Ждёт, пока на странице накопится `count` ответов API.
+
+    В sync API события приходят только из вызовов Playwright, поэтому ожидание — короткими
+    паузами по 50 мс в пределах TIMEOUT_MS (нужное событие могло прийти раньше).
+    """
+    waited = 0
+    while len(s.net.api(method, path)) < count:
+        assert waited < TIMEOUT_MS, f"{method} {path}: ответов {len(s.net.api(method, path))}"
+        s.page.wait_for_timeout(50)
+        waited += 50
+
+
 def local_storage(page: Page, key: str) -> str | None:
     return page.evaluate("k => localStorage.getItem(k)", key)

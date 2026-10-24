@@ -7,8 +7,10 @@
     placement="right"
     class="tasks-drawer"
   >
+    <!-- n-drawer сам слот header не выводит: заголовок — в n-drawer-content -->
+    <n-drawer-content :native-scrollbar="false" closable>
     <template #header>
-      <div style="font-weight: 600">📋 {{ project ? project.name : 'Проект' }}</div>
+      <div class="drawer-title" style="font-weight: 600">📋 {{ project ? project.name : 'Проект' }}</div>
     </template>
 
     <div class="drawer-content">
@@ -173,6 +175,7 @@
           </n-form>
         </div>
     </div>
+    </n-drawer-content>
 
     <TaskEditModal
       :show="editShow"
@@ -186,6 +189,7 @@
 <script setup lang="ts">
 import { ref, computed, watch } from 'vue'
 import {
+  NO_PROJECT_ID,
   getTasks,
   createTask,
   updateTask,
@@ -198,6 +202,7 @@ import { useTimerStore } from '../stores/timer'
 import TaskEditModal from './TaskEditModal.vue'
 import { useMessage } from 'naive-ui'
 
+// project — проект или { id: NO_PROJECT_ID, name: 'Без проекта' }: задачи вне проекта
 const props = defineProps({
   show: Boolean,
   project: Object
@@ -424,10 +429,6 @@ const newTask = ref({ title: '', description: '' })
 const adding = ref(false)
 
 async function addTask() {
-  if (!props.project) {
-    message.error('Нет проекта')
-    return
-  }
   // сервер обрезает пробелы: название из одних пробелов — 422
   if (!newTask.value.title.trim()) {
     message.error('Введите название')
@@ -438,7 +439,8 @@ async function addTask() {
     await createTask({
       title: newTask.value.title,
       description: newTask.value.description,
-      project_id: props.project.id
+      // вне проекта — без project_id
+      project_id: props.project!.id === NO_PROJECT_ID ? undefined : props.project!.id
     })
     message.success('Задача добавлена')
     newTask.value.title = ''
