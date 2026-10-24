@@ -1,4 +1,5 @@
 import logging
+from typing import Literal
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -50,14 +51,24 @@ def create_project(
     return project
 
 
-@router.get("/projects", response_model=list[schemas.ProjectRead])
+@router.get("/projects", response_model=schemas.ProjectList)
 def list_projects(
-    skip: int = 0,
-    limit: int = 100,
+    is_active: bool | None = None,
+    sort: Literal["created_at", "-created_at", "name", "-name"] = "-created_at",
+    limit: int = Query(50, ge=1, le=200),
+    offset: int = Query(0, ge=0),
     db: Session = Depends(get_db),
     user: CurrentUser = Depends(get_current_user),
 ):
-    return crud.list_projects(db, skip=skip, limit=limit, owner_id=_owner_scope(user))
+    items, total = crud.list_projects(
+        db,
+        owner_id=_owner_scope(user),
+        is_active=is_active,
+        sort=sort,
+        limit=limit,
+        offset=offset,
+    )
+    return {"items": items, "total": total, "limit": limit, "offset": offset}
 
 
 @router.get("/projects/{project_id}", response_model=schemas.ProjectRead)
@@ -107,23 +118,43 @@ def create_task(
     return task
 
 
-@router.get("/tasks", response_model=list[schemas.TaskRead])
+TaskSort = Literal[
+    "created_at",
+    "-created_at",
+    "updated_at",
+    "-updated_at",
+    "deadline",
+    "-deadline",
+    "title",
+    "-title",
+    "status",
+    "-status",
+]
+
+
+@router.get("/tasks", response_model=schemas.TaskList)
 def list_tasks(
-    skip: int = 0,
-    limit: int = 100,
-    project_id: int | None = Query(None),
-    status_filter: models.TaskStatus | None = Query(None, alias="status"),
+    project_id: int | Literal["none"] | None = None,
+    status_filter: list[models.TaskStatus] = Query([], alias="status"),
+    is_active: bool | None = None,
+    sort: TaskSort = "-created_at",
+    limit: int = Query(50, ge=1, le=200),
+    offset: int = Query(0, ge=0),
     db: Session = Depends(get_db),
     user: CurrentUser = Depends(get_current_user),
 ):
-    return crud.list_tasks(
+    """project_id=none — задачи без проекта; status повторяется: ?status=todo&status=done."""
+    items, total = crud.list_tasks(
         db,
-        skip=skip,
-        limit=limit,
-        project_id=project_id,
-        status=status_filter,
         owner_id=_owner_scope(user),
+        project_id=project_id,
+        statuses=status_filter,
+        is_active=is_active,
+        sort=sort,
+        limit=limit,
+        offset=offset,
     )
+    return {"items": items, "total": total, "limit": limit, "offset": offset}
 
 
 @router.get("/tasks/{task_id}", response_model=schemas.TaskRead)

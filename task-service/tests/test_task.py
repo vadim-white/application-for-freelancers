@@ -72,7 +72,7 @@ def test_user_can_work_with_tasks(client, user_headers):
     r = client.post("/api/tasks/tasks", json={"title": "t1"}, headers=user_headers)
     assert r.status_code == 201
     task_id = r.json()["id"]
-    assert client.get("/api/tasks/tasks", headers=user_headers).json()[0]["id"] == task_id
+    assert client.get("/api/tasks/tasks", headers=user_headers).json()["items"][0]["id"] == task_id
     r = client.post(
         f"/api/tasks/tasks/{task_id}/status", json={"status": "done"}, headers=user_headers
     )
@@ -113,7 +113,7 @@ def test_forged_role_header_does_not_grant_admin(client, user_headers, other_hea
     pid = client.post("/api/tasks/projects", json={"name": "p"}, headers=other_headers).json()["id"]
     headers = {**user_headers, "X-User-Role": "admin", "X-User-Id": "2"}
     assert client.get(f"/api/tasks/projects/{pid}", headers=headers).status_code == 404
-    assert client.get("/api/tasks/projects", headers=headers).json() == []
+    assert client.get("/api/tasks/projects", headers=headers).json()["items"] == []
     assert client.get("/api/tasks/statistics/users", headers=headers).status_code == 403
 
 
@@ -195,7 +195,8 @@ def test_project_owner_from_token(client, admin_headers):
     pid = r.json()["id"]
     assert r.json()["owner_id"] == 99
     assert client.get(f"/api/tasks/projects/{pid}", headers=admin_headers).json()["owner_id"] == 99
-    assert client.get("/api/tasks/projects", headers=admin_headers).json()[0]["owner_id"] == 99
+    items = client.get("/api/tasks/projects", headers=admin_headers).json()["items"]
+    assert items[0]["owner_id"] == 99
 
 
 def test_task_without_project_owner_from_token(client, user_headers):
@@ -205,7 +206,7 @@ def test_task_without_project_owner_from_token(client, user_headers):
     assert r.json()["project_id"] is None
     assert r.json()["owner_id"] == 1
     assert client.get(f"/api/tasks/tasks/{tid}", headers=user_headers).json()["owner_id"] == 1
-    assert client.get("/api/tasks/tasks", headers=user_headers).json()[0]["owner_id"] == 1
+    assert client.get("/api/tasks/tasks", headers=user_headers).json()["items"][0]["owner_id"] == 1
 
 
 def test_owner_id_in_body_ignored(client, user_headers, admin_headers):
@@ -241,9 +242,7 @@ def test_admin_task_in_foreign_project_gets_project_owner(client, user_headers, 
     assert r.json()["owner_id"] == 1
     assert r.json()["project"]["owner_id"] == 1
     # задача видна владельцу проекта
-    assert [t["id"] for t in client.get("/api/tasks/tasks", headers=user_headers).json()] == [
-        r.json()["id"]
-    ]
+    assert _list_ids(client, "/api/tasks/tasks", user_headers) == [r.json()["id"]]
 
 
 # --- Доступ «только свои» (1.2.6) ---
@@ -253,6 +252,10 @@ def _project(client, headers, name="p"):
     r = client.post("/api/tasks/projects", json={"name": name}, headers=headers)
     assert r.status_code == 201
     return r.json()["id"]
+
+
+def _list_ids(client, path, headers):
+    return [x["id"] for x in client.get(path, headers=headers).json()["items"]]
 
 
 def _task(client, headers, title="t", **fields):
@@ -265,15 +268,9 @@ def test_projects_list_only_own_admin_sees_all(client, user_headers, other_heade
     p1 = _project(client, user_headers, "u1")
     p2 = _project(client, other_headers, "u2")
     pa = _project(client, admin_headers, "adm")
-    assert [p["id"] for p in client.get("/api/tasks/projects", headers=user_headers).json()] == [p1]
-    assert [p["id"] for p in client.get("/api/tasks/projects", headers=other_headers).json()] == [
-        p2
-    ]
-    assert {p["id"] for p in client.get("/api/tasks/projects", headers=admin_headers).json()} == {
-        p1,
-        p2,
-        pa,
-    }
+    assert _list_ids(client, "/api/tasks/projects", user_headers) == [p1]
+    assert _list_ids(client, "/api/tasks/projects", other_headers) == [p2]
+    assert set(_list_ids(client, "/api/tasks/projects", admin_headers)) == {p1, p2, pa}
 
 
 def test_foreign_project_404(client, user_headers, other_headers):
@@ -319,7 +316,7 @@ def test_tasks_list_only_own_and_filters_inside_own(
     def ids(headers, **params):
         r = client.get("/api/tasks/tasks", params=params, headers=headers)
         assert r.status_code == 200
-        return {t["id"] for t in r.json()}
+        return {t["id"] for t in r.json()["items"]}
 
     assert ids(user_headers) == {t1, t1_free}
     assert ids(other_headers) == {t2, t2_free}
@@ -369,7 +366,7 @@ def test_user_task_in_foreign_project_404(client, user_headers, other_headers):
         "/api/tasks/tasks", json={"title": "t", "project_id": pid}, headers=user_headers
     )
     assert r.status_code == 404
-    assert client.get("/api/tasks/tasks", headers=other_headers).json() == []
+    assert client.get("/api/tasks/tasks", headers=other_headers).json()["items"] == []
 
 
 @pytest.mark.parametrize("project_id", [0, 99999])
@@ -380,7 +377,7 @@ def test_task_in_missing_project_404(client, user_headers, admin_headers, projec
             "/api/tasks/tasks", json={"title": "t", "project_id": project_id}, headers=headers
         )
         assert r.status_code == 404
-    assert client.get("/api/tasks/tasks", headers=admin_headers).json() == []
+    assert client.get("/api/tasks/tasks", headers=admin_headers).json()["items"] == []
 
 
 def test_move_task_to_own_project(client, user_headers):

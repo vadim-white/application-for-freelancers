@@ -175,8 +175,9 @@ async function loadTasks() {
   if (!props.project) return
   loading.value = true
   try {
-    const data = await getTasks({ project_id: props.project.id })
-    tasks.value = data || []
+    // страниц пока нет: больше 200 задач проекта панель не покажет
+    const data = await getTasks({ project_id: props.project.id, limit: 200, sort: 'created_at' })
+    tasks.value = data.items
   } catch (err) {
     console.error(err)
     message.error('Не удалось загрузить задачи')

@@ -78,7 +78,8 @@
             v-for="p in projects"
             :key="p.id"
             :project="p"
-            :tasks="projectTasks[p.id] || []"
+            :tasks="projectTasks[p.id]?.items || []"
+            :count="projectTasks[p.id]?.total || 0"
             @open="openProject"
           />
 
@@ -182,7 +183,7 @@ import { ref, reactive, computed, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '../stores/auth'
 import { useTimerStore, formatHoursMinutes } from '../stores/timer'
-import { getProjects, getTasks } from '../services/tasks'
+import { getProjects, getTasks, type Project, type TaskList } from '../services/tasks'
 import ProjectCard from '../components/ProjectCard.vue'
 import ProjectTasksDrawer from '../components/ProjectTasksDrawer.vue'
 import TaskTimerModal from '../components/TaskTimerModal.vue'
@@ -200,8 +201,8 @@ const isAdmin = computed(() => {
   return auth.user?.role === 'admin'
 })
 
-const projects = ref<any[]>([])
-const projectTasks = reactive<Record<number, any[]>>({})
+const projects = ref<Project[]>([])
+const projectTasks = reactive<Record<number, TaskList>>({})
 const usersStats = ref<any[]>([])
 const statsUsers = reactive<Record<number, UserItem>>({})
 
@@ -248,15 +249,15 @@ function userLabel(id: number) {
 
 async function load() {
   try {
-    const ps = await getProjects()
+    // новые сверху (порядок API по умолчанию); страниц пока нет — до 200 проектов
+    const ps = (await getProjects({ limit: 200 })).items
     projects.value = ps
-    // все задачи проекта: карточка показывает первые три и счётчик по всем
+    // карточка: первые три задачи и счётчик по всем (total)
     for (const p of ps) {
       try {
-        const tasks = await getTasks({ project_id: p.id })
-        projectTasks[p.id] = tasks
+        projectTasks[p.id] = await getTasks({ project_id: p.id, limit: 3, sort: 'created_at' })
       } catch {
-        projectTasks[p.id] = []
+        delete projectTasks[p.id]
       }
     }
   } catch (err) {

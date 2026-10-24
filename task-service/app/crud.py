@@ -1,6 +1,20 @@
-from sqlalchemy.orm import Session
+from typing import Literal
+
+from sqlalchemy import case, func, select
+from sqlalchemy.orm import Session, selectinload
 
 from . import models, schemas
+
+
+def _order_by(sort: str, columns: dict, id_column) -> list:
+    """sort — поле с «-» или без; NULL в конце в обе стороны, при равенстве id в ту же сторону.
+
+    nulls_last явно: без него SQLite ставит NULL первыми по возрастанию, PostgreSQL — последними.
+    """
+    descending = sort.startswith("-")
+    column = columns[sort.lstrip("-")]
+    first = column.desc() if descending else column.asc()
+    return [first.nulls_last(), id_column.desc() if descending else id_column.asc()]
 
 
 # Projects
@@ -22,12 +36,29 @@ def get_project(db: Session, project_id: int) -> models.Project | None:
 
 
 def list_projects(
-    db: Session, skip: int = 0, limit: int = 100, owner_id: int | None = None
-) -> list[models.Project]:
-    q = db.query(models.Project)
+    db: Session,
+    *,
+    owner_id: int | None,
+    is_active: bool | None,
+    sort: str,
+    limit: int,
+    offset: int,
+):
+    """(items, total); total считается с теми же фильтрами."""
+    project = models.Project
+    conditions = []
     if owner_id is not None:
-        q = q.filter(models.Project.owner_id == owner_id)
-    return q.offset(skip).limit(limit).all()
+        conditions.append(project.owner_id == owner_id)
+    if is_active is not None:
+        conditions.append(project.is_active == is_active)
+    # lower: иначе заглавные раньше всех строчных (сравнение по кодам символов)
+    columns = {"created_at": project.created_at, "name": func.lower(project.name)}
+    order = _order_by(sort, columns, project.id)
+    total = db.scalar(select(func.count()).select_from(project).where(*conditions))
+    items = db.scalars(
+        select(project).where(*conditions).order_by(*order).limit(limit).offset(offset)
+    )
+    return list(items), total
 
 
 def update_project(
@@ -74,20 +105,46 @@ def get_task(db: Session, task_id: int) -> models.Task | None:
 
 def list_tasks(
     db: Session,
-    skip: int = 0,
-    limit: int = 100,
-    project_id: int | None = None,
-    status: models.TaskStatus | None = None,
-    owner_id: int | None = None,
-) -> list[models.Task]:
-    q = db.query(models.Task)
+    *,
+    owner_id: int | None,
+    project_id: int | Literal["none"] | None,
+    statuses: list[models.TaskStatus],
+    is_active: bool | None,
+    sort: str,
+    limit: int,
+    offset: int,
+):
+    """(items, total); total считается с теми же фильтрами.
+
+    project_id="none" — задачи без проекта.
+    """
+    task = models.Task
+    conditions = []
     if owner_id is not None:
-        q = q.filter(models.Task.owner_id == owner_id)
-    if project_id is not None:
-        q = q.filter(models.Task.project_id == project_id)
-    if status is not None:
-        q = q.filter(models.Task.status == status)
-    return q.offset(skip).limit(limit).all()
+        conditions.append(task.owner_id == owner_id)
+    if project_id == "none":
+        conditions.append(task.project_id.is_(None))
+    elif project_id is not None:
+        conditions.append(task.project_id == project_id)
+    if statuses:
+        conditions.append(task.status.in_(statuses))
+    if is_active is not None:
+        conditions.append(task.is_active == is_active)
+    columns = {
+        "created_at": task.created_at,
+        # updated_at пуст до первой правки: новая задача считается изменённой при создании
+        "updated_at": func.coalesce(task.updated_at, task.created_at),
+        "deadline": task.deadline,
+        "title": func.lower(task.title),
+        # порядок объявления TaskStatus: SQLite иначе сортирует enum по алфавиту
+        "status": case({s: i for i, s in enumerate(models.TaskStatus)}, value=task.status),
+    }
+    order = _order_by(sort, columns, task.id)
+    total = db.scalar(select(func.count()).select_from(task).where(*conditions))
+    # проект каждой задачи одним запросом, а не отдельным при сериализации TaskRead
+    query = select(task).where(*conditions).options(selectinload(task.project))
+    items = db.scalars(query.order_by(*order).limit(limit).offset(offset))
+    return list(items), total
 
 
 def update_task(db: Session, task: models.Task, update_in: schemas.TaskUpdate) -> models.Task:

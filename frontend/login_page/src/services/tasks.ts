@@ -17,8 +17,33 @@ export interface Task {
   updated_at: string | null
 }
 
-export async function getProjects() {
-  const r = await api.get('/api/tasks/projects')
+// Проект из task-service (схема ProjectRead)
+export interface Project {
+  id: number
+  name: string
+  description: string | null
+  is_active: boolean
+  owner_id: number
+  created_at: string | null
+}
+
+// Конверт списка: total — число подходящих под фильтры, не размер страницы
+export interface ProjectList {
+  items: Project[]
+  total: number
+  limit: number
+  offset: number
+}
+
+export interface ProjectListParams {
+  is_active?: boolean
+  sort?: 'created_at' | '-created_at' | 'name' | '-name'
+  limit?: number
+  offset?: number
+}
+
+export async function getProjects(params: ProjectListParams = {}): Promise<ProjectList> {
+  const r = await api.get('/api/tasks/projects', { params })
   return r.data
 }
 
@@ -43,8 +68,27 @@ export async function deleteProject(projectId: number | string) {
 }
 
 /* Tasks */
-export async function getTasks(params: { project_id?: number; status?: string } = {}) {
-  const r = await api.get('/api/tasks/tasks', { params })
+export interface TaskList {
+  items: Task[]
+  total: number
+  limit: number
+  offset: number
+}
+
+type TaskSortField = 'created_at' | 'updated_at' | 'deadline' | 'title' | 'status'
+
+export interface TaskListParams {
+  project_id?: number | 'none'
+  status?: TaskStatus[]
+  is_active?: boolean
+  sort?: TaskSortField | `-${TaskSortField}`
+  limit?: number
+  offset?: number
+}
+
+export async function getTasks(params: TaskListParams = {}): Promise<TaskList> {
+  // status повторяется (?status=todo&status=done), а не status[]=…: так его ждёт FastAPI
+  const r = await api.get('/api/tasks/tasks', { params, paramsSerializer: { indexes: null } })
   return r.data
 }
 

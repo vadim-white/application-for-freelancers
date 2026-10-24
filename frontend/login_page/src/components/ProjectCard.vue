@@ -31,11 +31,11 @@
     <div class="card-body">
       <div v-if="tasks && tasks.length" class="tasks-list">
         <div class="tasks-label">
-          📋 Задачи <span class="task-count">({{ tasks.length }})</span>
+          📋 Задачи <span class="task-count">({{ count }})</span>
         </div>
         <div class="tasks-items">
           <div 
-            v-for="(t, idx) in tasks.slice(0, 3)" 
+            v-for="t in tasks" 
             :key="t.id"
             class="task-item"
           >
@@ -81,7 +81,10 @@ import type { Task } from '../services/tasks'
 
 const props = defineProps({
   project: { type: Object, required: true },
-  tasks: { type: Array as PropType<Task[]>, default: () => [] }
+  // первые задачи проекта для превью
+  tasks: { type: Array as PropType<Task[]>, default: () => [] },
+  // число всех задач проекта, а не только показанных
+  count: { type: Number, default: 0 }
 })
 const emit = defineEmits(['open'])
 

@@ -1,7 +1,7 @@
 #!/bin/bash
 # Сквозной прогон через gateway: `bash tests/smoke.sh` из корня; объекты создаёт сам, проходит на чистой базе.
-# SMOKE_MODE=compose — 151 проверка, после `docker compose up --build -d --wait`;
-# SMOKE_MODE=k8s — 149, после ./scripts/k8s-deploy.sh, через вход http://127.0.0.1:8080, как браузер.
+# SMOKE_MODE=compose — 162 проверки, после `docker compose up --build -d --wait`;
+# SMOKE_MODE=k8s — 160, после ./scripts/k8s-deploy.sh, через вход http://127.0.0.1:8080, как браузер.
 # В k8s нет четырёх проверок закрытых портов: кластер публикует на хост только 8080, они ничего не доказывают.
 # Изоляцию NetworkPolicy внутри кластера smoke не проверяет.
 # В k8s path traversal проверяется дважды: Envoy нормализует путь до gateway, защита gateway — изнутри его пода.
@@ -12,7 +12,7 @@ case "$MODE" in
   compose)
     G="${SMOKE_G:-http://localhost:8000}"
     CLOSED_PORTS="8001 8002 8003 5432"
-    EXPECTED=151
+    EXPECTED=162
     in_svc() { local s=$1; shift; docker exec "ser-$s" "$@"; }   # in_svc auth|gateway команда...
     in_auth_db() { docker exec ser-auth-db "$@"; }
     ;;
@@ -21,7 +21,7 @@ case "$MODE" in
     KNS=freelance-service
     G="${SMOKE_G:-http://127.0.0.1:8080}"
     CLOSED_PORTS=""
-    EXPECTED=149
+    EXPECTED=160
     in_svc() { local s=$1; shift; kubectl --context "$KCTX" -n "$KNS" exec "deploy/ser-$s" -- "$@"; }
     in_auth_db() { kubectl --context "$KCTX" -n "$KNS" exec auth-db-0 -c postgres -- "$@"; }
     ;;
@@ -56,7 +56,7 @@ body() {
   [ -n "${4:-}" ] && a+=(-d "$4")
   cu "${a[@]}"
 }
-ids() { jq_ '" ".join(str(x["id"]) for x in d)'; }       # список объектов -> "1 2 3"
+ids() { jq_ '" ".join(str(x["id"]) for x in d["items"])'; }  # конверт списка -> "1 2 3"
 has() { case " $1 " in *" $2 "*) echo 1;; *) echo 0;; esac; }  # has "1 2 3" 2 -> 1
 # токен, подписанный ключом стека, с произвольными claims (PyJWT внутри ser-auth)
 forge() { # claims-json [key-expr]
@@ -178,11 +178,13 @@ chk "user1 PUT status done" "done" "$(body "$U1" PUT "/api/tasks/tasks/$T1" '{"s
 chk "user1 POST /status in_progress" 200 "$(req "$U1" POST "/api/tasks/tasks/$T1/status" '{"status":"in_progress"}')"
 
 echo "== Списки: user видит только свои, admin — всё"
+# база живёт между прогонами: объекты прогона — первые при сортировке по умолчанию (новые сверху),
+# задачи user1 ищутся ещё и в проекте прогона P1, где только его задачи
 L1P=$(body "$U1" GET /api/tasks/projects | ids)
 chk "user1 projects: own" 1 "$(has "$L1P" "$P1")"
 chk "user1 projects: not user2's" 0 "$(has "$L1P" "$P2")"
 chk "user1 projects: not admin's" 0 "$(has "$L1P" "$PA")"
-chk "user1 projects: all owner_id = user1" "[$U1ID]" "$(body "$U1" GET /api/tasks/projects | jq_ 'sorted({x["owner_id"] for x in d})' | tr -d ' ')"
+chk "user1 projects: all owner_id = user1" "[$U1ID]" "$(body "$U1" GET /api/tasks/projects | jq_ 'sorted({x["owner_id"] for x in d["items"]})' | tr -d ' ')"
 L2P=$(body "$U2" GET /api/tasks/projects | ids)
 chk "user2 projects: own" 1 "$(has "$L2P" "$P2")"
 chk "user2 projects: not user1's" 0 "$(has "$L2P" "$P1")"
@@ -191,13 +193,22 @@ chk "admin projects: sees all three" "1 1 1" "$(has "$LAP" "$PA") $(has "$LAP" "
 L1T=$(body "$U1" GET /api/tasks/tasks | ids)
 chk "user1 tasks: own (T1, no-project)" "1 1" "$(has "$L1T" "$T1") $(has "$L1T" "$TN")"
 chk "user1 tasks: not user2's" 0 "$(has "$L1T" "$T2")"
-chk "user1 tasks: all owner_id = user1" "[$U1ID]" "$(body "$U1" GET /api/tasks/tasks | jq_ 'sorted({x["owner_id"] for x in d})' | tr -d ' ')"
+chk "user1 tasks: all owner_id = user1" "[$U1ID]" "$(body "$U1" GET /api/tasks/tasks | jq_ 'sorted({x["owner_id"] for x in d["items"]})' | tr -d ' ')"
 chk "user1 ?project_id=user2's project: empty" "" "$(body "$U1" GET "/api/tasks/tasks?project_id=$P2" | ids)"
 chk "user1 ?project_id=own" "$T1" "$(body "$U1" GET "/api/tasks/tasks?project_id=$P1" | ids)"
 L2T=$(body "$U2" GET /api/tasks/tasks | ids)
 chk "user2 tasks: own, not user1's" "1 0 0" "$(has "$L2T" "$T2") $(has "$L2T" "$T1") $(has "$L2T" "$TN")"
 LAT=$(body "$A" GET /api/tasks/tasks | ids)
 chk "admin tasks: sees all" "1 1 1" "$(has "$LAT" "$T1") $(has "$LAT" "$T2") $(has "$LAT" "$TN")"
+R=$(body "$U1" GET "/api/tasks/tasks?project_id=$P1" | jq_ 'sorted(d)==["items","limit","offset","total"] and d["total"]==1 and d["limit"]==50'); chk "tasks list: envelope, total, limit 50" True "$R"
+R=$(body "$U1" GET /api/tasks/projects | jq_ 'sorted(d)==["items","limit","offset","total"] and d["total"]>=1 and d["limit"]==50'); chk "projects list: envelope, limit 50" True "$R"
+chk "tasks list: limit=201" 422 "$(req "$U1" GET "/api/tasks/tasks?limit=201")"
+chk "projects list: limit=201" 422 "$(req "$U1" GET "/api/tasks/projects?limit=201")"
+chk "tasks list: sort=bogus" 422 "$(req "$U1" GET "/api/tasks/tasks?sort=bogus")"
+chk "projects list: sort=bogus" 422 "$(req "$U1" GET "/api/tasks/projects?sort=bogus")"
+LNT=$(body "$U1" GET "/api/tasks/tasks?project_id=none" | ids)
+chk "user1 ?project_id=none: TN, not T1" "1 0" "$(has "$LNT" "$TN") $(has "$LNT" "$T1")"
+chk "user1 ?status=done&status=in_progress in P1" "$T1" "$(body "$U1" GET "/api/tasks/tasks?project_id=$P1&status=done&status=in_progress" | ids)"
 
 echo "== Чужое -> 404 (user1 на объекты user2 и admin)"
 chk "user1 GET user2 project" 404 "$(req "$U1" GET "/api/tasks/projects/$P2")"
@@ -224,7 +235,11 @@ chk "user1 move own task to project 0" 404 "$(req "$U1" PUT "/api/tasks/tasks/$T
 chk "task stayed in own project" "$P1" "$(body "$U1" GET "/api/tasks/tasks/$T1" | jq_ 'd["project_id"]')"
 R=$(req "$A" PUT "/api/tasks/tasks/$T1" "{\"project_id\":$P2}"); chk "admin move user1 task to user2 project (other owner)" 400 "$R"
 TAJ=$(body "$A" POST /api/tasks/tasks "{\"title\":\"by admin $SFX\",\"project_id\":$P1}")
+TA=$(echo "$TAJ" | jq_ 'd["id"]')
 chk "admin task in user1 project -> owner = user1" "$U1ID" "$(echo "$TAJ" | jq_ 'd["owner_id"]')"
+# по lower: «by admin …» раньше «T1 …»
+chk "user1 P1 sort=title" "$TA $T1" "$(body "$U1" GET "/api/tasks/tasks?project_id=$P1&sort=title" | ids)"
+chk "user1 P1 sort=-title" "$T1 $TA" "$(body "$U1" GET "/api/tasks/tasks?project_id=$P1&sort=-title" | ids)"
 
 echo "== admin видит и меняет всё"
 chk "admin GET user1 project" 200 "$(req "$A" GET "/api/tasks/projects/$P1")"
@@ -282,6 +297,7 @@ body "$U1" POST /api/time/timer/start "{\"task_id\":$T1}" >/dev/null
 req "$U1" PUT "/api/tasks/tasks/$T1" '{"is_active":false}' >/dev/null
 R=$(req "$U1" POST /api/time/timer/start "{\"task_id\":$T1}"); chk "timer start on archived task" 409 "$R"
 chk "timer stop after archive" "$T1" "$(body "$U1" POST /api/time/timer/stop | jq_ 'd["stopped"]["task_id"]')"
+chk "user1 P1 ?is_active=false -> archived T1" "$T1" "$(body "$U1" GET "/api/tasks/tasks?project_id=$P1&is_active=false" | ids)"
 
 echo "== Удаление: своё 204, каскад проекта"
 chk "user1 DELETE own task" 204 "$(req "$U1" DELETE "/api/tasks/tasks/$TN")"

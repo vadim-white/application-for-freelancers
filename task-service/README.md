@@ -2,6 +2,10 @@
 
 Проекты и задачи; каждый пользователь видит только свои, администратор — все. Порт — 8002. OpenAPI: http://127.0.0.1:8002/docs
 
+## Списки
+
+`GET /api/tasks/projects` и `GET /api/tasks/tasks` отдают конверт `{items, total, limit, offset}` (`limit` 1–200, по умолчанию 50; `total` — с теми же фильтрами). Белые списки `sort` и фильтры — в [«API» корневого README](../README.md#api). Порядок одинаков на SQLite и PostgreSQL: `status` сортируется выражением `CASE` в порядке объявления `TaskStatus` (иначе SQLite сортирует по алфавиту), `NULL` — `NULLS LAST` в обе стороны, `updated_at` — `coalesce(updated_at, created_at)` (до первой правки `updated_at` пуст), `title` и `name` — по `lower(…)`; при равенстве — `id` в ту же сторону. Кириллицу `lower` у SQLite не приводит — тест на PostgreSQL. Проект у задач страницы догружается одним запросом (`selectinload`).
+
 ## Статистика
 
 `GET /api/tasks/statistics/users` (admin) проксирует `GET /api/time/statistics/users` time-service с токеном пользователя и отдаёт ответ как есть (поля — в [README time-service](../time-service/README.md)); сетевая ошибка или не-200 от time — 502 без деталей, причина в логе. Клиент — один `httpx.AsyncClient` на процесс (lifespan, `app/time_client.py`, `base_url` = `TIME_SERVICE_URL`), таймауты: соединение 2 с, ответ 7 с — time обрывает запрос к базе через 5 с (`statement_timeout`), gateway ждёт 30 с.
@@ -30,7 +34,7 @@
 uv run pytest -q
 ```
 
-Запущенные сервисы не нужны. Тесты миграций, `/ready` и таймаутов к базе на PostgreSQL идут, только если задана `TEST_POSTGRES_URL` — см. [«Тесты» в корневом README](../README.md#тесты).
+Запущенные сервисы не нужны. Тесты миграций, `/ready`, таймаутов к базе и порядка списков на PostgreSQL идут, только если задана `TEST_POSTGRES_URL` — см. [«Тесты» в корневом README](../README.md#тесты).
 
 ## Переменные окружения
 

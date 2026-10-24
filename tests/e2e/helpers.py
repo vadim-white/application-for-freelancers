@@ -79,7 +79,7 @@ def is_projects_list(r: Response) -> bool:
 
 
 def login(page: Page, email: str) -> list[dict]:
-    """Вход через форму; возвращает тело GET /api/tasks/projects — список, загруженный дашбордом.
+    """Вход через форму; возвращает проекты дашборда — items из GET /api/tasks/projects.
 
     Возвращает управление, когда дашборд догрузился: после списка проектов он по одному запрашивает
     задачи каждого проекта (GET /api/tasks/tasks?project_id=N). Без этого ожидания тест ловит хвост
@@ -103,7 +103,7 @@ def login(page: Page, email: str) -> list[dict]:
     expect(page).to_have_url(re.compile(r"/dashboard$"))
     status = projects.value.status
     assert status == 200, f"GET /api/tasks/projects после входа {email}: {status}"
-    body = projects.value.json()
+    body = projects.value.json()["items"]
     # обработчики sync API вызываются внутри вызовов Playwright: ждём следующий ответ, пока
     # не придут задачи всех проектов (нет нужного ответа за TIMEOUT_MS — ошибка таймаута)
     while not {p["id"] for p in body} <= loaded:

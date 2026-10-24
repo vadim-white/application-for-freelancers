@@ -29,6 +29,14 @@ class ProjectRead(ProjectBase):
     model_config = ConfigDict(from_attributes=True)
 
 
+# Конверт списка: total — число подходящих под фильтры, не размер страницы
+class ProjectList(BaseModel):
+    items: list[ProjectRead]
+    total: int
+    limit: int
+    offset: int
+
+
 # Task schemas
 class TaskBase(BaseModel):
     title: str
@@ -64,3 +72,10 @@ class TaskRead(TaskBase):
     project: ProjectRead | None = None
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class TaskList(BaseModel):
+    items: list[TaskRead]
+    total: int
+    limit: int
+    offset: int
