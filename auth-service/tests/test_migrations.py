@@ -1,8 +1,11 @@
+import pytest
 from alembic import command
+from sqlalchemy import text
 
 TABLES = {"users"}
 # типы enum, которые создаёт миграция в PostgreSQL (в SQLite их нет)
 EXPECTED_ENUMS = {"userrole"}
+CREATE_USERS = "d68b21b4476c"
 
 
 def test_upgrade_head_matches_models(migrations_db):
@@ -25,3 +28,53 @@ def test_downgrade_base_then_upgrade_again(migrations_db):
     db.run(command.upgrade, "head")
     assert db.tables() == {"alembic_version"} | TABLES
     db.run(command.check)
+
+
+def insert_users(db, *emails):
+    with db.engine.begin() as conn:
+        for email in emails:
+            conn.execute(
+                text(
+                    "INSERT INTO users (email, hashed_password, is_active, role) "
+                    "VALUES (:email, 'x', true, 'user')"
+                ),
+                {"email": email},
+            )
+
+
+def emails(db):
+    with db.engine.connect() as conn:
+        return conn.execute(text("SELECT email FROM users ORDER BY id")).scalars().all()
+
+
+def revision(db):
+    with db.engine.connect() as conn:
+        return conn.execute(text("SELECT version_num FROM alembic_version")).scalar_one()
+
+
+def test_email_lowercase_migration(migrations_db):
+    db = migrations_db
+    db.run(command.upgrade, CREATE_USERS)
+    insert_users(db, "User1@example.com", "user2@example.com", "ADMIN@EXAMPLE.COM")
+    db.run(command.upgrade, "head")
+    lowered = ["user1@example.com", "user2@example.com", "admin@example.com"]
+    assert emails(db) == lowered
+
+    # downgrade регистр не возвращает, повторный upgrade ничего не меняет
+    db.run(command.downgrade, CREATE_USERS)
+    assert emails(db) == lowered
+    db.run(command.upgrade, "head")
+    assert emails(db) == lowered
+    db.run(command.check)
+
+
+def test_email_lowercase_migration_stops_on_duplicates(migrations_db):
+    db = migrations_db
+    db.run(command.upgrade, CREATE_USERS)
+    before = ["User1@example.com", "user1@example.com", "Solo@Example.com"]
+    insert_users(db, *before)
+    with pytest.raises(RuntimeError, match="user1@example.com") as exc:
+        db.run(command.upgrade, "head")
+    assert "solo@example.com" not in str(exc.value)
+    assert emails(db) == before
+    assert revision(db) == CREATE_USERS

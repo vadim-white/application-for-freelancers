@@ -1,8 +1,13 @@
-from pydantic import BaseModel, ConfigDict, EmailStr, field_validator
+from typing import Annotated
+
+from pydantic import AfterValidator, BaseModel, ConfigDict, EmailStr, field_validator
+
+# EmailStr приводит к нижнему регистру только домен: без этого User1@… и user1@… — два аккаунта
+LowerEmailStr = Annotated[EmailStr, AfterValidator(str.lower)]
 
 
 class UserBase(BaseModel):
-    email: EmailStr
+    email: LowerEmailStr
     full_name: str | None = None
 
 
@@ -35,7 +40,7 @@ class UserRead(UserBase):
 
 
 class UserAuth(BaseModel):
-    email: EmailStr
+    email: LowerEmailStr
     password: str
 
     @field_validator("password")

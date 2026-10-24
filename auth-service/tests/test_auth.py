@@ -46,6 +46,20 @@ def test_register_creates_user_with_role_user(client):
     assert login(client, "new@example.com").status_code == 200
 
 
+def test_register_stores_email_in_lowercase(client, db):
+    r = client.post("/api/auth/register", json={"email": "User1@Example.COM", "password": PASSWORD})
+    assert r.status_code == 201
+    assert r.json()["email"] == "user1@example.com"
+    assert [u.email for u in db.query(models.User)] == ["user1@example.com"]
+
+
+def test_register_same_email_other_case_rejected(client, make_user):
+    make_user(email="user1@example.com")
+    r = client.post("/api/auth/register", json={"email": "USER1@example.com", "password": PASSWORD})
+    assert r.status_code == 400
+    assert r.json()["detail"] == "Email already registered"
+
+
 # --- login ---
 
 
@@ -60,6 +74,13 @@ def test_login_returns_tokens_with_role(client, make_user, role):
     assert access["role"] == role.value
     assert "exp" in access
     assert claims(r.json()["refresh_token"])["type"] == "refresh"
+
+
+def test_login_email_in_other_case(client, make_user):
+    user = make_user(email="user1@example.com")
+    r = login(client, email="User1@Example.COM")
+    assert r.status_code == 200
+    assert claims(r.json()["access_token"])["sub"] == str(user.id)
 
 
 def test_login_wrong_password(client, make_user):

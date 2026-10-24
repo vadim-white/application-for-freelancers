@@ -1,7 +1,7 @@
 #!/bin/bash
 # Сквозной прогон через gateway: `bash tests/smoke.sh` из корня; объекты создаёт сам, проходит на чистой базе.
-# SMOKE_MODE=compose — 135 проверок, после `docker compose up --build -d --wait`;
-# SMOKE_MODE=k8s — 133, после ./scripts/k8s-deploy.sh, через вход http://127.0.0.1:8080, как браузер.
+# SMOKE_MODE=compose — 137 проверок, после `docker compose up --build -d --wait`;
+# SMOKE_MODE=k8s — 135, после ./scripts/k8s-deploy.sh, через вход http://127.0.0.1:8080, как браузер.
 # В k8s нет четырёх проверок закрытых портов: кластер публикует на хост только 8080, они ничего не доказывают.
 # Изоляцию NetworkPolicy внутри кластера smoke не проверяет.
 # В k8s path traversal проверяется дважды: Envoy нормализует путь до gateway, защита gateway — изнутри его пода.
@@ -12,7 +12,7 @@ case "$MODE" in
   compose)
     G="${SMOKE_G:-http://localhost:8000}"
     CLOSED_PORTS="8001 8002 8003 5432"
-    EXPECTED=135
+    EXPECTED=137
     in_svc() { local s=$1; shift; docker exec "ser-$s" "$@"; }   # in_svc auth|gateway команда...
     in_auth_db() { docker exec ser-auth-db "$@"; }
     ;;
@@ -21,7 +21,7 @@ case "$MODE" in
     KNS=freelance-service
     G="${SMOKE_G:-http://127.0.0.1:8080}"
     CLOSED_PORTS=""
-    EXPECTED=133
+    EXPECTED=135
     in_svc() { local s=$1; shift; kubectl --context "$KCTX" -n "$KNS" exec "deploy/ser-$s" -- "$@"; }
     in_auth_db() { kubectl --context "$KCTX" -n "$KNS" exec auth-db-0 -c postgres -- "$@"; }
     ;;
@@ -85,6 +85,10 @@ for s in auth:8001 task:8002 time:8003; do
   chk "/ready ${s%%:*} (from gateway)" 200 "$R"
 done
 R=$(code "$G/api/auth/register" -H "$J" -d "{\"email\":\"e2e-$SFX@example.com\",\"password\":\"password123\"}"); chk "register new user" 201 "$R"
+# email без учёта регистра: тот же адрес заглавными — уже занят, и по нему входят
+UPPER=$(echo "e2e-$SFX@example.com" | tr '[:lower:]' '[:upper:]')
+R=$(code "$G/api/auth/register" -H "$J" -d "{\"email\":\"$UPPER\",\"password\":\"password123\"}"); chk "register same email uppercase" 400 "$R"
+R=$(code "$G/api/auth/login" -H "$J" -d "{\"email\":\"$UPPER\",\"password\":\"password123\"}"); chk "login email uppercase" 200 "$R"
 R=$(cu -s "$G/api/auth/register" -H "$J" -d "{\"email\":\"e2e-adm-$SFX@example.com\",\"password\":\"password123\",\"role\":\"admin\"}" | jq_ 'd["role"]'); chk "register with role=admin -> role user" user "$R"
 chk "login wrong password" 401 "$(code "$G/api/auth/login" -H "$J" -d '{"email":"user1@example.com","password":"bad"}')"
 # date ставят и сервис, и uvicorn gateway: дубль — две строки или склейка через запятую в Envoy;
