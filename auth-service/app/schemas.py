@@ -1,3 +1,4 @@
+from datetime import datetime
 from typing import Annotated
 
 from pydantic import AfterValidator, BaseModel, ConfigDict, EmailStr, field_validator
@@ -28,6 +29,7 @@ class UserRead(UserBase):
     id: int
     is_active: bool
     role: str
+    created_at: datetime | None
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -37,6 +39,13 @@ class UserRead(UserBase):
         if hasattr(v, "value"):
             return v.value
         return v
+
+
+class UserList(BaseModel):
+    items: list[UserRead]
+    total: int
+    limit: int
+    offset: int
 
 
 class UserAuth(BaseModel):

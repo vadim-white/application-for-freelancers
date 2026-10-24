@@ -45,12 +45,20 @@ def client():
 
 @pytest.fixture
 def make_user(db):
-    def _make(email="user@example.com", role=models.UserRole.user, is_active=True):
+    def _make(
+        email="user@example.com",
+        role=models.UserRole.user,
+        is_active=True,
+        full_name=None,
+        created_at=None,
+    ):
         user = models.User(
             email=email,
             hashed_password=get_password_hash(PASSWORD),
             role=role,
             is_active=is_active,
+            full_name=full_name,
+            created_at=created_at,
         )
         db.add(user)
         db.commit()

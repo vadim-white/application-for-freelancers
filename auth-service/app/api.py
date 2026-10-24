@@ -1,8 +1,10 @@
+from typing import Literal
+
 import jwt
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
-from . import crud, schemas
+from . import crud, models, schemas
 from .core.security import (
     DUMMY_HASH,
     create_tokens_for_user,
@@ -55,3 +57,22 @@ def refresh_token(data: schemas.TokenRefreshRequest, db: Session = Depends(get_d
 @router.get("/me", response_model=schemas.UserRead)
 def read_me(user=Depends(crud.get_current_token_user)):
     return user
+
+
+@router.get("/users", response_model=schemas.UserList)
+def list_users(
+    role: models.UserRole | None = None,
+    is_active: bool | None = None,
+    q: str | None = Query(None, min_length=1, max_length=100),
+    id: list[int] = Query([], max_length=200),
+    sort: Literal["created_at", "-created_at", "email", "-email"] = "-created_at",
+    limit: int = Query(50, ge=1, le=200),
+    offset: int = Query(0, ge=0),
+    db: Session = Depends(get_db),
+    _admin: models.User = Depends(crud.get_current_admin),
+):
+    """Только admin (по базе). q — подстрока в email или имени без учёта регистра."""
+    items, total = crud.list_users(
+        db, role=role, is_active=is_active, q=q, ids=id, sort=sort, limit=limit, offset=offset
+    )
+    return {"items": items, "total": total, "limit": limit, "offset": offset}

@@ -1,7 +1,7 @@
 #!/bin/bash
 # Сквозной прогон через gateway: `bash tests/smoke.sh` из корня; объекты создаёт сам, проходит на чистой базе.
-# SMOKE_MODE=compose — 137 проверок, после `docker compose up --build -d --wait`;
-# SMOKE_MODE=k8s — 135, после ./scripts/k8s-deploy.sh, через вход http://127.0.0.1:8080, как браузер.
+# SMOKE_MODE=compose — 143 проверки, после `docker compose up --build -d --wait`;
+# SMOKE_MODE=k8s — 141, после ./scripts/k8s-deploy.sh, через вход http://127.0.0.1:8080, как браузер.
 # В k8s нет четырёх проверок закрытых портов: кластер публикует на хост только 8080, они ничего не доказывают.
 # Изоляцию NetworkPolicy внутри кластера smoke не проверяет.
 # В k8s path traversal проверяется дважды: Envoy нормализует путь до gateway, защита gateway — изнутри его пода.
@@ -12,7 +12,7 @@ case "$MODE" in
   compose)
     G="${SMOKE_G:-http://localhost:8000}"
     CLOSED_PORTS="8001 8002 8003 5432"
-    EXPECTED=137
+    EXPECTED=143
     in_svc() { local s=$1; shift; docker exec "ser-$s" "$@"; }   # in_svc auth|gateway команда...
     in_auth_db() { docker exec ser-auth-db "$@"; }
     ;;
@@ -21,7 +21,7 @@ case "$MODE" in
     KNS=freelance-service
     G="${SMOKE_G:-http://127.0.0.1:8080}"
     CLOSED_PORTS=""
-    EXPECTED=135
+    EXPECTED=141
     in_svc() { local s=$1; shift; kubectl --context "$KCTX" -n "$KNS" exec "deploy/ser-$s" -- "$@"; }
     in_auth_db() { kubectl --context "$KCTX" -n "$KNS" exec auth-db-0 -c postgres -- "$@"; }
     ;;
@@ -105,11 +105,18 @@ U2ID=$(cu -s "$G/api/auth/me" -H "Authorization: Bearer $U2" | jq_ 'd["id"]')
 chk "login seeded users" 1 "$([ -n "$A" ] && [ -n "$U1" ] && [ -n "$U2" ] && echo 1)"
 
 echo "== Без токена -> 401"
-for p in /api/auth/me /api/tasks/projects /api/tasks/tasks /api/time/time-entries /api/tasks/statistics/users /api/time/statistics/users; do
+for p in /api/auth/me /api/auth/users /api/tasks/projects /api/tasks/tasks /api/time/time-entries /api/tasks/statistics/users /api/time/statistics/users; do
   chk "GET $p" 401 "$(code "$G$p")"
 done
 chk "POST /api/tasks/tasks" 401 "$(code "$G/api/tasks/tasks" -H "$J" -d '{"title":"x","project_id":1}')"
 chk "POST /api/tasks/projects" 401 "$(code "$G/api/tasks/projects" -H "$J" -d '{"name":"x"}')"
+
+echo "== Список пользователей: только admin"
+chk "user GET /api/auth/users" 403 "$(code "$G/api/auth/users" -H "Authorization: Bearer $U1")"
+R=$(body "$A" GET "/api/auth/users?limit=1" | jq_ 'sorted(d)==["items","limit","offset","total"] and len(d["items"])==1 and d["total"]>=3'); chk "admin list: envelope" True "$R"
+R=$(body "$A" GET "/api/auth/users?q=E2E-$SFX" | jq_ '[u["email"] for u in d["items"]]'); chk "admin list: q finds this run's user" "['e2e-$SFX@example.com']" "$R"
+R=$(body "$A" GET "/api/auth/users?id=$U1ID&id=$U2ID&sort=email" | jq_ 'd["total"]'); chk "admin list: two ids" 2 "$R"
+chk "admin list: limit=201" 422 "$(code "$G/api/auth/users?limit=201" -H "Authorization: Bearer $A")"
 
 echo "== Плохие токены -> 401"
 chk "garbage token" 401 "$(code "$G/api/tasks/tasks" -H "Authorization: Bearer abc.def.ghi")"
