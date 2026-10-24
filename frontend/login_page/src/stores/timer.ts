@@ -64,6 +64,20 @@ export const useTimerStore = defineStore('timer', () => {
     }
   }
 
+  // задачу переименовали или изменили: индикатор берёт свежие данные; сбой оставляет прежние
+  async function reloadRunningTask(taskId: number) {
+    if (entry.value?.task_id !== taskId) return
+    try {
+      const t = await getTask(taskId)
+      if (entry.value?.task_id === taskId) {
+        runningTask.value = t
+        runningTaskMissing.value = false
+      }
+    } catch {
+      // прежнее название остаётся до следующего перечитывания
+    }
+  }
+
   function apply(next: TimeEntry | null, serverTime: string, task?: Task) {
     clockOffsetMs.value = Date.parse(serverTime) - Date.now()
     entry.value = next
@@ -114,6 +128,7 @@ export const useTimerStore = defineStore('timer', () => {
     formatted,
     runningTitle,
     refresh,
+    reloadRunningTask,
     start,
     stop,
     updateNote

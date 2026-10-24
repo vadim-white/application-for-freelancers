@@ -95,6 +95,7 @@
             :busy="busyId === p.id"
             @open="openProject"
             @toggle-archive="toggleArchive"
+            @edit="openEditProject"
           />
 
           <!-- Карточка создания проекта (для всех) -->
@@ -192,6 +193,13 @@
       @changed="onTaskChanged"
     />
 
+    <ProjectEditModal
+      :show="editProjectShow"
+      :project="editProject"
+      @update:show="editProjectShow = $event"
+      @saved="load"
+    />
+
     <!-- Модал создания проекта -->
     <CreateProjectModal
       :show="createProjectModal"
@@ -212,6 +220,7 @@ import ProjectCard from '../components/ProjectCard.vue'
 import ProjectTasksDrawer from '../components/ProjectTasksDrawer.vue'
 import TaskTimerModal from '../components/TaskTimerModal.vue'
 import CreateProjectModal from '../components/CreateProjectModal.vue'
+import ProjectEditModal from '../components/ProjectEditModal.vue'
 import { useMessage } from 'naive-ui'
 import api from '../services/api'
 import { listUsers, type UserItem } from '../services/users'
@@ -256,6 +265,14 @@ const selectedTask = ref<any | null>(null)
 const taskModalShow = ref(false)
 
 const createProjectModal = ref(false)
+
+const editProject = ref<ProjectListItem | null>(null)
+const editProjectShow = ref(false)
+
+function openEditProject(p: ProjectListItem) {
+  editProject.value = p
+  editProjectShow.value = true
+}
 
 async function loadStatistics() {
   try {

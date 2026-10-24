@@ -49,6 +49,9 @@
                   </div>
                 </div>
                 <div v-if="task.description" class="task-desc">{{ task.description }}</div>
+                <div v-if="task.deadline" class="task-deadline">
+                  🗓 Срок: {{ formatDeadline(task.deadline) }}
+                </div>
               </div>
 
               <div class="task-actions">
@@ -66,6 +69,9 @@
                     ✓
                   </n-button>
                 </template>
+                <n-button size="small" text :disabled="task.isSaving" @click="openEdit(task)">
+                  Изменить
+                </n-button>
                 <n-button size="small" text :disabled="task.isSaving" @click="toggleArchive(task)">
                   {{ task.is_active ? 'В архив' : 'Восстановить' }}
                 </n-button>
@@ -102,9 +108,15 @@
                   </div>
                 </div>
                 <div v-if="task.description" class="task-desc">{{ task.description }}</div>
+                <div v-if="task.deadline" class="task-deadline">
+                  🗓 Срок: {{ formatDeadline(task.deadline) }}
+                </div>
               </div>
 
               <div class="task-actions">
+                <n-button size="small" text :disabled="task.isSaving" @click="openEdit(task)">
+                  Изменить
+                </n-button>
                 <n-button size="small" text :disabled="task.isSaving" @click="toggleArchive(task)">
                   {{ task.is_active ? 'В архив' : 'Восстановить' }}
                 </n-button>
@@ -161,6 +173,13 @@
           </n-form>
         </div>
     </div>
+
+    <TaskEditModal
+      :show="editShow"
+      :task="editTask"
+      @update:show="editShow = $event"
+      @saved="onTaskSaved"
+    />
   </n-drawer>
 </template>
 
@@ -170,10 +189,13 @@ import {
   getTasks,
   createTask,
   updateTask,
+  type Task,
   type TaskListParams,
   type TaskStatus
 } from '../services/tasks'
 import { errorText } from '../services/errors'
+import { useTimerStore } from '../stores/timer'
+import TaskEditModal from './TaskEditModal.vue'
 import { useMessage } from 'naive-ui'
 
 const props = defineProps({
@@ -221,6 +243,7 @@ const loadingCurrent = ref(false)
 const loadingDone = ref(false)
 const loading = computed(() => loadingCurrent.value || loadingDone.value)
 const message = useMessage()
+const timer = useTimerStore()
 
 // ответ устаревшего запроса не должен затереть более новый (у каждого списка свой счётчик)
 let currentSeq = 0
@@ -335,6 +358,26 @@ defineExpose({ loadTasks })
 
 function openTask(t: any) {
   emit('open-task', t)
+}
+
+function formatDeadline(iso: string): string {
+  return new Date(iso).toLocaleString('ru-RU', { dateStyle: 'short', timeStyle: 'short' })
+}
+
+const editTask = ref<Task | null>(null)
+const editShow = ref(false)
+
+function openEdit(t: Task) {
+  editTask.value = t
+  editShow.value = true
+}
+
+// задача, вынесенная в другой проект или из проекта, пропадает из этой панели
+async function onTaskSaved(updated: Task) {
+  await loadTasks()
+  // счётчик и превью карточки; название идущей задачи — в индикаторе таймера
+  emit('changed')
+  void timer.reloadRunningTask(updated.id)
 }
 
 function formatStatus(status: string): string {
@@ -554,6 +597,12 @@ async function addTask() {
   color: var(--color-text-secondary);
   margin-top: 6px;
   line-height: 1.4;
+}
+
+.task-deadline {
+  font-size: 12px;
+  color: var(--color-text-secondary);
+  margin-top: 4px;
 }
 
 .task-actions {

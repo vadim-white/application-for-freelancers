@@ -61,7 +61,7 @@ export async function getProjects(params: ProjectListParams = {}): Promise<Proje
   return r.data
 }
 
-export async function getProject(id: number) {
+export async function getProject(id: number): Promise<Project> {
   const r = await api.get(`/api/tasks/projects/${id}`)
   return r.data
 }

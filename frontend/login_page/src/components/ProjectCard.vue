@@ -70,6 +70,9 @@
         >
           Открыть → 
         </n-button>
+        <n-button size="small" :disabled="busy" @click.stop="emit('edit', project)">
+          Изменить
+        </n-button>
         <n-button
           size="small"
           :disabled="busy"
@@ -92,7 +95,7 @@ const props = defineProps({
   // идёт смена архивного флага этого проекта
   busy: { type: Boolean, default: false }
 })
-const emit = defineEmits(['open', 'toggle-archive'])
+const emit = defineEmits(['open', 'toggle-archive', 'edit'])
 
 function open() {
   emit('open', props.project)
