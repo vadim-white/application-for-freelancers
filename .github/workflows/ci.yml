@@ -25,7 +25,7 @@ env:
   UV_VERSION: "0.13.5"
   # sha256 uv-x86_64-unknown-linux-gnu.tar.gz релиза 0.13.5
   UV_CHECKSUM: f68d291c75783122dad58ab77def0e13f3233f358731db5d6d7e8715603b928f
-  RUFF_VERSION: "0.17.1"
+  RUFF_VERSION: "0.17.2"
   # kubectl в пределах ±1 минорной от сервера kind (v1.35.8); на раннере kubectl 1.37
   KUBECTL_VERSION: v1.35.9
   KUBECTL_SHA256: 3cfeaf80be482b435b0aa214aff6e0b2c312ee23c0ff20810c75517b6004c6eb

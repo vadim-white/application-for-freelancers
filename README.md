@@ -241,16 +241,16 @@ bash tests/e2e/run.sh -k refresh -v                         # аргументы
 
 ### Линтер
 
-Python-код четырёх сервисов (`app/`, `tests/`, `migrations/`) проверяет и форматирует [ruff](https://docs.astral.sh/ruff/) 0.17.1, настройки — [ruff.toml](ruff.toml) в корне: правила `E`, `F`, `W`, `I`, `B`, `UP`, длина строки 100. Версия одна для всех и задаётся в команде, в dev-группы сервисов ruff не добавлен. Запуск из корня репозитория:
+Python-код четырёх сервисов (`app/`, `tests/`, `migrations/`) проверяет и форматирует [ruff](https://docs.astral.sh/ruff/) 0.17.2, настройки — [ruff.toml](ruff.toml) в корне: правила `E`, `F`, `W`, `I`, `B`, `UP`, длина строки 100. Версия одна для всех и задаётся в команде, в dev-группы сервисов ruff не добавлен. Запуск из корня репозитория:
 
 ```bash
-uvx ruff@0.17.1 check .              # замечания линтера, код 0 — чисто
-uvx ruff@0.17.1 format --check .     # код 0 — форматирование не нужно
-uvx ruff@0.17.1 check --fix .        # исправить то, что ruff умеет сам
-uvx ruff@0.17.1 format .             # отформатировать
+uvx ruff@0.17.2 check .              # замечания линтера, код 0 — чисто
+uvx ruff@0.17.2 format --check .     # код 0 — форматирование не нужно
+uvx ruff@0.17.2 check --fix .        # исправить то, что ruff умеет сам
+uvx ruff@0.17.2 format .             # отформатировать
 ```
 
-Без uv на машине — тот же образ, что для тестов: `docker run --rm -v "$PWD":/repo -w /repo ghcr.io/astral-sh/uv:0.13.5-python3.14-trixie-slim uvx ruff@0.17.1 check --no-cache .` (`--no-cache` — чтобы не появлялся `.ruff_cache`).
+Без uv на машине — тот же образ, что для тестов: `docker run --rm -v "$PWD":/repo -w /repo ghcr.io/astral-sh/uv:0.13.5-python3.14-trixie-slim uvx ruff@0.17.2 check --no-cache .` (`--no-cache` — чтобы не появлялся `.ruff_cache`).
 
 Отключены `B008` (`Depends()` / `Query()` в значениях по умолчанию — обычный приём FastAPI) и `UP042` (`class X(str, Enum)` → `StrEnum` меняет `str()` у значений). В `tests/conftest.py` импорты приложения стоят после `os.environ[...] = …`: config и engine читают окружение при импорте. Порядок этих строк менять нельзя, а `E402` такие присваивания нарушением не считает. У `tests/e2e/` свой `[tool.ruff]` в `pyproject.toml`: правила из корневого `ruff.toml`, но `target-version = "py312"`. e2e работает на Python 3.12 из образа Playwright, а с py314 `ruff format` переписывает `except (A, B):` в синтаксис 3.14 без скобок.
 
@@ -315,7 +315,7 @@ GitHub Actions, workflow [.github/workflows/ci.yml](.github/workflows/ci.yml). �
 
 | Job | Что проверяет |
 |---|---|
-| `lint` | `ruff check` и `ruff format --check` (0.17.1), shellcheck (`scripts/*.sh`, `tests/smoke.sh`, `tests/e2e/run.sh`), [actionlint](https://github.com/rhysd/actionlint) по workflow (и shellcheck внутри `run:`), [gitleaks](https://github.com/gitleaks/gitleaks) по всей истории git (найденное печатается скрытым, `--redact`; стандартные правила плюс allowlist фиктивных JWT-ключей тестов в `.gitleaks.toml`) |
+| `lint` | `ruff check` и `ruff format --check` (0.17.2), shellcheck (`scripts/*.sh`, `tests/smoke.sh`, `tests/e2e/run.sh`), [actionlint](https://github.com/rhysd/actionlint) по workflow (и shellcheck внутри `run:`), [gitleaks](https://github.com/gitleaks/gitleaks) по всей истории git (найденное печатается скрытым, `--redact`; стандартные правила плюс allowlist фиктивных JWT-ключей тестов в `.gitleaks.toml`) |
 | `python` (×4: auth, task, time, gateway) | `uv sync --locked`, `uv run pytest --cov=app`: порог покрытия из `pyproject.toml`, тест миграций на PostgreSQL 15 (service container, `TEST_POSTGRES_URL`). Пропущенный тест роняет job: значит, база не подключилась |
 | `frontend` | Node из `.nvmrc` (24), `npm ci`, `npm run typecheck`, `npm run build` |
 | `static` | `docker compose config --quiet` на `.env` от `init-env.sh`, kubeconform v0.8.0 по выводу `kubectl kustomize` обоих overlay (как в [k8s/README.md](k8s/README.md#диагностика)) |
