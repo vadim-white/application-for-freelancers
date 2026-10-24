@@ -12,19 +12,30 @@
     </template>
 
     <div class="drawer-content">
-      <div v-if="loading" class="loading-state">
-        <n-spin />
-        <p style="margin-top: 12px; color: var(--color-text-secondary)">Загрузка задач...</p>
+      <div class="task-filters">
+        <n-select
+          v-model:value="sort"
+          class="task-sort"
+          :options="sortOptions"
+          style="width: 220px"
+          @update:value="onFilterChange"
+        />
+        <label class="archive-switch">
+          <n-switch v-model:value="showArchive" @update:value="onFilterChange" />
+          Показать архив
+        </label>
       </div>
 
-      <div v-else>
-        <!-- Список задач -->
-        <div v-if="tasks.length" class="tasks-section">
-          <h3 class="section-title">📝 Текущие задачи</h3>
-          <div v-if="!activeTasks.length" class="no-active-tasks">Нет текущих задач</div>
+      <n-spin :show="loading">
+        <!-- Текущие задачи -->
+        <div class="tasks-section tasks-current">
+          <h3 class="section-title">📝 Текущие задачи ({{ currentTotal }})</h3>
+          <div v-if="!currentTasks.length && !loading" class="no-active-tasks">
+            {{ showArchive ? 'Нет архивных задач' : 'Нет текущих задач' }}
+          </div>
           <div class="tasks-list">
-            <div 
-              v-for="task in activeTasks" 
+            <div
+              v-for="task in currentTasks"
               :key="task.id"
               class="task-item"
             >
@@ -41,36 +52,43 @@
               </div>
 
               <div class="task-actions">
-                <n-button 
-                  size="small" 
-                  type="primary"
-                  text
-                  @click="openTask(task)"
-                >
-                  ⏱️
-                </n-button>
-                <n-button 
-                  size="small"
-                  type="success"
-                  text
-                  @click="markDone(task)" 
-                  :loading="task.isSaving"
-                >
-                  ✓
+                <template v-if="task.is_active">
+                  <n-button size="small" type="primary" text @click="openTask(task)">
+                    ⏱️
+                  </n-button>
+                  <n-button
+                    size="small"
+                    type="success"
+                    text
+                    @click="markDone(task)"
+                    :loading="task.isSaving"
+                  >
+                    ✓
+                  </n-button>
+                </template>
+                <n-button size="small" text :disabled="task.isSaving" @click="toggleArchive(task)">
+                  {{ task.is_active ? 'В архив' : 'Восстановить' }}
                 </n-button>
               </div>
             </div>
           </div>
+          <n-pagination
+            v-if="currentTotal > PAGE_SIZE"
+            :page="currentPage"
+            :page-size="PAGE_SIZE"
+            :item-count="currentTotal"
+            @update:page="onCurrentPage"
+          />
         </div>
 
         <!-- Выполненные задачи -->
-        <div v-if="doneTasks.length" class="tasks-section">
+        <div v-if="doneTotal" class="tasks-section tasks-done">
           <h3 class="section-title section-toggle" @click="showDone = !showDone">
-            {{ showDone ? '▾' : '▸' }} ✅ Выполненные ({{ doneTasks.length }})
+            {{ showDone ? '▾' : '▸' }} ✅ Выполненные ({{ doneTotal }})
           </h3>
           <div v-if="showDone" class="tasks-list">
-            <div 
-              v-for="task in doneTasks" 
+            <div
+              v-for="task in doneTasks"
               :key="task.id"
               class="task-item task-item-done"
             >
@@ -85,17 +103,31 @@
                 </div>
                 <div v-if="task.description" class="task-desc">{{ task.description }}</div>
               </div>
+
+              <div class="task-actions">
+                <n-button size="small" text :disabled="task.isSaving" @click="toggleArchive(task)">
+                  {{ task.is_active ? 'В архив' : 'Восстановить' }}
+                </n-button>
+              </div>
             </div>
           </div>
+          <n-pagination
+            v-if="showDone && doneTotal > PAGE_SIZE"
+            :page="donePage"
+            :page-size="PAGE_SIZE"
+            :item-count="doneTotal"
+            @update:page="onDonePage"
+          />
         </div>
 
-        <div v-if="!tasks.length" class="empty-tasks">
+        <div v-if="!currentTotal && !doneTotal && !loading && !showArchive" class="empty-tasks">
           <div style="font-size: 48px; margin-bottom: 12px">📭</div>
           <div style="font-weight: 600">Нет задач</div>
           <div style="color: var(--color-text-secondary); font-size: 13px">
             Создайте первую задачу ниже
           </div>
         </div>
+      </n-spin>
 
         <!-- Форма добавления задачи -->
         <div class="add-task-section">
@@ -128,14 +160,20 @@
             </div>
           </n-form>
         </div>
-      </div>
     </div>
   </n-drawer>
 </template>
 
 <script setup lang="ts">
 import { ref, computed, watch } from 'vue'
-import { getTasks, createTask, updateTask } from '../services/tasks'
+import {
+  getTasks,
+  createTask,
+  updateTask,
+  type TaskListParams,
+  type TaskStatus
+} from '../services/tasks'
+import { errorText } from '../services/errors'
 import { useMessage } from 'naive-ui'
 
 const props = defineProps({
@@ -152,18 +190,59 @@ function updateShow(v: boolean) {
   emit('update:show', v)
 }
 
-const loading = ref(false)
-const tasks = ref<any[]>([])
-const activeTasks = computed(() => tasks.value.filter(t => t.status !== 'done'))
-const doneTasks = computed(() => tasks.value.filter(t => t.status === 'done'))
+const PAGE_SIZE = 20
+const CURRENT_STATUSES: TaskStatus[] = ['todo', 'in_progress', 'blocked']
+const DEFAULT_SORT = 'created_at'
+
+const sortOptions = [
+  { label: 'Создана ↑ (старые сверху)', value: 'created_at' },
+  { label: 'Создана ↓ (новые сверху)', value: '-created_at' },
+  { label: 'Изменена ↑', value: 'updated_at' },
+  { label: 'Изменена ↓', value: '-updated_at' },
+  { label: 'Срок ↑', value: 'deadline' },
+  { label: 'Срок ↓', value: '-deadline' },
+  { label: 'Название А–Я', value: 'title' },
+  { label: 'Название Я–А', value: '-title' },
+  { label: 'Статус ↑', value: 'status' },
+  { label: 'Статус ↓', value: '-status' }
+]
+
+const currentTasks = ref<any[]>([])
+const currentTotal = ref(0)
+const currentPage = ref(1)
+const doneTasks = ref<any[]>([])
+const doneTotal = ref(0)
+const donePage = ref(1)
+const sort = ref<TaskListParams['sort']>(DEFAULT_SORT)
+// выкл. — только активные задачи, вкл. — только архивные
+const showArchive = ref(false)
 const showDone = ref(true)
+const loadingCurrent = ref(false)
+const loadingDone = ref(false)
+const loading = computed(() => loadingCurrent.value || loadingDone.value)
 const message = useMessage()
+
+// ответ устаревшего запроса не должен затереть более новый (у каждого списка свой счётчик)
+let currentSeq = 0
+let doneSeq = 0
 
 watch(
   () => props.project,
   async (p) => {
+    // другой проект — списки с начала, с настройками по умолчанию
+    sort.value = DEFAULT_SORT
+    showArchive.value = false
+    currentPage.value = 1
+    donePage.value = 1
     if (!p) {
-      tasks.value = []
+      currentSeq++
+      doneSeq++
+      currentTasks.value = []
+      currentTotal.value = 0
+      doneTasks.value = []
+      doneTotal.value = 0
+      loadingCurrent.value = false
+      loadingDone.value = false
       return
     }
     await loadTasks()
@@ -171,20 +250,85 @@ watch(
   { immediate: true }
 )
 
-async function loadTasks() {
+async function fetchPage(statuses: TaskStatus[], page: number) {
+  return getTasks({
+    project_id: props.project!.id,
+    status: statuses,
+    is_active: !showArchive.value,
+    sort: sort.value,
+    limit: PAGE_SIZE,
+    offset: (page - 1) * PAGE_SIZE
+  })
+}
+
+async function loadCurrent() {
   if (!props.project) return
-  loading.value = true
+  const seq = ++currentSeq
+  loadingCurrent.value = true
   try {
-    // страниц пока нет: больше 200 задач проекта панель не покажет
-    const data = await getTasks({ project_id: props.project.id, limit: 200, sort: 'created_at' })
-    tasks.value = data.items
+    const data = await fetchPage(CURRENT_STATUSES, currentPage.value)
+    if (seq !== currentSeq) return
+    currentTasks.value = data.items
+    currentTotal.value = data.total
+    // страницы, на которой мы стоим, больше нет (задачи ушли в архив или в «Выполненные»)
+    const lastPage = Math.max(1, Math.ceil(data.total / PAGE_SIZE))
+    if (currentPage.value > lastPage) {
+      currentPage.value = lastPage
+      await loadCurrent()
+    }
   } catch (err) {
-    console.error(err)
-    message.error('Не удалось загрузить задачи')
-    tasks.value = []
+    if (seq !== currentSeq) return
+    message.error(errorText(err, 'Не удалось загрузить задачи'))
+    currentTasks.value = []
+    currentTotal.value = 0
   } finally {
-    loading.value = false
+    if (seq === currentSeq) loadingCurrent.value = false
   }
+}
+
+async function loadDone() {
+  if (!props.project) return
+  const seq = ++doneSeq
+  loadingDone.value = true
+  try {
+    const data = await fetchPage(['done'], donePage.value)
+    if (seq !== doneSeq) return
+    doneTasks.value = data.items
+    doneTotal.value = data.total
+    const lastPage = Math.max(1, Math.ceil(data.total / PAGE_SIZE))
+    if (donePage.value > lastPage) {
+      donePage.value = lastPage
+      await loadDone()
+    }
+  } catch (err) {
+    if (seq !== doneSeq) return
+    message.error(errorText(err, 'Не удалось загрузить выполненные задачи'))
+    doneTasks.value = []
+    doneTotal.value = 0
+  } finally {
+    if (seq === doneSeq) loadingDone.value = false
+  }
+}
+
+// «Текущие» и «Выполненные» — два запроса со своими страницами
+async function loadTasks() {
+  await Promise.all([loadCurrent(), loadDone()])
+}
+
+function onFilterChange() {
+  currentPage.value = 1
+  donePage.value = 1
+  loadTasks()
+}
+
+function onCurrentPage(p: number) {
+  currentPage.value = p
+  loadCurrent()
+}
+
+function onDonePage(p: number) {
+  donePage.value = p
+  loadDone()
 }
 
 defineExpose({ loadTasks })
@@ -207,13 +351,27 @@ async function markDone(t: any) {
   if (!t || !t.id) return
   t.isSaving = true
   try {
-    const updated = await updateTask(t.id, { status: 'done' })
-    tasks.value = tasks.value.map(task => (task.id === t.id ? updated : task))
+    await updateTask(t.id, { status: 'done' })
     message.success('Задача выполнена')
+    await loadTasks()
     emit('changed')
   } catch (err) {
-    console.error(err)
-    message.error('Не удалось завершить задачу')
+    message.error(errorText(err, 'Не удалось завершить задачу'))
+  } finally {
+    t.isSaving = false
+  }
+}
+
+async function toggleArchive(t: any) {
+  if (!t || !t.id) return
+  t.isSaving = true
+  try {
+    await updateTask(t.id, { is_active: !t.is_active })
+    await loadTasks()
+    // счётчик и превью карточки считают только активные задачи
+    emit('changed')
+  } catch (err) {
+    message.error(errorText(err, 'Не удалось изменить задачу'))
   } finally {
     t.isSaving = false
   }
@@ -244,8 +402,7 @@ async function addTask() {
     await loadTasks()
     emit('changed')
   } catch (err) {
-    console.error(err)
-    message.error('Ошибка при создании задачи')
+    message.error(errorText(err, 'Ошибка при создании задачи'))
   } finally {
     adding.value = false
   }
@@ -350,6 +507,19 @@ async function addTask() {
 .badge-blocked {
   background: rgba(235, 87, 87, 0.2);
   color: #eb5757;
+}
+
+.task-filters {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 20px;
+}
+
+.archive-switch {
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
 .section-toggle {

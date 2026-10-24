@@ -70,6 +70,13 @@
         >
           Открыть → 
         </n-button>
+        <n-button
+          size="small"
+          :disabled="busy"
+          @click.stop="emit('toggle-archive', project)"
+        >
+          {{ project.is_active ? 'В архив' : 'Восстановить' }}
+        </n-button>
       </div>
     </template>
   </n-card>
@@ -81,9 +88,11 @@ import type { ProjectListItem } from '../services/tasks'
 
 // tasks_preview — первые три активные задачи, tasks_count — число всех активных
 const props = defineProps({
-  project: { type: Object as PropType<ProjectListItem>, required: true }
+  project: { type: Object as PropType<ProjectListItem>, required: true },
+  // идёт смена архивного флага этого проекта
+  busy: { type: Boolean, default: false }
 })
-const emit = defineEmits(['open'])
+const emit = defineEmits(['open', 'toggle-archive'])
 
 function open() {
   emit('open', props.project)

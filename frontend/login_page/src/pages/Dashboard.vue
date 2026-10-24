@@ -72,13 +72,29 @@
           <h2 style="margin: 0">Ваши проекты</h2>
         </div>
 
+        <div class="project-filters">
+          <n-select
+            v-model:value="sort"
+            class="project-sort"
+            :options="sortOptions"
+            style="width: 200px"
+            @update:value="onFilterChange"
+          />
+          <label class="archive-switch">
+            <n-switch v-model:value="showArchive" @update:value="onFilterChange" />
+            Показать архив
+          </label>
+        </div>
+
         <div class="projects-grid">
           <!-- Карточки проектов -->
           <ProjectCard
             v-for="p in projects"
             :key="p.id"
             :project="p"
+            :busy="busyId === p.id"
             @open="openProject"
+            @toggle-archive="toggleArchive"
           />
 
           <!-- Карточка создания проекта (для всех) -->
@@ -100,6 +116,15 @@
             <div style="color: var(--color-text-secondary)">Создайте первый проект — нажмите «Создать проект»</div>
           </div>
         </div>
+
+        <n-pagination
+          v-if="total > PAGE_SIZE"
+          class="projects-pagination"
+          :page="page"
+          :page-size="PAGE_SIZE"
+          :item-count="total"
+          @update:page="onPageChange"
+        />
       </div>
 
       <!-- TAB: STATISTICS -->
@@ -181,7 +206,8 @@ import { ref, reactive, computed, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '../stores/auth'
 import { useTimerStore, formatHoursMinutes } from '../stores/timer'
-import { getProjects, type ProjectListItem } from '../services/tasks'
+import { getProjects, updateProject, type ProjectListItem } from '../services/tasks'
+import { errorText } from '../services/errors'
 import ProjectCard from '../components/ProjectCard.vue'
 import ProjectTasksDrawer from '../components/ProjectTasksDrawer.vue'
 import TaskTimerModal from '../components/TaskTimerModal.vue'
@@ -199,7 +225,24 @@ const isAdmin = computed(() => {
   return auth.user?.role === 'admin'
 })
 
+const PAGE_SIZE = 20
+
+const sortOptions = [
+  { label: 'Сначала новые', value: '-created_at' },
+  { label: 'Сначала старые', value: 'created_at' },
+  { label: 'Название А–Я', value: 'name' },
+  { label: 'Название Я–А', value: '-name' }
+]
+
 const projects = ref<ProjectListItem[]>([])
+const total = ref(0)
+const page = ref(1)
+const sort = ref<'created_at' | '-created_at' | 'name' | '-name'>('-created_at')
+// выкл. — только активные, вкл. — только архивные
+const showArchive = ref(false)
+const busyId = ref<number | null>(null)
+// ответ устаревшего запроса не должен затереть более новый
+let requestSeq = 0
 const usersStats = ref<any[]>([])
 const statsUsers = reactive<Record<number, UserItem>>({})
 
@@ -245,12 +288,50 @@ function userLabel(id: number) {
 }
 
 async function load() {
+  const seq = ++requestSeq
   try {
-    // новые сверху (порядок API по умолчанию); страниц пока нет — до 200 проектов
     // превью задач и счётчик для карточек приходят в том же ответе
-    projects.value = (await getProjects({ limit: 200 })).items
+    const data = await getProjects({
+      is_active: !showArchive.value,
+      sort: sort.value,
+      limit: PAGE_SIZE,
+      offset: (page.value - 1) * PAGE_SIZE
+    })
+    if (seq !== requestSeq) return
+    projects.value = data.items
+    total.value = data.total
+    // страницы, на которой мы стоим, больше нет (архивировали последний проект на ней)
+    const lastPage = Math.max(1, Math.ceil(data.total / PAGE_SIZE))
+    if (page.value > lastPage) {
+      page.value = lastPage
+      await load()
+    }
   } catch (err) {
-    message.error('Ошибка загрузки проектов')
+    if (seq !== requestSeq) return
+    message.error(errorText(err, 'Ошибка загрузки проектов'))
+  }
+}
+
+function onFilterChange() {
+  page.value = 1
+  load()
+}
+
+function onPageChange(p: number) {
+  page.value = p
+  load()
+}
+
+async function toggleArchive(p: ProjectListItem) {
+  busyId.value = p.id
+  try {
+    // is_active шлём явно: PUT без него снимает архив
+    await updateProject(p.id, { is_active: !p.is_active })
+    await load()
+  } catch (err) {
+    message.error(errorText(err, 'Не удалось изменить проект'))
+  } finally {
+    busyId.value = null
   }
 }
 
@@ -392,6 +473,23 @@ onUnmounted(() => {
   font-weight: 700;
   color: var(--color-text-primary);
   margin: 0;
+}
+
+.project-filters {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 20px;
+}
+
+.archive-switch {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.projects-pagination {
+  margin-top: 20px;
 }
 
 .projects-grid {

@@ -82,8 +82,8 @@
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted } from 'vue'
 import { useMessage } from 'naive-ui'
-import { isAxiosError } from 'axios'
 import { useAuthStore } from '../stores/auth'
+import { errorText } from '../services/errors'
 import { listUsers, updateUser, type UserItem, type UserRole } from '../services/users'
 
 const PAGE_SIZE = 20
@@ -116,16 +116,6 @@ const activeFilter = ref('all')
 let searchTimer: ReturnType<typeof setTimeout> | undefined
 // ответ устаревшего запроса не должен затереть более новый
 let requestSeq = 0
-
-function errorText(err: unknown, fallback: string): string {
-  if (isAxiosError(err)) {
-    const detail = err.response?.data?.detail
-    if (typeof detail === 'string') return detail
-    // 422: detail — список ошибок валидации
-    if (Array.isArray(detail)) return detail.map((d) => d?.msg ?? String(d)).join('; ')
-  }
-  return fallback
-}
 
 function formatDate(iso: string): string {
   return new Date(iso).toLocaleDateString('ru-RU')
