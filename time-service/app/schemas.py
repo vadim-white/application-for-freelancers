@@ -12,7 +12,10 @@ class TimeEntryCreate(BaseModel):
 
 
 class TimeEntryUpdate(BaseModel):
-    # нет поля — не трогать; null допустим только у description (очистить заметку)
+    # merge-patch: нет поля — не трогать; null допустим только у description (очистить заметку);
+    # неизвестное поле (в том числе user_id) — 422, иначе опечатка молча ничего не меняет
+    model_config = ConfigDict(extra="forbid")
+
     task_id: int | None = None
     started_at: AwareDatetime | None = None
     stopped_at: AwareDatetime | None = None

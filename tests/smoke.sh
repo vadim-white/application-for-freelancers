@@ -1,7 +1,7 @@
 #!/bin/bash
 # Сквозной прогон через gateway: `bash tests/smoke.sh` из корня; объекты создаёт сам, проходит на чистой базе.
-# SMOKE_MODE=compose — 174 проверки, после `docker compose up --build -d --wait`;
-# SMOKE_MODE=k8s — 172, после ./scripts/k8s-deploy.sh, через вход http://127.0.0.1:8080, как браузер.
+# SMOKE_MODE=compose — 175 проверок, после `docker compose up --build -d --wait`;
+# SMOKE_MODE=k8s — 173, после ./scripts/k8s-deploy.sh, через вход http://127.0.0.1:8080, как браузер.
 # В k8s нет четырёх проверок закрытых портов: кластер публикует на хост только 8080, они ничего не доказывают.
 # Изоляцию NetworkPolicy внутри кластера smoke не проверяет.
 # В k8s path traversal проверяется дважды: Envoy нормализует путь до gateway, защита gateway — изнутри его пода.
@@ -12,7 +12,7 @@ case "$MODE" in
   compose)
     G="${SMOKE_G:-http://localhost:8000}"
     CLOSED_PORTS="8001 8002 8003 5432"
-    EXPECTED=174
+    EXPECTED=175
     in_svc() { local s=$1; shift; docker exec "ser-$s" "$@"; }   # in_svc auth|gateway команда...
     in_auth_db() { docker exec ser-auth-db "$@"; }
     ;;
@@ -21,7 +21,7 @@ case "$MODE" in
     KNS=freelance-service
     G="${SMOKE_G:-http://127.0.0.1:8080}"
     CLOSED_PORTS=""
-    EXPECTED=172
+    EXPECTED=173
     in_svc() { local s=$1; shift; kubectl --context "$KCTX" -n "$KNS" exec "deploy/ser-$s" -- "$@"; }
     in_auth_db() { kubectl --context "$KCTX" -n "$KNS" exec auth-db-0 -c postgres -- "$@"; }
     ;;
@@ -304,6 +304,7 @@ E2=$(body "$U1" POST /api/time/time-entries "{\"task_id\":$T1,\"started_at\":\"$
 E2ID=$(echo "$E2" | jq_ 'd["id"]')
 chk "user1 PATCH own entry recalculates duration" 600 "$(body "$U1" PATCH "/api/time/time-entries/$E2ID" '{"stopped_at":"2026-01-01T10:10:00Z"}' | jq_ 'd["duration_seconds"]')"
 R=$(req "$U1" PATCH "/api/time/time-entries/$E2ID" '{"stopped_at":"2025-12-31T10:00:00Z"}'); chk "user1 PATCH stopped before started" 422 "$R"
+chk "user1 PATCH own entry unknown field (user_id)" 422 "$(req "$U1" PATCH "/api/time/time-entries/$E2ID" '{"user_id":999}')"
 chk "user2 PATCH user1 entry" 404 "$(req "$U2" PATCH "/api/time/time-entries/$E2ID" '{"description":"x"}')"
 chk "user2 DELETE user1 entry" 404 "$(req "$U2" DELETE "/api/time/time-entries/$E2ID")"
 chk "user1 DELETE own entry" 204 "$(req "$U1" DELETE "/api/time/time-entries/$E2ID")"

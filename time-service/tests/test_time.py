@@ -315,6 +315,20 @@ def test_patch_null_required_field_422(client, user1, field):
     assert patch(client, user1, entry["id"], **{field: None}).status_code == 422
 
 
+@pytest.mark.parametrize("body", [{"descripton": "typo"}, {"user_id": 2}, {"id": 99}])
+def test_patch_unknown_field_422(client, user1, body):
+    entry = create(client, user1, description="old").json()
+    assert patch(client, user1, entry["id"], **body).status_code == 422
+    assert patch(client, user1, entry["id"], description="new", **body).status_code == 422
+    assert items(client, user1)[0] == entry
+
+
+def test_patch_empty_body_keeps_entry(client, user1):
+    entry = create(client, user1, description="old").json()
+    r = patch(client, user1, entry["id"])
+    assert (r.status_code, r.json()) == (200, entry)
+
+
 def test_patch_other_user_entry_404(client, user1, user2):
     entry = create(client, user2).json()
     assert patch(client, user1, entry["id"], description="x").status_code == 404
