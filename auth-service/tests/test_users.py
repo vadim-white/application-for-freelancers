@@ -1,12 +1,16 @@
+import threading
+import time
 from datetime import UTC, datetime, timedelta
 
 import pytest
+from fastapi import HTTPException
+from sqlalchemy import func, select
 from sqlalchemy.orm import sessionmaker
 
-from app import models
+from app import crud, models, schemas
 from app.core.security import get_password_hash
 from tests.conftest import login
-from tests.test_auth import bearer
+from tests.test_auth import bearer, claims, refresh
 
 ADMIN = models.UserRole.admin
 URL = "/api/auth/users"
@@ -308,3 +312,244 @@ def test_list_q_finds_cyrillic_in_other_case_on_postgres(pg_app, client):
     assert emails(client.get(URL, params={"role": "admin"}, headers=headers)) == [
         "admin@example.com"
     ]
+
+
+# --- PATCH: роль и отключение ---
+
+
+def patch(client, headers, user_id, body):
+    return client.patch(f"{URL}/{user_id}", json=body, headers=headers)
+
+
+def audit_rows(db):
+    db.expire_all()
+    rows = db.scalars(select(models.UserAudit).order_by(models.UserAudit.id))
+    return [(r.actor_id, r.target_id, r.field, r.old_value, r.new_value) for r in rows]
+
+
+def test_patch_without_token(client, make_user):
+    u = make_user("u@example.com")
+    assert client.patch(f"{URL}/{u.id}", json={"role": "admin"}).status_code == 401
+
+
+def test_patch_user_is_forbidden(client, make_user):
+    make_user("user@example.com")
+    other = make_user("other@example.com")
+    headers = bearer(token(client, "user@example.com"))
+    r = patch(client, headers, other.id, {"is_active": False})
+    assert r.status_code == 403
+    assert r.json()["detail"] == "Admin role required"
+
+
+def test_patch_admin_by_token_but_demoted_in_db_is_forbidden(client, make_user, db):
+    admin = make_user("admin@example.com", role=ADMIN)
+    make_user("admin2@example.com", role=ADMIN)
+    target = make_user("u@example.com")
+    headers = bearer(token(client, "admin@example.com"))
+    admin.role = models.UserRole.user
+    db.commit()
+    assert patch(client, headers, target.id, {"is_active": False}).status_code == 403
+    db.refresh(target)
+    assert target.is_active is True
+    assert audit_rows(db) == []
+
+
+def test_patch_actor_demoted_while_waiting_for_lock_is_forbidden(
+    client, admin_headers, make_user, db, monkeypatch
+):
+    # на SQLite гонки нет: набор после блокировки подменяется — автора в нём уже нет
+    other_admin = make_user("admin2@example.com", role=ADMIN)
+    target = make_user("u@example.com")
+    monkeypatch.setattr(crud, "lock_active_admin_ids", lambda db: {other_admin.id})
+    r = patch(client, admin_headers, target.id, {"role": "admin"})
+    assert r.status_code == 403
+    assert r.json()["detail"] == "Admin role required"
+    db.refresh(target)
+    assert target.role == models.UserRole.user
+    assert audit_rows(db) == []
+
+
+@pytest.mark.parametrize("body", [{"is_active": False}, {}])
+def test_patch_unknown_user_is_404(client, admin_headers, body):
+    r = patch(client, admin_headers, 99999, body)
+    assert r.status_code == 404
+    assert r.json()["detail"] == "User not found"
+
+
+def test_delete_user_is_405(client, admin_headers, make_user):
+    u = make_user("u@example.com")
+    assert client.delete(f"{URL}/{u.id}", headers=admin_headers).status_code == 405
+
+
+@pytest.mark.parametrize("body", [{"role": "user"}, {"is_active": False}, {"role": "admin"}])
+def test_patch_self_is_409(client, make_user, db, body):
+    admin = make_user("admin@example.com", role=ADMIN)
+    make_user("admin2@example.com", role=ADMIN)
+    r = patch(client, bearer(token(client, "admin@example.com")), admin.id, body)
+    assert r.status_code == 409
+    assert r.json()["detail"] == "Cannot change your own role or status"
+    assert audit_rows(db) == []
+
+
+def test_patch_self_with_empty_body_returns_self(client, make_user):
+    admin = make_user("admin@example.com", role=ADMIN)
+    r = patch(client, bearer(token(client, "admin@example.com")), admin.id, {})
+    assert r.status_code == 200
+    assert r.json()["email"] == "admin@example.com"
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        {"role": None},
+        {"is_active": None},
+        {"role": "root"},
+        {"is_active": "maybe"},
+        {"full_name": "x"},
+        {"email": "new@example.com"},
+        {"role": "admin", "rol": "user"},
+    ],
+)
+def test_patch_bad_body_is_422(client, admin_headers, make_user, db, body):
+    u = make_user("u@example.com")
+    assert patch(client, admin_headers, u.id, body).status_code == 422
+    db.refresh(u)
+    assert (u.role, u.is_active, u.full_name) == (models.UserRole.user, True, None)
+    assert audit_rows(db) == []
+
+
+def test_patch_empty_body_changes_nothing(client, admin_headers, make_user, db):
+    u = make_user("u@example.com", full_name="Ann")
+    r = patch(client, admin_headers, u.id, {})
+    assert r.status_code == 200
+    assert (r.json()["role"], r.json()["is_active"]) == ("user", True)
+    assert audit_rows(db) == []
+
+
+def test_patch_promote_and_demote(client, admin_headers, make_user, db):
+    u = make_user("u@example.com")
+    r = patch(client, admin_headers, u.id, {"role": "admin"})
+    assert r.status_code == 200
+    assert set(r.json()) == {"id", "email", "full_name", "role", "is_active", "created_at"}
+    assert r.json()["role"] == "admin"
+    db.refresh(u)
+    assert u.role == ADMIN
+    # повышенный сразу admin в auth: роль берётся из базы, токен тот же
+    u_headers = bearer(token(client, "u@example.com"))
+    assert client.get(URL, headers=u_headers).status_code == 200
+
+    r = patch(client, admin_headers, u.id, {"role": "user"})
+    assert r.json()["role"] == "user"
+    assert client.get(URL, headers=u_headers).status_code == 403
+
+
+def test_patch_new_role_in_token_after_refresh(client, admin_headers, make_user):
+    u = make_user("u@example.com")
+    tokens = login(client, "u@example.com").json()
+    assert claims(tokens["access_token"])["role"] == "user"
+    patch(client, admin_headers, u.id, {"role": "admin"})
+    r = refresh(client, tokens["refresh_token"])
+    assert claims(r.json()["access_token"])["role"] == "admin"
+
+
+def test_patch_disable_and_enable(client, admin_headers, make_user):
+    u = make_user("u@example.com")
+    tokens = login(client, "u@example.com").json()
+    u_headers = bearer(tokens["access_token"])
+    r = patch(client, admin_headers, u.id, {"is_active": False})
+    assert r.status_code == 200
+    assert r.json()["is_active"] is False
+    # отключённый теряет доступ к auth сразу, не дожидаясь истечения токена
+    assert client.get("/api/auth/me", headers=u_headers).status_code == 401
+    assert refresh(client, tokens["refresh_token"]).status_code == 401
+    assert login(client, "u@example.com").status_code == 403
+
+    assert patch(client, admin_headers, u.id, {"is_active": True}).json()["is_active"] is True
+    assert client.get("/api/auth/me", headers=u_headers).status_code == 200
+    assert login(client, "u@example.com").status_code == 200
+
+
+def test_patch_other_admin_can_be_demoted_and_disabled(client, admin_headers, make_user, db):
+    other = make_user("admin2@example.com", role=ADMIN)
+    r = patch(client, admin_headers, other.id, {"role": "user", "is_active": False})
+    assert r.status_code == 200
+    assert (r.json()["role"], r.json()["is_active"]) == ("user", False)
+    active_admins = db.scalars(
+        select(models.User.email).where(models.User.role == ADMIN, models.User.is_active)
+    ).all()
+    assert active_admins == ["admin@example.com"]
+
+
+def test_patch_audit_row_per_changed_field(client, make_user, db):
+    admin = make_user("admin@example.com", role=ADMIN)
+    headers = bearer(token(client, "admin@example.com"))
+    u = make_user("u@example.com")
+    patch(client, headers, u.id, {"role": "admin", "is_active": False})
+    assert audit_rows(db) == [
+        (admin.id, u.id, "role", "user", "admin"),
+        (admin.id, u.id, "is_active", "true", "false"),
+    ]
+    # одно поле совпадает с текущим: строка только на изменённое
+    patch(client, headers, u.id, {"role": "admin", "is_active": True})
+    assert audit_rows(db)[2:] == [(admin.id, u.id, "is_active", "false", "true")]
+    # ничего не меняется — строк нет
+    assert patch(client, headers, u.id, {"role": "admin", "is_active": True}).status_code == 200
+    assert len(audit_rows(db)) == 3
+    rows = db.scalars(select(models.UserAudit)).all()
+    assert all(r.created_at is not None for r in rows)
+
+
+# --- PATCH на PostgreSQL ---
+
+
+def test_parallel_demote_on_postgres_keeps_one_admin(pg_app, monkeypatch):
+    """Два admin одновременно понижают друг друга: второй ждёт блокировку и получает 403."""
+    Session = sessionmaker(autoflush=False, bind=pg_app.engine)
+    with Session() as db:
+        a = models.User(email="a@example.com", hashed_password="x", role=ADMIN)
+        b = models.User(email="b@example.com", hashed_password="x", role=ADMIN)
+        db.add_all([a, b])
+        db.commit()
+        ids = {"a": a.id, "b": b.id}
+
+    # оба запроса подходят к блокировке одновременно и держат набор admin 0,3 с:
+    # без FOR UPDATE оба видят двух admin и понижают друг друга
+    barrier = threading.Barrier(2)
+    real_lock = crud.lock_active_admin_ids
+
+    def lock_together(db):
+        barrier.wait(5)
+        locked = real_lock(db)
+        time.sleep(0.3)
+        return locked
+
+    monkeypatch.setattr(crud, "lock_active_admin_ids", lock_together)
+    results = {}
+
+    def demote(actor, target):
+        with Session() as db:
+            actor_user = db.get(models.User, ids[actor])
+            update = schemas.UserAdminUpdate(role="user")
+            try:
+                crud.update_user_by_admin(db, actor_user, ids[target], update)
+                results[actor] = 200
+            except HTTPException as exc:
+                results[actor] = exc.status_code
+
+    threads = [
+        threading.Thread(target=demote, args=("a", "b")),
+        threading.Thread(target=demote, args=("b", "a")),
+    ]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join(10)
+
+    assert sorted(results.values()) == [200, 403]
+    with Session() as db:
+        admins = db.scalars(
+            select(models.User.id).where(models.User.role == ADMIN, models.User.is_active)
+        ).all()
+        winner = next(k for k, v in results.items() if v == 200)
+        assert admins == [ids[winner]]
+        assert db.scalar(select(func.count()).select_from(models.UserAudit)) == 1

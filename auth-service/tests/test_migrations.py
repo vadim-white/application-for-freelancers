@@ -2,10 +2,11 @@ import pytest
 from alembic import command
 from sqlalchemy import text
 
-TABLES = {"users"}
+TABLES = {"users", "user_audit"}
 # типы enum, которые создаёт миграция в PostgreSQL (в SQLite их нет)
 EXPECTED_ENUMS = {"userrole"}
 CREATE_USERS = "d68b21b4476c"
+EMAIL_LOWERCASE = "37998bcc3290"
 
 
 def test_upgrade_head_matches_models(migrations_db):
@@ -78,3 +79,27 @@ def test_email_lowercase_migration_stops_on_duplicates(migrations_db):
     assert "solo@example.com" not in str(exc.value)
     assert emails(db) == before
     assert revision(db) == CREATE_USERS
+
+
+def test_user_audit_migration_keeps_users(migrations_db):
+    db = migrations_db
+    db.run(command.upgrade, EMAIL_LOWERCASE)
+    insert_users(db, "user1@example.com", "admin@example.com")
+    db.run(command.upgrade, "head")
+    assert "user_audit" in db.tables()
+    with db.engine.begin() as conn:
+        conn.execute(
+            text(
+                "INSERT INTO user_audit (actor_id, target_id, field, old_value, new_value) "
+                "VALUES (2, 1, 'role', 'user', 'admin')"
+            )
+        )
+        created = conn.execute(text("SELECT created_at FROM user_audit")).scalar_one()
+    assert created is not None
+
+    # downgrade удаляет только журнал, пользователи остаются
+    db.run(command.downgrade, EMAIL_LOWERCASE)
+    assert db.tables() == {"alembic_version", "users"}
+    assert emails(db) == ["user1@example.com", "admin@example.com"]
+    db.run(command.upgrade, "head")
+    db.run(command.check)

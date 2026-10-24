@@ -76,3 +76,17 @@ def list_users(
         db, role=role, is_active=is_active, q=q, ids=id, sort=sort, limit=limit, offset=offset
     )
     return {"items": items, "total": total, "limit": limit, "offset": offset}
+
+
+@router.patch("/users/{user_id}", response_model=schemas.UserRead)
+def update_user(
+    user_id: int,
+    user_in: schemas.UserAdminUpdate,
+    db: Session = Depends(get_db),
+    admin: models.User = Depends(crud.get_current_admin),
+):
+    """Только admin (по базе): role и is_active другого пользователя.
+
+    Удаления нет — только отключение.
+    """
+    return crud.update_user_by_admin(db, admin, user_id, user_in)

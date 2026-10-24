@@ -1,7 +1,16 @@
 from datetime import datetime
 from typing import Annotated
 
-from pydantic import AfterValidator, BaseModel, ConfigDict, EmailStr, field_validator
+from pydantic import (
+    AfterValidator,
+    BaseModel,
+    ConfigDict,
+    EmailStr,
+    field_validator,
+    model_validator,
+)
+
+from .models import UserRole
 
 # EmailStr приводит к нижнему регистру только домен: без этого User1@… и user1@… — два аккаунта
 LowerEmailStr = Annotated[EmailStr, AfterValidator(str.lower)]
@@ -46,6 +55,22 @@ class UserList(BaseModel):
     total: int
     limit: int
     offset: int
+
+
+class UserAdminUpdate(BaseModel):
+    # merge-patch: нет поля — не трогать, null — 422;
+    # неизвестное поле — 422, иначе опечатка молча ничего не меняет
+    model_config = ConfigDict(extra="forbid")
+
+    role: UserRole | None = None
+    is_active: bool | None = None
+
+    @model_validator(mode="after")
+    def no_null(self):
+        for name in self.model_fields_set:
+            if getattr(self, name) is None:
+                raise ValueError(f"{name} cannot be null")
+        return self
 
 
 class UserAuth(BaseModel):

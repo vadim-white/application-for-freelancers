@@ -101,3 +101,70 @@ def list_users(
     total = db.scalar(select(func.count()).select_from(user).where(*conditions))
     items = db.scalars(select(user).where(*conditions).order_by(*order).limit(limit).offset(offset))
     return list(items), total
+
+
+def lock_active_admin_ids(db: Session) -> set[int]:
+    """id активных admin; строки заблокированы до конца транзакции.
+
+    Порядок блокировки по id один у всех запросов — взаимной блокировки нет.
+    В SQLite FOR UPDATE нет, запись там и так одна за раз.
+    """
+    user = models.User
+    query = (
+        select(user.id)
+        .where(user.role == models.UserRole.admin, user.is_active.is_(True))
+        .order_by(user.id)
+        .with_for_update()
+    )
+    return set(db.scalars(query))
+
+
+def audit_value(value) -> str:
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    return value.value
+
+
+def update_user_by_admin(
+    db: Session, actor: models.User, user_id: int, data: schemas.UserAdminUpdate
+) -> models.User:
+    """Смена роли и отключение одной транзакцией, строка user_audit на каждое изменённое поле."""
+    changes = data.model_dump(exclude_unset=True)
+    if not changes:
+        user = db.get(models.User, user_id)
+        if user is None:
+            raise HTTPException(status_code=404, detail="User not found")
+        return user
+    if user_id == actor.id:
+        raise HTTPException(status_code=409, detail="Cannot change your own role or status")
+    # Хотя бы один активный admin остаётся всегда: автор — активный admin под блокировкой
+    # и меняет не себя. Параллельный запрос ждёт блокировку и перечитывает набор:
+    # если его автора тем временем понизили или отключили — 403
+    if actor.id not in lock_active_admin_ids(db):
+        raise HTTPException(status_code=403, detail="Admin role required")
+    query = (
+        select(models.User)
+        .where(models.User.id == user_id)
+        .with_for_update()
+        .execution_options(populate_existing=True)
+    )
+    user = db.scalars(query).first()
+    if user is None:
+        raise HTTPException(status_code=404, detail="User not found")
+    for field, new in changes.items():
+        old = getattr(user, field)
+        if old == new:
+            continue
+        db.add(
+            models.UserAudit(
+                actor_id=actor.id,
+                target_id=user.id,
+                field=field,
+                old_value=audit_value(old),
+                new_value=audit_value(new),
+            )
+        )
+        setattr(user, field, new)
+    db.commit()
+    db.refresh(user)
+    return user

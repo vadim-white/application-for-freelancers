@@ -1,7 +1,7 @@
 #!/bin/bash
 # Сквозной прогон через gateway: `bash tests/smoke.sh` из корня; объекты создаёт сам, проходит на чистой базе.
-# SMOKE_MODE=compose — 143 проверки, после `docker compose up --build -d --wait`;
-# SMOKE_MODE=k8s — 141, после ./scripts/k8s-deploy.sh, через вход http://127.0.0.1:8080, как браузер.
+# SMOKE_MODE=compose — 151 проверка, после `docker compose up --build -d --wait`;
+# SMOKE_MODE=k8s — 149, после ./scripts/k8s-deploy.sh, через вход http://127.0.0.1:8080, как браузер.
 # В k8s нет четырёх проверок закрытых портов: кластер публикует на хост только 8080, они ничего не доказывают.
 # Изоляцию NetworkPolicy внутри кластера smoke не проверяет.
 # В k8s path traversal проверяется дважды: Envoy нормализует путь до gateway, защита gateway — изнутри его пода.
@@ -12,7 +12,7 @@ case "$MODE" in
   compose)
     G="${SMOKE_G:-http://localhost:8000}"
     CLOSED_PORTS="8001 8002 8003 5432"
-    EXPECTED=143
+    EXPECTED=151
     in_svc() { local s=$1; shift; docker exec "ser-$s" "$@"; }   # in_svc auth|gateway команда...
     in_auth_db() { docker exec ser-auth-db "$@"; }
     ;;
@@ -21,7 +21,7 @@ case "$MODE" in
     KNS=freelance-service
     G="${SMOKE_G:-http://127.0.0.1:8080}"
     CLOSED_PORTS=""
-    EXPECTED=141
+    EXPECTED=149
     in_svc() { local s=$1; shift; kubectl --context "$KCTX" -n "$KNS" exec "deploy/ser-$s" -- "$@"; }
     in_auth_db() { kubectl --context "$KCTX" -n "$KNS" exec auth-db-0 -c postgres -- "$@"; }
     ;;
@@ -293,12 +293,30 @@ echo "== refresh"
 A2=$(cu -s "$G/api/auth/refresh" -H "$J" -d "{\"refresh_token\":\"$AR\"}" | jq_ 'd["access_token"]')
 chk "admin role kept after refresh" 200 "$(code "$G/api/tasks/statistics/users" -H "Authorization: Bearer $A2")"
 R=$(code "$G/api/auth/refresh" -H "$J" -d "{\"refresh_token\":\"$A\"}"); chk "refresh with access token" 401 "$R"
-in_auth_db psql -q -U auth_user -d auth_db -c "update users set is_active=false where email='user1@example.com'" >/dev/null
+# отключает admin через API; упадёт прогон до включения — user1 останется отключённым,
+# включить: PATCH /api/auth/users/{id} {"is_active":true} от admin
+req "$A" PATCH "/api/auth/users/$U1ID" '{"is_active":false}' >/dev/null
 chk "inactive: login" 403 "$(code "$G/api/auth/login" -H "$J" -d '{"email":"user1@example.com","password":"password123"}')"
 R=$(code "$G/api/auth/refresh" -H "$J" -d "{\"refresh_token\":\"$U1R\"}"); chk "inactive: refresh" 401 "$R"
 chk "inactive: /me" 401 "$(code "$G/api/auth/me" -H "Authorization: Bearer $U1")"
-in_auth_db psql -q -U auth_user -d auth_db -c "update users set is_active=true where email='user1@example.com'" >/dev/null
+req "$A" PATCH "/api/auth/users/$U1ID" '{"is_active":true}' >/dev/null
 chk "reactivated: login" 200 "$(code "$G/api/auth/login" -H "$J" -d '{"email":"user1@example.com","password":"password123"}')"
+
+echo "== Смена роли и отключение (admin)"
+EJ=$(login "e2e-$SFX@example.com"); E=$(echo "$EJ" | jq_ 'd["access_token"]'); ER=$(echo "$EJ" | jq_ 'd["refresh_token"]')
+EID=$(cu -s "$G/api/auth/me" -H "Authorization: Bearer $E" | jq_ 'd["id"]')
+chk "user PATCH /api/auth/users/{id}" 403 "$(req "$U1" PATCH "/api/auth/users/$EID" '{"role":"admin"}')"
+chk "admin PATCH self" 409 "$(req "$A" PATCH "/api/auth/users/$AID" '{"role":"user"}')"
+chk "admin PATCH unknown field" 422 "$(req "$A" PATCH "/api/auth/users/$EID" '{"full_name":"x"}')"
+chk "admin PATCH nonexistent user" 404 "$(req "$A" PATCH /api/auth/users/999999 '{"is_active":false}')"
+chk "admin promotes this run's user" admin "$(body "$A" PATCH "/api/auth/users/$EID" '{"role":"admin"}' | jq_ 'd["role"]')"
+EA=$(cu -s "$G/api/auth/refresh" -H "$J" -d "{\"refresh_token\":\"$ER\"}" | jq_ 'd["access_token"]')
+chk "promoted: statistics after refresh" 200 "$(req "$EA" GET /api/tasks/statistics/users)"
+# повышенный не остаётся admin: иначе admin в базе копятся от прогона к прогону
+R=$(body "$A" PATCH "/api/auth/users/$EID" '{"role":"user","is_active":false}' | jq_ 'd["role"]+" "+str(d["is_active"])')
+chk "admin demotes and disables this run's user" "user False" "$R"
+R=$(in_auth_db psql -tA -U auth_user -d auth_db -c "select count(*) from user_audit where target_id=$EID")
+chk "user_audit rows for this run's user (role x2, is_active)" 3 "$R"
 
 echo "== В обход gateway (из пода/контейнера gateway)"
 for s in ser-task:8002/api/tasks/tasks ser-time:8003/api/time/time-entries ser-auth:8001/api/auth/me; do
