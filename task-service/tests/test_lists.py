@@ -280,3 +280,129 @@ def test_projects_only_own_inside_envelope(client, user_headers, other_headers, 
     assert ([p["id"] for p in body["items"]], body["total"]) == ([mine], 1)
     body = _get(client, admin_headers, PROJECTS)
     assert (set(p["id"] for p in body["items"]), body["total"]) == ({mine, theirs}, 2)
+
+
+# --- Счётчик и превью задач в списке проектов ---
+
+
+def _preview_dataset(client, headers):
+    """Проекты: p0 — пять активных задач и одна архивная, p1 — одна, p2 — без задач."""
+    pids = [_project(client, headers, f"p{i}") for i in range(3)]
+    # названия против порядка создания: превью идёт по created_at, а не по title
+    tasks = [_task(client, headers, f"a{4 - i}", project_id=pids[0]) for i in range(5)]
+    statuses = ["todo", "in_progress", "done", "blocked", "todo"]
+    for tid, st in zip(tasks, statuses, strict=True):
+        assert client.put(f"{TASKS}/{tid}", json={"status": st}, headers=headers).status_code == 200
+    archived = _task(client, headers, "archived", project_id=pids[0])
+    r = client.put(f"{TASKS}/{archived}", json={"is_active": False}, headers=headers)
+    assert r.status_code == 200
+    single = _task(client, headers, "single", project_id=pids[1])
+    # задачи без проекта в счётчик не попадают
+    _task(client, headers, "free")
+    return pids, tasks, single
+
+
+def _by_id(body):
+    return {p["id"]: p for p in body["items"]}
+
+
+def test_projects_tasks_count_and_preview(client, user_headers):
+    (p0, p1, p2), tasks, single = _preview_dataset(client, user_headers)
+    projects = _by_id(_get(client, user_headers, PROJECTS))
+    # архивная задача не считается, превью — три первые активные по created_at, id
+    assert projects[p0]["tasks_count"] == 5
+    assert projects[p0]["tasks_preview"] == [
+        {"id": tasks[0], "title": "a4", "status": "todo"},
+        {"id": tasks[1], "title": "a3", "status": "in_progress"},
+        {"id": tasks[2], "title": "a2", "status": "done"},
+    ]
+    assert projects[p1]["tasks_count"] == 1
+    assert projects[p1]["tasks_preview"] == [{"id": single, "title": "single", "status": "todo"}]
+    assert projects[p2]["tasks_count"] == 0
+    assert projects[p2]["tasks_preview"] == []
+
+
+def test_projects_tasks_summary_ignores_page_and_filters(client, user_headers):
+    (p0, p1, _), _, _ = _preview_dataset(client, user_headers)
+    # на второй странице и под фильтром счётчики те же
+    body = _get(client, user_headers, PROJECTS, sort="created_at", limit=1, offset=1)
+    assert [(p["id"], p["tasks_count"]) for p in body["items"]] == [(p1, 1)]
+    body = _get(client, user_headers, PROJECTS, is_active=True, limit=1, sort="created_at")
+    assert [(p["id"], p["tasks_count"]) for p in body["items"]] == [(p0, 5)]
+
+
+def test_projects_tasks_summary_of_foreign_projects_for_admin(
+    client, user_headers, other_headers, admin_headers
+):
+    (p0, _, _), _, _ = _preview_dataset(client, other_headers)
+    mine = _project(client, user_headers)
+    _task(client, user_headers, project_id=mine)
+    projects = _by_id(_get(client, admin_headers, PROJECTS))
+    assert (projects[p0]["tasks_count"], len(projects[p0]["tasks_preview"])) == (5, 3)
+    assert projects[mine]["tasks_count"] == 1
+    # user не видит чужой проект и его задачи
+    assert p0 not in _by_id(_get(client, user_headers, PROJECTS))
+
+
+def test_projects_empty_page_skips_task_queries(client, user_headers):
+    statements = []
+
+    def record(_conn, _cursor, statement, *_args):
+        statements.append(statement)
+
+    event.listen(engine, "before_cursor_execute", record)
+    try:
+        body = _get(client, user_headers, PROJECTS)
+    finally:
+        event.remove(engine, "before_cursor_execute", record)
+    assert body["items"] == []
+    # только count конверта и пустая страница
+    assert len(statements) == 2
+
+
+def test_projects_query_count_does_not_grow_with_projects(client, user_headers):
+    statements = []
+
+    def count(*_args):
+        statements.append(1)
+
+    def queries_for_list():
+        statements.clear()
+        event.listen(engine, "before_cursor_execute", count)
+        try:
+            body = _get(client, user_headers, PROJECTS, limit=200)
+        finally:
+            event.remove(engine, "before_cursor_execute", count)
+        assert all(p["tasks_count"] == 1 for p in body["items"])
+        return len(statements)
+
+    for i in range(2):
+        _task(client, user_headers, project_id=_project(client, user_headers, f"p{i}"))
+    few = queries_for_list()
+    for i in range(2, 8):
+        _task(client, user_headers, project_id=_project(client, user_headers, f"p{i}"))
+    many = queries_for_list()
+    # count, страница проектов, счётчики, превью
+    assert few == many == 4
+
+
+def test_summary_fields_only_in_list(client, user_headers):
+    pid = _project(client, user_headers)
+    tid = _task(client, user_headers, project_id=pid)
+    one = _get(client, user_headers, f"{PROJECTS}/{pid}")
+    assert "tasks_count" not in one and "tasks_preview" not in one
+    nested = _get(client, user_headers, f"{TASKS}/{tid}")["project"]
+    assert "tasks_count" not in nested and "tasks_preview" not in nested
+    listed = _get(client, user_headers)["items"][0]["project"]
+    assert "tasks_count" not in listed and "tasks_preview" not in listed
+
+
+def test_projects_tasks_summary_postgres(pg_app, client, user_headers):
+    # оконная функция и GROUP BY на PostgreSQL: тот же счётчик и превью, что на SQLite
+    (p0, p1, p2), tasks, single = _preview_dataset(client, user_headers)
+    projects = _by_id(_get(client, user_headers, PROJECTS))
+    assert projects[p0]["tasks_count"] == 5
+    assert [t["id"] for t in projects[p0]["tasks_preview"]] == tasks[:3]
+    assert projects[p0]["tasks_preview"][1]["status"] == "in_progress"
+    assert [t["id"] for t in projects[p1]["tasks_preview"]] == [single]
+    assert (projects[p2]["tasks_count"], projects[p2]["tasks_preview"]) == (0, [])

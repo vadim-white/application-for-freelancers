@@ -1,7 +1,7 @@
 #!/bin/bash
 # Сквозной прогон через gateway: `bash tests/smoke.sh` из корня; объекты создаёт сам, проходит на чистой базе.
-# SMOKE_MODE=compose — 162 проверки, после `docker compose up --build -d --wait`;
-# SMOKE_MODE=k8s — 160, после ./scripts/k8s-deploy.sh, через вход http://127.0.0.1:8080, как браузер.
+# SMOKE_MODE=compose — 164 проверки, после `docker compose up --build -d --wait`;
+# SMOKE_MODE=k8s — 162, после ./scripts/k8s-deploy.sh, через вход http://127.0.0.1:8080, как браузер.
 # В k8s нет четырёх проверок закрытых портов: кластер публикует на хост только 8080, они ничего не доказывают.
 # Изоляцию NetworkPolicy внутри кластера smoke не проверяет.
 # В k8s path traversal проверяется дважды: Envoy нормализует путь до gateway, защита gateway — изнутри его пода.
@@ -12,7 +12,7 @@ case "$MODE" in
   compose)
     G="${SMOKE_G:-http://localhost:8000}"
     CLOSED_PORTS="8001 8002 8003 5432"
-    EXPECTED=162
+    EXPECTED=164
     in_svc() { local s=$1; shift; docker exec "ser-$s" "$@"; }   # in_svc auth|gateway команда...
     in_auth_db() { docker exec ser-auth-db "$@"; }
     ;;
@@ -21,7 +21,7 @@ case "$MODE" in
     KNS=freelance-service
     G="${SMOKE_G:-http://127.0.0.1:8080}"
     CLOSED_PORTS=""
-    EXPECTED=160
+    EXPECTED=162
     in_svc() { local s=$1; shift; kubectl --context "$KCTX" -n "$KNS" exec "deploy/ser-$s" -- "$@"; }
     in_auth_db() { kubectl --context "$KCTX" -n "$KNS" exec auth-db-0 -c postgres -- "$@"; }
     ;;
@@ -240,6 +240,9 @@ chk "admin task in user1 project -> owner = user1" "$U1ID" "$(echo "$TAJ" | jq_ 
 # по lower: «by admin …» раньше «T1 …»
 chk "user1 P1 sort=title" "$TA $T1" "$(body "$U1" GET "/api/tasks/tasks?project_id=$P1&sort=title" | ids)"
 chk "user1 P1 sort=-title" "$T1 $TA" "$(body "$U1" GET "/api/tasks/tasks?project_id=$P1&sort=-title" | ids)"
+# счётчик и превью карточки: активные задачи проекта, первые по созданию; P1 среди новых проектов user1
+p1card() { body "$U1" GET /api/tasks/projects | jq_ 'next(" ".join([str(p["tasks_count"])]+[str(t["id"]) for t in p["tasks_preview"]]) for p in d["items"] if p["id"]=='"$P1"')'; }
+chk "user1 P1 in projects list: tasks_count and preview" "2 $T1 $TA" "$(p1card)"
 
 echo "== admin видит и меняет всё"
 chk "admin GET user1 project" 200 "$(req "$A" GET "/api/tasks/projects/$P1")"
@@ -298,6 +301,7 @@ req "$U1" PUT "/api/tasks/tasks/$T1" '{"is_active":false}' >/dev/null
 R=$(req "$U1" POST /api/time/timer/start "{\"task_id\":$T1}"); chk "timer start on archived task" 409 "$R"
 chk "timer stop after archive" "$T1" "$(body "$U1" POST /api/time/timer/stop | jq_ 'd["stopped"]["task_id"]')"
 chk "user1 P1 ?is_active=false -> archived T1" "$T1" "$(body "$U1" GET "/api/tasks/tasks?project_id=$P1&is_active=false" | ids)"
+chk "user1 P1 in projects list: archived T1 not counted" "1 $TA" "$(p1card)"
 
 echo "== Удаление: своё 204, каскад проекта"
 chk "user1 DELETE own task" 204 "$(req "$U1" DELETE "/api/tasks/tasks/$TN")"

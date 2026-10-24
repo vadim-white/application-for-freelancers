@@ -7,7 +7,7 @@ Seed-пользователи — те же, что в tests/smoke.sh: admin, us
 import re
 from dataclasses import dataclass, field
 from typing import Self
-from urllib.parse import parse_qs, urlsplit
+from urllib.parse import urlsplit
 
 from playwright.sync_api import BrowserContext, Page, Response, expect
 
@@ -16,8 +16,7 @@ ADMIN = "admin@example.com"
 USER1 = "user1@example.com"
 USER2 = "user2@example.com"
 
-# С запасом на нагруженный узел: у admin дашборд грузит задачи по каждому проекту последовательно.
-# Ожидания — только по событиям, без фиксированных пауз.
+# С запасом на нагруженный узел. Ожидания — только по событиям, без фиксированных пауз.
 TIMEOUT_MS = 20_000
 NAVIGATION_TIMEOUT_MS = 30_000
 expect.set_options(timeout=TIMEOUT_MS)
@@ -81,20 +80,11 @@ def is_projects_list(r: Response) -> bool:
 def login(page: Page, email: str) -> list[dict]:
     """Вход через форму; возвращает проекты дашборда — items из GET /api/tasks/projects.
 
-    Возвращает управление, когда дашборд догрузился: после списка проектов он по одному запрашивает
-    задачи каждого проекта (GET /api/tasks/tasks?project_id=N). Без этого ожидания тест ловит хвост
-    этих запросов (1.5.6: ответ старой страницы попадал в лог после reload, а подменённый токен —
-    в её запрос). wait_for_load_state("networkidle") тут не годится: переход /login -> /dashboard —
-    это pushState без новой загрузки документа, и состояние считается уже достигнутым.
+    Возвращает управление, когда дашборд готов: пришёл список проектов и отрисованы его карточки
+    (превью и счётчик задач приходят в том же ответе, других запросов дашборд не делает).
+    wait_for_load_state("networkidle") тут не годится: переход /login -> /dashboard — это pushState
+    без новой загрузки документа, и состояние считается уже достигнутым.
     """
-    loaded: set[int] = set()
-
-    def on_response(r: Response) -> None:
-        if r.request.method == "GET" and api_path(r.url) == "/api/tasks/tasks":
-            ids = parse_qs(urlsplit(r.url).query).get("project_id", [])
-            loaded.update(int(i) for i in ids)
-
-    page.on("response", on_response)
     page.goto("/login")
     page.get_by_placeholder("your@email.com").fill(email)
     page.get_by_placeholder("••••••••").fill(PASSWORD)
@@ -104,11 +94,7 @@ def login(page: Page, email: str) -> list[dict]:
     status = projects.value.status
     assert status == 200, f"GET /api/tasks/projects после входа {email}: {status}"
     body = projects.value.json()["items"]
-    # обработчики sync API вызываются внутри вызовов Playwright: ждём следующий ответ, пока
-    # не придут задачи всех проектов (нет нужного ответа за TIMEOUT_MS — ошибка таймаута)
-    while not {p["id"] for p in body} <= loaded:
-        page.wait_for_event("response")
-    page.remove_listener("response", on_response)
+    expect(page.locator(".project-card")).to_have_count(len(body))
     return body
 
 

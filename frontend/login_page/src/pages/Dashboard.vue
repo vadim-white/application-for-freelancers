@@ -78,8 +78,6 @@
             v-for="p in projects"
             :key="p.id"
             :project="p"
-            :tasks="projectTasks[p.id]?.items || []"
-            :count="projectTasks[p.id]?.total || 0"
             @open="openProject"
           />
 
@@ -183,7 +181,7 @@ import { ref, reactive, computed, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '../stores/auth'
 import { useTimerStore, formatHoursMinutes } from '../stores/timer'
-import { getProjects, getTasks, type Project, type TaskList } from '../services/tasks'
+import { getProjects, type ProjectListItem } from '../services/tasks'
 import ProjectCard from '../components/ProjectCard.vue'
 import ProjectTasksDrawer from '../components/ProjectTasksDrawer.vue'
 import TaskTimerModal from '../components/TaskTimerModal.vue'
@@ -201,8 +199,7 @@ const isAdmin = computed(() => {
   return auth.user?.role === 'admin'
 })
 
-const projects = ref<Project[]>([])
-const projectTasks = reactive<Record<number, TaskList>>({})
+const projects = ref<ProjectListItem[]>([])
 const usersStats = ref<any[]>([])
 const statsUsers = reactive<Record<number, UserItem>>({})
 
@@ -250,16 +247,8 @@ function userLabel(id: number) {
 async function load() {
   try {
     // новые сверху (порядок API по умолчанию); страниц пока нет — до 200 проектов
-    const ps = (await getProjects({ limit: 200 })).items
-    projects.value = ps
-    // карточка: первые три задачи и счётчик по всем (total)
-    for (const p of ps) {
-      try {
-        projectTasks[p.id] = await getTasks({ project_id: p.id, limit: 3, sort: 'created_at' })
-      } catch {
-        delete projectTasks[p.id]
-      }
-    }
+    // превью задач и счётчик для карточек приходят в том же ответе
+    projects.value = (await getProjects({ limit: 200 })).items
   } catch (err) {
     message.error('Ошибка загрузки проектов')
   }

@@ -27,9 +27,23 @@ export interface Project {
   created_at: string | null
 }
 
+// Задача в превью карточки проекта
+export interface TaskPreview {
+  id: number
+  title: string
+  status: TaskStatus
+}
+
+// Элемент списка проектов (схема ProjectListItem): активные задачи проекта —
+// их число и первые три
+export interface ProjectListItem extends Project {
+  tasks_count: number
+  tasks_preview: TaskPreview[]
+}
+
 // Конверт списка: total — число подходящих под фильтры, не размер страницы
 export interface ProjectList {
-  items: Project[]
+  items: ProjectListItem[]
   total: number
   limit: number
   offset: number

@@ -29,13 +29,13 @@
     </template>
 
     <div class="card-body">
-      <div v-if="tasks && tasks.length" class="tasks-list">
+      <div v-if="project.tasks_preview.length" class="tasks-list">
         <div class="tasks-label">
-          📋 Задачи <span class="task-count">({{ count }})</span>
+          📋 Задачи <span class="task-count">({{ project.tasks_count }})</span>
         </div>
         <div class="tasks-items">
           <div 
-            v-for="t in tasks" 
+            v-for="t in project.tasks_preview" 
             :key="t.id"
             class="task-item"
           >
@@ -77,14 +77,11 @@
 
 <script setup lang="ts">
 import { defineProps, defineEmits, type PropType } from 'vue'
-import type { Task } from '../services/tasks'
+import type { ProjectListItem } from '../services/tasks'
 
+// tasks_preview — первые три активные задачи, tasks_count — число всех активных
 const props = defineProps({
-  project: { type: Object, required: true },
-  // первые задачи проекта для превью
-  tasks: { type: Array as PropType<Task[]>, default: () => [] },
-  // число всех задач проекта, а не только показанных
-  count: { type: Number, default: 0 }
+  project: { type: Object as PropType<ProjectListItem>, required: true }
 })
 const emit = defineEmits(['open'])
 

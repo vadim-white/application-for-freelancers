@@ -29,9 +29,24 @@ class ProjectRead(ProjectBase):
     model_config = ConfigDict(from_attributes=True)
 
 
+class TaskPreview(BaseModel):
+    id: int
+    title: str
+    status: TaskStatus
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+# Только для списка: во вложенном в TaskRead ProjectRead этих полей нет.
+# Считаются активные задачи проекта; превью — первые по created_at, id
+class ProjectListItem(ProjectRead):
+    tasks_count: int
+    tasks_preview: list[TaskPreview]
+
+
 # Конверт списка: total — число подходящих под фильтры, не размер страницы
 class ProjectList(BaseModel):
-    items: list[ProjectRead]
+    items: list[ProjectListItem]
     total: int
     limit: int
     offset: int

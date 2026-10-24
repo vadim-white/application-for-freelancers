@@ -5,6 +5,8 @@ from sqlalchemy.orm import Session, selectinload
 
 from . import models, schemas
 
+PREVIEW_SIZE = 3
+
 
 def _order_by(sort: str, columns: dict, id_column) -> list:
     """sort — поле с «-» или без; NULL в конце в обе стороны, при равенстве id в ту же сторону.
@@ -58,7 +60,54 @@ def list_projects(
     items = db.scalars(
         select(project).where(*conditions).order_by(*order).limit(limit).offset(offset)
     )
-    return list(items), total
+    items = list(items)
+    counts, previews = _task_summaries(db, [p.id for p in items])
+    result = [
+        schemas.ProjectListItem(
+            **schemas.ProjectRead.model_validate(p).model_dump(),
+            tasks_count=counts.get(p.id, 0),
+            tasks_preview=previews.get(p.id, []),
+        )
+        for p in items
+    ]
+    return result, total
+
+
+def _task_summaries(db: Session, project_ids: list[int]) -> tuple[dict, dict]:
+    """Счётчик и первые PREVIEW_SIZE активных задач проектов страницы, два запроса на страницу."""
+    if not project_ids:
+        return {}, {}
+    task = models.Task
+    count_rows = db.execute(
+        select(task.project_id, func.count())
+        .where(task.project_id.in_(project_ids), task.is_active)
+        .group_by(task.project_id)
+    )
+    counts = {project_id: count for project_id, count in count_rows}
+    numbered = (
+        select(
+            task.id,
+            task.title,
+            task.status,
+            task.project_id,
+            func.row_number()
+            .over(partition_by=task.project_id, order_by=(task.created_at, task.id))
+            .label("rn"),
+        )
+        .where(task.project_id.in_(project_ids), task.is_active)
+        .subquery()
+    )
+    rows = db.execute(
+        select(numbered.c.id, numbered.c.title, numbered.c.status, numbered.c.project_id)
+        .where(numbered.c.rn <= PREVIEW_SIZE)
+        .order_by(numbered.c.project_id, numbered.c.rn)
+    )
+    previews: dict[int, list] = {}
+    for task_id, title, task_status, project_id in rows:
+        previews.setdefault(project_id, []).append(
+            schemas.TaskPreview(id=task_id, title=title, status=task_status)
+        )
+    return counts, previews
 
 
 def update_project(
