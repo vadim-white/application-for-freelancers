@@ -73,9 +73,8 @@ services:
       dockerfile: gateway-service/Dockerfile
     image: ser-gateway:latest
     container_name: ser-gateway
-    # BIND_ADDR из .env: по умолчанию только 127.0.0.1 (см. .env.example)
-    ports:
-      - "${BIND_ADDR:-127.0.0.1}:8000:8000"
+    # Порт наружу не публикуется: все запросы идут через frontend (nginx, :5173). Иначе лимит входа
+    # в nginx обходился бы прямым обращением к :8000. Из сети compose gateway доступен как ser-gateway:8000.
     environment:
       AUTH_URL: http://ser-auth:8001
       TASK_URL: http://ser-task:8002

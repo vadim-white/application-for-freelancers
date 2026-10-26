@@ -1,18 +1,19 @@
 #!/bin/bash
 # Сквозной прогон через gateway: `bash tests/smoke.sh` из корня; объекты создаёт сам, проходит на чистой базе.
-# SMOKE_MODE=compose — 181 проверка, после `docker compose up --build -d --wait`;
+# SMOKE_MODE=compose — 182 проверки, после `docker compose up --build -d --wait`, через вход http://localhost:5173 (nginx фронта);
 # SMOKE_MODE=k8s — 179, после ./scripts/k8s-deploy.sh, через вход http://127.0.0.1:8080, как браузер.
-# В k8s нет четырёх проверок закрытых портов: кластер публикует на хост только 8080, они ничего не доказывают.
+# gateway :8000 наружу не опубликован ни в одном режиме (в compose это проверяет «localhost:8000 closed»).
+# В k8s нет пяти проверок закрытых портов: кластер публикует на хост только 8080, они ничего не доказывают.
 # Изоляцию NetworkPolicy внутри кластера smoke не проверяет.
 # В k8s path traversal проверяется дважды: Envoy нормализует путь до gateway, защита gateway — изнутри его пода.
-# /health через вход отдаёт фронт, /ready вне /api — оба проверяются изнутри пода gateway; /health — по телу.
+# /health через вход отдаёт фронт, /ready вне /api — оба проверяются изнутри gateway (контейнер или под); /health — по телу.
 # Переопределяется: SMOKE_G, SMOKE_ORIGIN, KUBE_CONTEXT.
 MODE="${SMOKE_MODE:-compose}"
 case "$MODE" in
   compose)
-    G="${SMOKE_G:-http://localhost:8000}"
-    CLOSED_PORTS="8001 8002 8003 5432"
-    EXPECTED=181
+    G="${SMOKE_G:-http://localhost:5173}"
+    CLOSED_PORTS="8000 8001 8002 8003 5432"
+    EXPECTED=182
     in_svc() { local s=$1; shift; docker exec "ser-$s" "$@"; }   # in_svc auth|gateway команда...
     in_auth_db() { docker exec ser-auth-db "$@"; }
     ;;
@@ -70,16 +71,10 @@ print(jwt.encode(c, os.environ['KEY'] or os.environ['SECRET_KEY'], algorithm='HS
 echo "== Публичные пути"
 # /health по телу: "auth task time" для upstreams, равных true; пусто, если ответ не разобрался
 health_up() { jq_ '" ".join(k for k in ("auth","task","time") if d["upstreams"].get(k) is True)'; }
-if [ "$MODE" = k8s ]; then
-  # через вход /health отдаёт фронт; тело gateway - запросом изнутри его пода
-  HEALTH=$(in_svc gateway python -c "import urllib.request as u;print(u.urlopen('http://127.0.0.1:8000/health').read().decode())" | health_up)
-  chk "GET /health upstreams all true (in gateway pod)" "auth task time" "$HEALTH"
-  chk "GET / через вход (фронт)" 200 "$(code "$G/")"
-else
-  HEALTH=$(cu -s "$G/health" | health_up)
-  chk "GET /health upstreams all true" "auth task time" "$HEALTH"
-  chk "GET /" 200 "$(code "$G/")"
-fi
+# через вход /health отдаёт фронт; тело gateway - запросом изнутри его контейнера или пода
+HEALTH=$(in_svc gateway python -c "import urllib.request as u;print(u.urlopen('http://127.0.0.1:8000/health').read().decode())" | health_up)
+chk "GET /health upstreams all true (in gateway)" "auth task time" "$HEALTH"
+chk "GET / через вход (фронт)" 200 "$(code "$G/")"
 for s in auth:8001 task:8002 time:8003; do
   R=$(in_svc gateway python -c "import urllib.request as u;print(u.urlopen('http://ser-$s/ready', timeout=5).status)")
   chk "/ready ${s%%:*} (from gateway)" 200 "$R"
@@ -160,6 +155,7 @@ except e.HTTPError as x: print(x.code)"; }
   chk "path traversal at gateway" 404 "$(gw_code /api/tasks/../auth/me)"
   chk "encoded traversal at gateway" 404 "$(gw_code /api/tasks/%2e%2e/auth/me)"
 else
+  # через вход (nginx фронта) → gateway
   chk "path traversal" 404 "$(code --path-as-is "$G/api/tasks/../auth/me")"
   chk "encoded traversal" 404 "$(code --path-as-is "$G/api/tasks/%2e%2e/auth/me")"
 fi

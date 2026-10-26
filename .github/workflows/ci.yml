@@ -191,7 +191,7 @@ jobs:
           done
       - name: docker compose up --build -d --wait
         run: docker compose up --build -d --wait
-      - name: smoke (181)
+      - name: smoke (182, http://localhost:5173)
         run: bash tests/smoke.sh
       - name: e2e (Playwright, http://127.0.0.1:5173)
         run: bash tests/e2e/run.sh
