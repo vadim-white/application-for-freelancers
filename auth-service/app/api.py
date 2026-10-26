@@ -1,3 +1,4 @@
+import math
 from typing import Literal
 
 import jwt
@@ -5,6 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
 from . import crud, models, schemas
+from .core.config import settings
 from .core.security import (
     DUMMY_HASH,
     create_tokens_for_user,
@@ -27,12 +29,24 @@ def register(user_in: schemas.UserCreate, db: Session = Depends(get_db)):
 
 @router.post("/login", response_model=schemas.Token)
 def login(form_data: schemas.UserAuth, db: Session = Depends(get_db)):
+    # попытка считается до проверки пароля: за окно bcrypt проверяет не больше
+    # LOGIN_MAX_ATTEMPTS паролей на email, даже при параллельных запросах через реплики
+    now = crud.now()
+    attempts, window_start = crud.count_login_attempt(db, form_data.email, now)
+    if attempts > settings.LOGIN_MAX_ATTEMPTS:
+        retry_after = math.ceil((window_start + crud.login_window() - now).total_seconds())
+        raise HTTPException(
+            status_code=429,
+            detail="Too many login attempts",
+            headers={"Retry-After": str(max(1, retry_after))},
+        )
     user = crud.get_user_by_email(db, form_data.email)
     if not user:
         verify_password(form_data.password, DUMMY_HASH)
         raise HTTPException(status_code=401, detail="Incorrect email or password")
     if not verify_password(form_data.password, user.hashed_password):
         raise HTTPException(status_code=401, detail="Incorrect email or password")
+    crud.clear_login_attempts(db, form_data.email, now)
     if not user.is_active:
         raise HTTPException(status_code=403, detail="User is inactive")
     return {**create_tokens_for_user(user), "token_type": "bearer"}

@@ -1,11 +1,23 @@
+from datetime import UTC, datetime, timedelta
+
 import jwt
 from fastapi import Depends, Header, HTTPException
-from sqlalchemy import func, or_, select
+from sqlalchemy import case, delete, func, or_, select
+from sqlalchemy.dialects import postgresql, sqlite
 from sqlalchemy.orm import Session
 
 from . import models, schemas
+from .core.config import settings
 from .core.security import decode_token, get_password_hash
 from .deps import get_db
+
+
+def now() -> datetime:
+    return datetime.now(UTC)
+
+
+def login_window() -> timedelta:
+    return timedelta(seconds=settings.LOGIN_WINDOW_SECONDS)
 
 
 def get_user_by_email(db: Session, email: str):
@@ -168,3 +180,37 @@ def update_user_by_admin(
     db.commit()
     db.refresh(user)
     return user
+
+
+def count_login_attempt(db: Session, email: str, now: datetime) -> tuple[int, datetime]:
+    """Засчитать попытку входа: (номер попытки в окне, начало окна).
+
+    Один INSERT … ON CONFLICT: параллельные попытки через разные реплики получают разные
+    номера, «прочитать → записать» дал бы IntegrityError на новом email и потерянный счёт.
+    Окно истекло — счёт с 1. Коммит сразу: попытка засчитана, что бы ни было дальше.
+    """
+    table = models.LoginAttempts.__table__
+    insert = postgresql.insert if db.get_bind().dialect.name == "postgresql" else sqlite.insert
+    stmt = insert(table).values(email=email, attempts=1, window_start=now)
+    expired = table.c.window_start <= now - login_window()
+    stmt = stmt.on_conflict_do_update(
+        index_elements=[table.c.email],
+        set_={
+            "attempts": case((expired, 1), else_=table.c.attempts + 1),
+            "window_start": case((expired, stmt.excluded.window_start), else_=table.c.window_start),
+        },
+    ).returning(table.c.attempts, table.c.window_start)
+    attempts, window_start = db.execute(stmt).one()
+    db.commit()
+    return attempts, window_start
+
+
+def clear_login_attempts(db: Session, email: str, now: datetime) -> None:
+    """Удалить счётчик email и заодно строки с истёкшим окном (по индексу window_start)."""
+    table = models.LoginAttempts.__table__
+    db.execute(
+        delete(table).where(
+            or_(table.c.email == email, table.c.window_start <= now - login_window())
+        )
+    )
+    db.commit()

@@ -1,10 +1,31 @@
 import enum
-from datetime import datetime
+from datetime import UTC, datetime
 
 from sqlalchemy import DateTime, Enum, ForeignKey, func
 from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.types import TypeDecorator
 
 from .db import Base
+
+
+class UTCDateTime(TypeDecorator):
+    """Время с поясом; из базы всегда aware UTC. Только для колонок NOT NULL.
+
+    SQLite хранит и отдаёт время без пояса: пишем в UTC, прочитанное считаем UTC.
+    """
+
+    impl = DateTime(timezone=True)
+    cache_ok = True
+
+    def process_bind_param(self, value, dialect):
+        if value.tzinfo is None:
+            raise ValueError("naive datetime: time must be timezone-aware")
+        return value.astimezone(UTC)
+
+    def process_result_value(self, value, dialect):
+        if value.tzinfo is None:
+            return value.replace(tzinfo=UTC)
+        return value.astimezone(UTC)
 
 
 class UserRole(enum.Enum):
@@ -38,3 +59,16 @@ class UserAudit(Base):
     old_value: Mapped[str]
     new_value: Mapped[str]
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class LoginAttempts(Base):
+    """Неудачные входы по email в текущем окне; строку удаляет верный пароль.
+
+    Без FK на users: неизвестный email считается так же, иначе замок выдаёт, есть ли аккаунт.
+    """
+
+    __tablename__ = "login_attempts"
+
+    email: Mapped[str] = mapped_column(primary_key=True)
+    attempts: Mapped[int]
+    window_start: Mapped[datetime] = mapped_column(UTCDateTime, index=True)

@@ -1,7 +1,7 @@
 #!/bin/bash
 # Сквозной прогон через gateway: `bash tests/smoke.sh` из корня; объекты создаёт сам, проходит на чистой базе.
-# SMOKE_MODE=compose — 175 проверок, после `docker compose up --build -d --wait`;
-# SMOKE_MODE=k8s — 173, после ./scripts/k8s-deploy.sh, через вход http://127.0.0.1:8080, как браузер.
+# SMOKE_MODE=compose — 181 проверка, после `docker compose up --build -d --wait`;
+# SMOKE_MODE=k8s — 179, после ./scripts/k8s-deploy.sh, через вход http://127.0.0.1:8080, как браузер.
 # В k8s нет четырёх проверок закрытых портов: кластер публикует на хост только 8080, они ничего не доказывают.
 # Изоляцию NetworkPolicy внутри кластера smoke не проверяет.
 # В k8s path traversal проверяется дважды: Envoy нормализует путь до gateway, защита gateway — изнутри его пода.
@@ -12,7 +12,7 @@ case "$MODE" in
   compose)
     G="${SMOKE_G:-http://localhost:8000}"
     CLOSED_PORTS="8001 8002 8003 5432"
-    EXPECTED=175
+    EXPECTED=181
     in_svc() { local s=$1; shift; docker exec "ser-$s" "$@"; }   # in_svc auth|gateway команда...
     in_auth_db() { docker exec ser-auth-db "$@"; }
     ;;
@@ -21,7 +21,7 @@ case "$MODE" in
     KNS=freelance-service
     G="${SMOKE_G:-http://127.0.0.1:8080}"
     CLOSED_PORTS=""
-    EXPECTED=173
+    EXPECTED=179
     in_svc() { local s=$1; shift; kubectl --context "$KCTX" -n "$KNS" exec "deploy/ser-$s" -- "$@"; }
     in_auth_db() { kubectl --context "$KCTX" -n "$KNS" exec auth-db-0 -c postgres -- "$@"; }
     ;;
@@ -95,6 +95,19 @@ chk "login wrong password" 401 "$(code "$G/api/auth/login" -H "$J" -d '{"email":
 # запятая есть и в одном date, поэтому считаем GMT
 R=$(cu -s -D - -o /dev/null "$G/api/auth/login" -H "$J" -d '{"email":"user1@example.com","password":"bad"}' | grep -i '^date:' | grep -o GMT | wc -l | tr -d ' ')
 chk "proxied response: one date" 1 "$R"
+
+echo "== Счётчик неудачных входов: 5 за 15 минут на email"
+# Только адреса прогона: seed-пользователей smoke не запирает (их неудачи выше обнуляет вход ниже)
+bad_login() { cu -s -o /dev/null -D - -w 'code %{http_code}\n' "$G/api/auth/login" -H "$J" -d "{\"email\":\"$1\",\"password\":\"${2:-bad-password}\"}" | tr -d '\r'; }
+codes5() { local out=""; for _ in 1 2 3 4 5; do out="$out $(bad_login "$1" | awk '$1=="code"{print $2}')"; done; echo "$out"; }
+LOCKED="e2e-adm-$SFX@example.com"
+R=$(codes5 "$LOCKED"); chk "5 wrong passwords -> 401" " 401 401 401 401 401" "$R"
+R=$(bad_login "$LOCKED"); chk "6th wrong password -> 429" 429 "$(echo "$R" | awk '$1=="code"{print $2}')"
+RA=$(echo "$R" | awk 'tolower($1)=="retry-after:"{print $2}')
+chk "429 Retry-After 1..900" 1 "$([ "$RA" -ge 1 ] 2>/dev/null && [ "$RA" -le 900 ] && echo 1)"
+R=$(bad_login "$LOCKED" password123 | awk '$1=="code"{print $2}'); chk "correct password while locked -> 429" 429 "$R"
+R=$(codes5 "nobody-$SFX@example.com"); chk "unknown email: 5 wrong -> 401" " 401 401 401 401 401" "$R"
+R=$(bad_login "nobody-$SFX@example.com" | awk '$1=="code"{print $2}'); chk "unknown email: 6th -> 429" 429 "$R"
 
 ADMIN=$(login admin@example.com); A=$(echo "$ADMIN" | jq_ 'd["access_token"]'); AR=$(echo "$ADMIN" | jq_ 'd["refresh_token"]')
 U1J=$(login user1@example.com); U1=$(echo "$U1J" | jq_ 'd["access_token"]'); U1R=$(echo "$U1J" | jq_ 'd["refresh_token"]')

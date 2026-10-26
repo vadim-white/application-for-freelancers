@@ -1,12 +1,13 @@
 import pytest
 from alembic import command
-from sqlalchemy import text
+from sqlalchemy import inspect, text
 
-TABLES = {"users", "user_audit"}
+TABLES = {"users", "user_audit", "login_attempts"}
 # типы enum, которые создаёт миграция в PostgreSQL (в SQLite их нет)
 EXPECTED_ENUMS = {"userrole"}
 CREATE_USERS = "d68b21b4476c"
 EMAIL_LOWERCASE = "37998bcc3290"
+USER_AUDIT = "6f0e3b36cb48"
 
 
 def test_upgrade_head_matches_models(migrations_db):
@@ -101,5 +102,28 @@ def test_user_audit_migration_keeps_users(migrations_db):
     db.run(command.downgrade, EMAIL_LOWERCASE)
     assert db.tables() == {"alembic_version", "users"}
     assert emails(db) == ["user1@example.com", "admin@example.com"]
+    db.run(command.upgrade, "head")
+    db.run(command.check)
+
+
+def test_login_attempts_migration_keeps_users(migrations_db):
+    db = migrations_db
+    db.run(command.upgrade, USER_AUDIT)
+    insert_users(db, "user1@example.com")
+    db.run(command.upgrade, "head")
+    indexes = {i["name"] for i in inspect(db.engine).get_indexes("login_attempts")}
+    assert indexes == {"ix_login_attempts_window_start"}
+    with db.engine.begin() as conn:
+        conn.execute(
+            text(
+                "INSERT INTO login_attempts (email, attempts, window_start) "
+                "VALUES ('user1@example.com', 1, CURRENT_TIMESTAMP)"
+            )
+        )
+
+    # downgrade удаляет только счётчик, пользователи и журнал остаются
+    db.run(command.downgrade, USER_AUDIT)
+    assert db.tables() == {"alembic_version", "users", "user_audit"}
+    assert emails(db) == ["user1@example.com"]
     db.run(command.upgrade, "head")
     db.run(command.check)
