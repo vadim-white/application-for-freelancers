@@ -9,6 +9,8 @@ resources:
   - gatewayclass.yaml
   # NetworkPolicy: вход к фронту и gateway от подов прокси Envoy (envoy-gateway-system)
   - network-policy-entry.yaml
+  # Envoy закрывает простаивающие соединения к бэкендам раньше, чем бэкенды (60 с < 75 с uvicorn)
+  - backend-traffic-policy.yaml
 # Два файла, а не один: envs переносит в Secret все ключи файла. Раздельно — в каждом Secret только свои
 # ключи, и смена SECRET_KEY меняет хеш только у app-secrets (базы не перезапускаются).
 secretGenerator:

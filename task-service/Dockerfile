@@ -33,5 +33,8 @@ COPY task-service/alembic.ini ./
 RUN useradd --system --uid 10001 --no-create-home app
 USER 10001
 
-# после SIGTERM до 20 с на начатые запросы: вместе с preStop (5 с) укладывается в grace k8s (30 с)
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8002", "--timeout-graceful-shutdown", "20"]
+# после SIGTERM до 20 с на начатые запросы: вместе с preStop (5 с) укладывается в grace k8s (30 с).
+# Простаивающее соединение закрывает клиент (Envoy через 60 с, httpx через 5 с), а не сервер: иначе запрос
+# клиента может уйти в соединение, которое сервер как раз закрывает, — Envoy отдаст 503 и POST не повторит.
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8002", "--timeout-graceful-shutdown", "20", \
+     "--timeout-keep-alive", "75"]

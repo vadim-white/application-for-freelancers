@@ -1,0 +1,18 @@
+# Настройки Envoy для соединений входа к бэкендам (ser-gateway и ser-frontend), политика Envoy Gateway.
+# Простаивающее keep-alive соединение должен закрывать Envoy, а не бэкенд: иначе POST может уйти в
+# соединение, которое бэкенд как раз закрывает, и Envoy ответит 503 (UC) без повтора. Поэтому 60 с —
+# меньше, чем держат бэкенды: uvicorn 75 с (--timeout-keep-alive в Dockerfile), nginx фронта 65 с.
+# Без политики Envoy держит соединение к бэкенду 1 час.
+apiVersion: gateway.envoyproxy.io/v1alpha1
+kind: BackendTrafficPolicy
+metadata:
+  name: entry
+  namespace: freelance-service
+spec:
+  targetRefs:
+  - group: gateway.networking.k8s.io
+    kind: HTTPRoute
+    name: entry-routes
+  timeout:
+    http:
+      connectionIdleTimeout: 60s

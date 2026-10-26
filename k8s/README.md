@@ -92,7 +92,8 @@ k8s/
 │   ├── entrypoint.yaml   вход: Gateway entry + HTTPRoute entry-routes
 │   └── network-policy.yaml    default deny и разрешённые связи
 ├── overlays/local/       kind: Secret'ы из app.env и db.env, imagePullPolicy: Never,
-│                         GatewayClass + EnvoyProxy (NodePort 30080), вход от Envoy в NetworkPolicy
+│                         GatewayClass + EnvoyProxy (NodePort 30080), вход от Envoy в NetworkPolicy,
+│                         BackendTrafficPolicy entry (простой соединений Envoy к бэкендам — 60 с)
 │                         (+ image-tag от kind-up.sh, не в git)
 ├── overlays/local-seed/  overlay local + Job auth-seed и его сетевая политика
 ├── overlays/.deploy/     app и seed: те же overlay с тегом образов (генерирует k8s-deploy.sh, не в git)
@@ -108,6 +109,8 @@ k8s/
 ```
 
 В base ([entrypoint.yaml](base/entrypoint.yaml)) описаны `Gateway` `entry` (listener HTTP :80) и маршруты: `PathPrefix /api` → `ser-gateway:8000`, `PathPrefix /` → `ser-frontend:8080`. В base класс Gateway только назван (`freelance`), а его реализацию задаёт overlay ([gatewayclass.yaml](overlays/local/gatewayclass.yaml)): `GatewayClass` контроллера Envoy Gateway и `EnvoyProxy`, у которого сервис Envoy — `NodePort` 30080. Этот порт узла `kind-config.yaml` пробрасывает на `127.0.0.1:8080`. Под и Service Envoy контроллер создаёт в `envoy-gateway-system`. В `freelance-service` все сервисы `ClusterIP`, `LoadBalancer` и `NodePort` нет.
+
+Там же, в overlay, — политика Envoy Gateway `BackendTrafficPolicy` `entry` на HTTPRoute `entry-routes` ([backend-traffic-policy.yaml](overlays/local/backend-traffic-policy.yaml)): Envoy закрывает простаивающее keep-alive соединение к `ser-gateway` и `ser-frontend` через 60 с (`connectionIdleTimeout`; по умолчанию — 1 час). Бэкенды держат дольше — uvicorn 75 с (`--timeout-keep-alive` в Dockerfile), nginx фронта 65 с, — поэтому соединение всегда закрывает Envoy, и запрос не уходит в соединение, которое бэкенд закрывает в ту же миллисекунду (иначе Envoy отвечал 503 `UC` и POST не повторял). Проверка: `k get backendtrafficpolicy entry -o jsonpath='{.status.ancestors[0].conditions}'` — `Accepted`.
 
 Envoy нормализует путь до маршрутизации (`/api/tasks/../auth/me` → `/api/auth/me`), поэтому маршрут и авторизация gateway видят один и тот же путь. `GET /health` через вход отдаёт фронт (маршрут `/`), здоровье `ser-gateway` видно по его probes.
 
@@ -248,12 +251,13 @@ k describe networkpolicy ser-task
 
 Сквозной прогон: `SMOKE_MODE=k8s bash tests/smoke.sh` — 173 проверки через `http://127.0.0.1:8080`. `/health` через вход отдаёт фронт, поэтому smoke проверяет его изнутри пода `ser-gateway` (тело: `upstreams.auth/task/time` все `true`), там же — `/ready` трёх сервисов. Строки журнала прав `user_audit` smoke считает через `psql` в поде `auth-db-0`.
 
-Статическая проверка — на выводе kustomize, а не на каталоге `k8s/` (там лежит `kind-config.yaml`, не манифест). kubeconform не знает схем CRD, поэтому четыре ресурса входа пропускаются явно, а проверяет их API-сервер:
+Статическая проверка — на выводе kustomize, а не на каталоге `k8s/` (там лежит `kind-config.yaml`, не манифест). kubeconform не знает схем CRD, поэтому пять ресурсов входа пропускаются явно, а проверяет их API-сервер:
 
 ```bash
 kubectl kustomize k8s/overlays/local | docker run --rm -i ghcr.io/yannh/kubeconform:v0.8.0 \
-  -strict -summary -skip Gateway,GatewayClass,HTTPRoute,EnvoyProxy -     # 41 valid + 4 skipped (local-seed: 44 + 4)
+  -strict -summary -skip Gateway,GatewayClass,HTTPRoute,EnvoyProxy,BackendTrafficPolicy -   # 41 valid + 5 skipped (local-seed: 44 + 5)
 kubectl kustomize k8s/overlays/.deploy/app | kubectl --context kind-freelance apply --dry-run=server -f -   # и .deploy/seed
+# на развёрнутом кластере: 45 unchanged + 1 configured (HTTPRoute: сервер дописывает умолчания), seed — 48 + 1
 ```
 
 kubeconform можно запускать на overlay из git (`:latest`), а `apply --dry-run=server` — только на `.deploy/app` и `.deploy/seed` (их пишет `k8s-deploy.sh` с тегом из `image-tag`). У развёрнутых Job шаблон пода неизменяем, и overlay с другим тегом образа сервер отклоняет: `Job.batch "auth-migrate" is invalid: spec.template: … field is immutable`.
@@ -287,7 +291,6 @@ Job `kind` в [.github/workflows/ci.yml](../.github/workflows/ci.yml) (разд�
 
 - **Один узел.** Реплики живут на одном узле kind, PodDisruptionBudget, anti-affinity и HPA не настроены (metrics-server нет). Отказ узла — отказ всего приложения.
 - **POST и PATCH при перекатке сервиса не повторяются.** Если gateway отправил такой запрос в keep-alive соединение ровно в момент, когда старый под auth, task или time закрывает его по SIGTERM, клиент получит 502 (запрос мог дойти до сервиса, повторять его небезопасно). Без повтора такой обрыв случился один раз на ~18 тыс. GET-запросов за 10 перекаток task и time; для логина и создания объектов риск того же порядка. При выкатке схемы таймера — один 502 на ~2,8 тыс. POST записей времени (`ReadError` в gateway за 11 мс до остановки старого пода time); при одновременной перекатке всех пяти Deployment под нагрузкой на time (GET, POST, PATCH записей) — один PATCH 502 из 6610 запросов (через 9 мс после `Shutting down` старого пода time). Клиент может повторить запрос сам.
-- **503 от Envoy на простоявшем соединении.** Envoy держит keep-alive соединения к подам `ser-gateway`, а uvicorn закрывает простаивающее через 5 с (`timeout_keep_alive` по умолчанию). Запрос, отправленный в ту же миллисекунду, получает от Envoy 503 (`response_flags` `UC`, `upstream_reset_before_response_started{connection_termination}`), POST Envoy не повторяет. Замечено один раз в e2e (2.4.5): `POST /api/auth/refresh` ровно через 5,001 с после прошлого ответа по тому же соединению. Та же гонка возможна у пула gateway → сервисы (httpx держит соединения 5 с, POST и PATCH не повторяются). Исправление — этап 2.6: Envoy закрывает простаивающие соединения раньше uvicorn (`BackendTrafficPolicy`) или uvicorn держит их дольше (`--timeout-keep-alive`).
 - **503 проверки задачи на перегруженном узле.** Старт таймера и ручная запись ждут ответа task (соединение 2 с, ответ 3 с). Когда на одном узле одновременно стартуют новые поды всех Deployment и Job, time может не дождаться соединения с task: 503 «Task service unavailable» (`ConnectTimeout` в логе `ser-time`); в замере выкатки — 2 POST из 9960, в те же секунды у старых подов task и time падала readiness по таймауту. Повтора к task нет: старт и запись клиент может отправить снова, а настоящий ответ — запас ресурсов и несколько узлов (проверим в этапе «k8s: продакшен-практики»).
 - **Ревизия из чужой ветки считается новее.** `/ready` отличает только «предок head» (503) от «не предок» (200). Если база окажется на ревизии, которой нет в цепочке образа, по ошибке деплоя (миграция из другой ветки), под будет `Ready`. Это осознанный компромисс ради expand/contract: отличить «новее» от «чужой» без истории ревизий в образе нельзя.
 - **Замороженная база на открытом соединении.** Медленный запрос обрывается через 5 с (`statement_timeout`), обрыв сети — через 5–7 с (TCP keepalive и `tcp_user_timeout`; замер на `docker network disconnect`: 5,5 с для запроса в уже мёртвое соединение, 7,3 с для запроса, во время которого оборвалась сеть), после перезапуска базы пул переподключается сам (`pool_pre_ping`, первый запрос — 200). Не лечится только замороженный процесс базы (`docker pause`, процесс остановлен, но ядро его контейнера отвечает на TCP): база не отменяет запрос, keepalive получает ответы, и запрос висит, пока база не оживёт. Проба падает по своему таймауту (3 с) и снимает под с трафика; висящих потоков не больше, чем соединений в пуле.

@@ -170,7 +170,7 @@ jobs:
             echo "== k8s/overlays/$overlay"
             kubectl kustomize "k8s/overlays/$overlay" \
               | docker run --rm -i "$KUBECONFORM_IMAGE" \
-                  -strict -summary -skip Gateway,GatewayClass,HTTPRoute,EnvoyProxy -
+                  -strict -summary -skip Gateway,GatewayClass,HTTPRoute,EnvoyProxy,BackendTrafficPolicy -
           done
 
   compose:
