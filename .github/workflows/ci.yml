@@ -1,6 +1,8 @@
 # Вывод `docker compose config` и `kubectl kustomize` содержит секреты: первый — только с --quiet,
 # второй — только в pipe; значения маскируются сразу после генерации. set -x не включать.
-# timeout-minutes compose и kind — в 3–5 раз больше первого прогона: у приватного репо раннер 2 vCPU, а не 4.
+# timeout-minutes compose и kind — в 3–5 раз больше первого прогона: запас на медленный раннер и сеть
+# (репозиторий публичный, раннеры ubuntu-24.04 и ubuntu-24.04-arm — 4 vCPU).
+# Права токена — contents: read; packages: write только у publish и publish-manifest (push в main).
 name: CI
 
 on:
@@ -212,9 +214,102 @@ jobs:
         if: always()
         run: docker compose down -v
 
+  # Образы ser-*:<SHA 12> в GHCR — только push в main: в PR и у Dependabot токен только на чтение,
+  # а непроверенный код в реестр не попадает. Сборка на каждой архитектуре своим раннером, без эмуляции:
+  # amd64 — для CI, arm64 — для kind на Mac (Apple Silicon). Сторонних actions нет.
+  publish:
+    name: publish (${{ matrix.arch }})
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: [lint, python, frontend, static]
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-24.04
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: docker login ghcr.io
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: printf '%s' "$GHCR_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+      - name: сборка и публикация ser-*:<SHA 12>-${{ matrix.arch }}
+        env:
+          ARCH: ${{ matrix.arch }}
+        run: |
+          # имя в реестре — только в нижнем регистре; тег — как в kind-up.sh (git rev-parse --short=12)
+          registry="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}"
+          tag="${GITHUB_SHA:0:12}-$ARCH"
+          printf '### Образы %s\n\n| Образ | Digest |\n|---|---|\n' "$registry/ser-*:$tag" >> "$GITHUB_STEP_SUMMARY"
+          # Dockerfile и контекст — те же, что в docker-compose.yml (build); секретов при сборке нет.
+          # Метка source связывает пакет с репозиторием: публичный пакет kind скачивает без imagePullSecret
+          for spec in auth:auth-service task:task-service time:time-service gateway:gateway-service frontend:frontend; do
+            image="$registry/ser-${spec%%:*}:$tag"
+            docker build -f "${spec#*:}/Dockerfile" \
+              --label "org.opencontainers.image.source=$GITHUB_SERVER_URL/$GITHUB_REPOSITORY" \
+              --label "org.opencontainers.image.revision=$GITHUB_SHA" \
+              -t "$image" .
+            docker push "$image"
+            digest="$(docker inspect --format '{{index .RepoDigests 0}}' "$image")"
+            echo "| \`ser-${spec%%:*}\` | \`${digest#*@}\` |" >> "$GITHUB_STEP_SUMMARY"
+          done
+      - name: docker logout ghcr.io
+        if: always()
+        run: docker logout ghcr.io
+
+  # один тег <SHA 12> на обе архитектуры: узел берёт из индекса свою
+  publish-manifest:
+    needs: publish
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      registry: ${{ steps.manifest.outputs.registry }}
+    steps:
+      - name: docker login ghcr.io
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: printf '%s' "$GHCR_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+      - name: индекс ser-*:<SHA 12> (amd64 + arm64)
+        id: manifest
+        run: |
+          registry="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}"
+          tag="${GITHUB_SHA:0:12}"
+          printf '### Образы %s (amd64 + arm64)\n\n| Образ | Digest индекса |\n|---|---|\n' "$registry/ser-*:$tag" >> "$GITHUB_STEP_SUMMARY"
+          for name in auth task time gateway frontend; do
+            image="$registry/ser-$name:$tag"
+            docker buildx imagetools create -t "$image" "$image-amd64" "$image-arm64"
+            digest="$(docker buildx imagetools inspect "$image" --format '{{.Manifest.Digest}}')"
+            echo "| \`ser-$name\` | \`$digest\` |" >> "$GITHUB_STEP_SUMMARY"
+          done
+          echo "registry=$registry" >> "$GITHUB_OUTPUT"
+      - name: docker logout ghcr.io
+        if: always()
+        run: docker logout ghcr.io
+
   kind:
+    # На push в main — образы из GHCR (publish-manifest); если быстрые jobs упали, публикации нет и kind
+    # не идёт. В PR и других ветках publish пропущен (skipped): kind собирает и грузит образы сам, как раньше.
+    needs: publish-manifest
+    if: >-
+      !cancelled() && (needs.publish-manifest.result == 'success'
+      || (needs.publish-manifest.result == 'skipped'
+      && !(github.event_name == 'push' && github.ref == 'refs/heads/main')))
     runs-on: ubuntu-24.04
     timeout-minutes: 15 # первый прогон: 4 мин 13 с
+    env:
+      # kind-up.sh: пусто — сборка и kind load, иначе режим реестра (тег — SHA HEAD)
+      IMAGE_REGISTRY: ${{ needs.publish-manifest.outputs.registry }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -232,7 +327,7 @@ jobs:
           actual="$(kind version | cut -d' ' -f2)"
           echo "kind $actual"
           [ "$actual" = "$KIND_VERSION" ] || { echo "::error::на раннере kind $actual, ожидается $KIND_VERSION"; exit 1; }
-      - name: kind-up.sh (кластер, Envoy Gateway, образы)
+      - name: kind-up.sh (кластер, Envoy Gateway, образы или режим реестра)
         run: ./scripts/kind-up.sh
       - name: app.env, db.env (init-k8s-env.sh) и маскирование
         run: |
@@ -245,6 +340,16 @@ jobs:
           done < <(grep -hE '^[A-Za-z_][A-Za-z0-9_]*=' k8s/overlays/local/app.env k8s/overlays/local/db.env)
       - name: k8s-deploy.sh
         run: ./scripts/k8s-deploy.sh
+      # imageID — откуда узел взял образ; на main все ser-* должны прийти из GHCR, а не из kind load
+      - name: образы подов
+        run: |
+          kubectl --context kind-freelance -n freelance-service get pods \
+            -o jsonpath='{range .items[*]}{range .status.containerStatuses[*]}{.image}{" "}{.imageID}{"\n"}{end}{end}' \
+            | sort -u | tee "$RUNNER_TEMP/images.txt"
+          if [ -n "$IMAGE_REGISTRY" ]; then
+            awk -v r="$IMAGE_REGISTRY/" '$1 !~ /^docker\.io\/library\/postgres:/ && (index($1, r) != 1 || index($2, r) != 1) {
+              print "::error::образ не из реестра: " $0; bad = 1 } END { exit bad }' "$RUNNER_TEMP/images.txt"
+          fi
       - name: smoke k8s (181)
         run: SMOKE_MODE=k8s bash tests/smoke.sh
       - name: e2e (Playwright, через вход http://127.0.0.1:8080)

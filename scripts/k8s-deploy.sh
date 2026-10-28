@@ -38,6 +38,14 @@ TAG="$(cat "$OVERLAY/image-tag")"
 case "$TAG" in
   ""|*[!A-Za-z0-9._-]*) die "некорректный тег в k8s/overlays/local/image-tag — выполните ./scripts/kind-up.sh" ;;
 esac
+# image-registry пишет kind-up.sh в режиме реестра (IMAGE_REGISTRY), в обычном режиме его нет
+REGISTRY=""
+if [ -f "$OVERLAY/image-registry" ]; then
+  REGISTRY="$(cat "$OVERLAY/image-registry")"
+  case "$REGISTRY" in
+    ""|/*|*/|*[!a-z0-9./:_-]*) die "некорректный реестр в k8s/overlays/local/image-registry — выполните ./scripts/kind-up.sh" ;;
+  esac
+fi
 # Тег должен быть собран из текущего дерева: иначе (например, docker start узла без kind-up.sh)
 # в кластер молча встают образы прошлого коммита. ALLOW_STALE_TAG=1 — выкатить такой тег намеренно.
 stale=""
@@ -64,22 +72,41 @@ if [ -n "$stale" ]; then
     die "тег $TAG из image-tag не соответствует рабочему дереву ($stale) — выполните ./scripts/kind-up.sh (выкатить этот тег намеренно: ALLOW_STALE_TAG=1)"
   fi
 fi
-# с imagePullPolicy: Never под без образа в узле висит в ErrImageNeverPull до таймаута rollout
-for image in $IMAGES; do
-  docker exec "$NODE" crictl inspecti "$image:$TAG" >/dev/null 2>&1 \
-    || die "в узле kind нет образа $image:$TAG — выполните ./scripts/kind-up.sh"
-done
+if [ -n "$REGISTRY" ]; then
+  # без тега в реестре под висел бы в ImagePullBackOff до таймаута rollout; манифест — без скачивания слоёв
+  for image in $IMAGES; do
+    docker manifest inspect "$REGISTRY/$image:$TAG" >/dev/null 2>&1 \
+      || die "в реестре нет образа $REGISTRY/$image:$TAG или реестр недоступен (публикует CI на push в main, коммит с [skip ci] не публикуется; опубликованный тег: IMAGE_REGISTRY=$REGISTRY IMAGE_TAG=<SHA 12> ./scripts/kind-up.sh)"
+  done
+else
+  # с imagePullPolicy: Never под без образа в узле висит в ErrImageNeverPull до таймаута rollout
+  for image in $IMAGES; do
+    docker exec "$NODE" crictl inspecti "$image:$TAG" >/dev/null 2>&1 \
+      || die "в узле kind нет образа $image:$TAG — выполните ./scripts/kind-up.sh"
+  done
+fi
 
 # write_kustomization <каталог> <overlay>: overlay из git с подставленным тегом образов.
 # Тег в кавычках: короткий SHA из одних цифр или вида 1234e567 YAML прочёл бы как число.
+# В режиме реестра — ещё имя образа в реестре и IfNotPresent поверх Never (overlays/local и auth-seed.yaml):
+# узел скачивает образ один раз, тег по SHA не меняет содержимое.
 write_kustomization() {
   mkdir -p "$DEPLOY_DIR/$1"
   {
     printf 'apiVersion: kustomize.config.k8s.io/v1beta1\nkind: Kustomization\n'
     printf 'resources:\n  - ../../%s\nimages:\n' "$2"
     for image in $IMAGES; do
-      printf '  - name: %s\n    newTag: "%s"\n' "$image" "$TAG"
+      printf '  - name: %s\n' "$image"
+      [ -z "$REGISTRY" ] || printf '    newName: %s/%s\n' "$REGISTRY" "$image"
+      printf '    newTag: "%s"\n' "$TAG"
     done
+    if [ -n "$REGISTRY" ]; then
+      printf 'patches:\n'
+      for kind in Deployment Job; do
+        printf '  - target:\n      kind: %s\n    patch: |-\n' "$kind"
+        printf '      - op: replace\n        path: /spec/template/spec/containers/0/imagePullPolicy\n        value: IfNotPresent\n'
+      done
+    fi
   } > "$DEPLOY_DIR/$1/kustomization.yaml"
 }
 write_kustomization app local
@@ -134,4 +161,4 @@ done
 # Programmed: прокси Envoy получил маршруты, вход открыт
 k -n "$NS" wait --for=condition=Programmed "gateway/$ENTRY_GATEWAY" --timeout="$ROLLOUT_TIMEOUT"
 
-echo "Готово: миграции и seed выполнены, сервисы готовы (образы :$TAG). Вход: $ENTRY_URL (API — $ENTRY_URL/api)"
+echo "Готово: миграции и seed выполнены, сервисы готовы (образы ${REGISTRY:+$REGISTRY/ser-*}:$TAG). Вход: $ENTRY_URL (API — $ENTRY_URL/api)"

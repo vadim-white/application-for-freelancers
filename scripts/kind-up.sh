@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Поднимает кластер kind с Envoy Gateway и загружает образы; повторный запуск безопасен.
+# Поднимает кластер kind с Envoy Gateway и загружает образы (или готовит режим реестра); повторный запуск безопасен.
 # Совместим с macOS bash 3.2.
 set -eu
 
@@ -12,10 +12,19 @@ IMAGES="ser-auth ser-task ser-time ser-gateway ser-frontend"
 ENVOY_GATEWAY_VERSION="v1.9.3"
 ENVOY_GATEWAY_SHA256="ac89b0b564e52c97c97a3f8b4d82bb594a0fbc810431fb2e6ffd91702aabebfb"
 ENVOY_GATEWAY_URL="https://github.com/envoyproxy/gateway/releases/download/$ENVOY_GATEWAY_VERSION/install.yaml"
+# Режим реестра: IMAGE_REGISTRY=ghcr.io/vadim-white — образы ser-* публикует CI (push в main), узел скачивает
+# их сам; сборки, kind load и чистки узла нет. Тег — SHA HEAD или IMAGE_TAG (коммит с [skip ci] не публикуется).
+REGISTRY="${IMAGE_REGISTRY:-}"
 
 for tool in docker kind kubectl curl git; do
   command -v "$tool" >/dev/null 2>&1 || { echo "Не найден $tool (kind: brew install kind)" >&2; exit 1; }
 done
+
+# реестр требует имя в нижнем регистре; проверка до создания кластера
+case "$REGISTRY" in
+  "") [ -z "${IMAGE_TAG:-}" ] || { echo "IMAGE_TAG задаётся только вместе с IMAGE_REGISTRY" >&2; exit 1; } ;;
+  /*|*/|*[!a-z0-9./:_-]*) echo "некорректный IMAGE_REGISTRY: $REGISTRY (пример: ghcr.io/vadim-white)" >&2; exit 1 ;;
+esac
 
 # sha256 файла: shasum на macOS, sha256sum на Linux (CI)
 sha256() {
@@ -48,6 +57,21 @@ kubectl --context "$CONTEXT" apply --server-side -f "$eg_tmp"
 kubectl --context "$CONTEXT" -n envoy-gateway-system wait --for=condition=Available \
   deployment/envoy-gateway --timeout=300s
 
+# Режим реестра: только тег и реестр для k8s-deploy.sh; есть ли образы в реестре, проверяет он
+if [ -n "$REGISTRY" ]; then
+  TAG="${IMAGE_TAG:-$(git rev-parse --short=12 HEAD)}"
+  # job publish публикует только SHA из 12 знаков
+  case "$TAG" in
+    *[!0-9a-f]*) ;;
+    ????????????) TAG_OK=1 ;;
+  esac
+  [ "${TAG_OK:-}" = 1 ] || { echo "некорректный IMAGE_TAG: $TAG (нужен SHA коммита из 12 знаков)" >&2; exit 1; }
+  printf '%s\n' "$REGISTRY" > k8s/overlays/local/image-registry
+  printf '%s\n' "$TAG" > k8s/overlays/local/image-tag
+  echo "Готово. Кластер $CLUSTER, контекст $CONTEXT, Envoy Gateway $ENVOY_GATEWAY_VERSION, образы $REGISTRY/ser-*:$TAG (скачает узел)"
+  exit 0
+fi
+
 # compose требует SECRET_KEY и пароли баз даже для сборки: заглушки — только в окружении
 # этой команды, в образы и .env не попадают
 SECRET_KEY=build AUTH_DB_PASSWORD=build TASK_DB_PASSWORD=build TIME_DB_PASSWORD=build \
@@ -67,6 +91,8 @@ for image in $IMAGES; do
   kind load docker-image --name "$CLUSTER" "$image:$TAG"
   docker image rm "$image:$TAG" >/dev/null
 done
+# прошлый запуск мог быть в режиме реестра; файл убирается вместе с записью нового тега
+rm -f k8s/overlays/local/image-registry
 printf '%s\n' "$TAG" > k8s/overlays/local/image-tag
 
 # Старые теги ser-* в узле — по одной ссылке через ctr: crictl rmi снимает все теги с тем же ID,
