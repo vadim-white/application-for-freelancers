@@ -30,6 +30,9 @@ if ! k get crd gateways.gateway.networking.k8s.io >/dev/null 2>&1 \
   || ! k -n envoy-gateway-system get deployment envoy-gateway >/dev/null 2>&1; then
   die "в кластере нет Envoy Gateway — выполните ./scripts/kind-up.sh"
 fi
+# HPA применится и без metrics-server, но не будет масштабировать (TARGETS <unknown>) — лучше отказать сразу
+k -n kube-system get deployment metrics-server >/dev/null 2>&1 \
+  || die "в кластере нет metrics-server (нужен HPA) — выполните ./scripts/kind-up.sh"
 for f in app.env db.env; do
   [ -f "$OVERLAY/$f" ] || die "нет k8s/overlays/local/$f — создайте секреты: ./scripts/init-k8s-env.sh"
 done
@@ -68,6 +71,9 @@ fi
 if [ -n "$stale" ]; then
   if [ "${ALLOW_STALE_TAG:-}" = 1 ]; then
     echo "ПРЕДУПРЕЖДЕНИЕ: тег $TAG не соответствует рабочему дереву ($stale), ALLOW_STALE_TAG=1 — выкатываю" >&2
+  elif [ -n "$REGISTRY" ]; then
+    # kind-up.sh в режиме реестра ничего не собирает: его повтор дал бы ту же ошибку
+    die "тег $TAG из image-tag не соответствует рабочему дереву ($stale) — образы из реестра собраны CI из коммита $TAG, а манифесты берутся из дерева: уберите правки и лишние файлы (git status), тег HEAD — IMAGE_REGISTRY=$REGISTRY ./scripts/kind-up.sh; выкатить намеренно — ALLOW_STALE_TAG=1"
   else
     die "тег $TAG из image-tag не соответствует рабочему дереву ($stale) — выполните ./scripts/kind-up.sh (выкатить этот тег намеренно: ALLOW_STALE_TAG=1)"
   fi

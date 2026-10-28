@@ -1,0 +1,59 @@
+# Добровольное выселение (drain узла, eviction API) снимает не больше одного пода сервиса за раз.
+# maxUnavailable, а не minAvailable: при HPA (2–4 реплики) бюджет сам следует за числом реплик.
+# От падения узла или удаления пода (kubectl delete) PDB не защищает — только от выселения.
+# Для баз PDB нет: реплика одна, том local-path привязан к узлу. maxUnavailable: 0 навсегда запретил бы
+# drain узла, а 1 ничего не защищает — выселение базы всё равно останавливает её сервис.
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: ser-auth
+  namespace: freelance-service
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      app: ser-auth
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: ser-task
+  namespace: freelance-service
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      app: ser-task
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: ser-time
+  namespace: freelance-service
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      app: ser-time
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: ser-gateway
+  namespace: freelance-service
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      app: ser-gateway
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: ser-frontend
+  namespace: freelance-service
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      app: ser-frontend

@@ -1,6 +1,6 @@
 # Kubernetes: локальный кластер kind
 
-Инструкция по запуску приложения в Kubernetes. Кластер — [kind](https://kind.sigs.k8s.io/) (Kubernetes в Docker), один узел на этой машине. Манифесты собирает kustomize (встроен в kubectl), вход — Gateway API с контроллером [Envoy Gateway](https://gateway.envoyproxy.io/). Облачного варианта (реестр образов, TLS, управляемый Postgres) пока нет: [base](base) написана без локальных допущений, но overlay есть только для kind.
+Инструкция по запуску приложения в Kubernetes. Кластер — [kind](https://kind.sigs.k8s.io/) (Kubernetes в Docker), один узел на этой машине. Манифесты собирает kustomize (встроен в kubectl), вход — Gateway API с контроллером [Envoy Gateway](https://gateway.envoyproxy.io/). Облачного варианта (TLS, управляемый Postgres, внешние секреты) пока нет: [base](base) написана без локальных допущений, но overlay есть только для kind.
 
 Docker Compose и кластер независимы: у них разные порты (compose — `127.0.0.1:5173`, кластер — `127.0.0.1:8080`) и разные секреты. Оба стека помещаются в 4 ГБ и могут работать одновременно. Сборка compose рядом с работающим кластером отнимает у него CPU: вход замедляется (медиана 0,45 с, до 1,5 с), но пробы не падают и поды не перезапускаются (проверено сборкой `docker compose build --no-cache` и `up --wait`, см. «Ресурсы»).
 
@@ -9,14 +9,14 @@ Docker Compose и кластер независимы: у них разные п
 | Что | Версия (проверено) | Зачем |
 |---|---|---|
 | Docker (Docker Desktop) | 28.5, Compose 2.40 | узел kind — контейнер, образы собирает `docker compose build` |
-| Память Docker | 4 ГБ (3,8 ГиБ доступно) | узел kind с приложением занимает 2,1–2,5 ГиБ, compose рядом — ~0,4 ГиБ |
+| Память Docker | 4 ГБ (3,8 ГиБ доступно) | узел kind с приложением занимает 2,1–2,5 ГиБ (замер 2,3 ГиБ при двух репликах; HPA до 4 у auth и gateway — ещё ~0,3 ГиБ, metrics-server — ~25 МиБ), compose рядом — ~0,4 ГиБ |
 | kind | v0.33.0 (`brew install kind`) | создание кластера |
 | kubectl | 1.34.1 (kustomize 5.7.1); в CI — v1.35.10 | версия сервера 1.35, в пределах ±1 минорной |
-| curl | любая | `kind-up.sh` скачивает `install.yaml` Envoy Gateway |
+| curl | любая | `kind-up.sh` скачивает `install.yaml` Envoy Gateway и `components.yaml` metrics-server |
 | python3 или openssl | любая | `init-k8s-env.sh` генерирует секреты; без обоих скрипт завершается с кодом 1 |
 | bash | 3.2+ (подходит системный macOS) | скрипты |
 
-Нужен доступ в интернет: образ узла kind, `install.yaml` Envoy Gateway, образы Envoy и `postgres:15-alpine`. Порт `127.0.0.1:8080` на хосте должен быть свободен.
+Нужен доступ в интернет: образ узла kind, `install.yaml` Envoy Gateway и `components.yaml` metrics-server (GitHub переадресует скачивание на `release-assets.githubusercontent.com`), образы Envoy, metrics-server (`registry.k8s.io`) и `postgres:15-alpine`. Порт `127.0.0.1:8080` на хосте должен быть свободен.
 
 Закреплённые версии внешних компонентов:
 
@@ -26,6 +26,7 @@ Docker Compose и кластер независимы: у них разные п
 | Envoy Gateway | v1.9.3 (`install.yaml`, sha256 сверяется) | [scripts/kind-up.sh](../scripts/kind-up.sh) |
 | Gateway API CRD | v1.6.1 (из того же `install.yaml`) | там же |
 | Envoy Proxy | distroless v1.39.1 (выбирает контроллер) | — |
+| metrics-server | v0.9.0 (`components.yaml`, sha256 сверяется; образ `registry.k8s.io/metrics-server/metrics-server:v0.9.0`) | [scripts/kind-up.sh](../scripts/kind-up.sh) |
 | kubeconform | v0.8.0, образ `ghcr.io/yannh/kubeconform` | команда ниже |
 
 ## Запуск
@@ -33,7 +34,7 @@ Docker Compose и кластер независимы: у них разные п
 Из корня репозитория:
 
 ```bash
-./scripts/kind-up.sh        # кластер freelance, Envoy Gateway, сборка и загрузка образов ser-*:<SHA коммита>
+./scripts/kind-up.sh        # кластер freelance, Envoy Gateway, metrics-server, сборка и загрузка образов ser-*:<SHA коммита>
 ./scripts/init-k8s-env.sh   # секреты: k8s/overlays/local/app.env и db.env
 ./scripts/k8s-deploy.sh     # манифесты, миграции, тестовые пользователи, ожидание готовности
 open http://127.0.0.1:8080
@@ -41,11 +42,11 @@ open http://127.0.0.1:8080
 
 С нуля на Docker Desktop (4 ГБ, 8 CPU) `kind-up.sh` занимает ~1,5 минуты (дольше при первом скачивании образов), `k8s-deploy.sh` — 60–130 с (дольше всего на чистом кластере: в узел скачивается `postgres:15-alpine`, первые попытки Job миграций ждут базы). Каждый скрипт завершается с кодом ≠ 0 при любом сбое.
 
-**`scripts/kind-up.sh`** создаёт кластер `freelance` по [kind-config.yaml](kind-config.yaml) (один узел, контекст kubectl — `kind-freelance`). Затем ставит Envoy Gateway v1.9.3 (`kubectl apply --server-side`; в `install.yaml` есть CRD Gateway API, CRD Envoy Gateway и контроллер в namespace `envoy-gateway-system`) и ждёт `Available` контроллера. После этого собирает пять образов (`ser-auth`, `ser-task`, `ser-time`, `ser-gateway`, `ser-frontend`) через `docker compose build` и загружает их в узел (`kind load docker-image`) с тегом по коммиту: `git rev-parse --short=12 HEAD`, а при незакоммиченных правках (`git status --porcelain` не пуст) — `<sha>-dirty-<ГГГГММДДччммсс>`. Тег записывается в `k8s/overlays/local/image-tag` (в `.gitignore`), его читает `k8s-deploy.sh`. Compose тег не касается: образы на хосте остаются `ser-*:latest`, тег по коммиту ставится только на время `kind load`. В конце скрипт чистит узел: снимает старые теги `ser-*`, кроме текущего и тех, на которых работают поды, и удаляет ссылки, которые держат содержимое снятых образов (подробнее — «Образы и теги»). Секреты и `.env` ему не нужны. Повторный запуск кластер не пересоздаёт, Envoy Gateway применяет без изменений, образы пересобирает и загружает заново. После изменения кода достаточно `kind-up.sh` и `k8s-deploy.sh`: новый тег меняет спецификацию подов, и Deployment перекатываются сами.
+**`scripts/kind-up.sh`** создаёт кластер `freelance` по [kind-config.yaml](kind-config.yaml) (один узел, контекст kubectl — `kind-freelance`). Затем ставит Envoy Gateway v1.9.3 (`kubectl apply --server-side`; в `install.yaml` есть CRD Gateway API, CRD Envoy Gateway и контроллер в namespace `envoy-gateway-system`) и ждёт `Available` контроллера. Потом ставит metrics-server v0.9.0 (`components.yaml` релиза, sha256 сверяется) — источник метрик CPU для HPA и `kubectl top` — и ждёт `Available` у Deployment и у API метрик (`apiservice/v1beta1.metrics.k8s.io`). Сертификат kubelet в kind не подписан CA кластера, поэтому в аргументы дописывается `--kubelet-insecure-tls` (README metrics-server разрешает его только для тестовых кластеров); в base metrics-server нет — в облаке его даёт провайдер. На существующем кластере установка заняла 30 с вместе со скачиванием образа. После этого собирает пять образов (`ser-auth`, `ser-task`, `ser-time`, `ser-gateway`, `ser-frontend`) через `docker compose build` и загружает их в узел (`kind load docker-image`) с тегом по коммиту: `git rev-parse --short=12 HEAD`, а при незакоммиченных правках (`git status --porcelain` не пуст) — `<sha>-dirty-<ГГГГММДДччммсс>`. Тег записывается в `k8s/overlays/local/image-tag` (в `.gitignore`), его читает `k8s-deploy.sh`. Compose тег не касается: образы на хосте остаются `ser-*:latest`, тег по коммиту ставится только на время `kind load`. В конце скрипт чистит узел: снимает старые теги `ser-*`, кроме текущего и тех, на которых работают поды, и удаляет ссылки, которые держат содержимое снятых образов (подробнее — «Образы и теги»). Секреты и `.env` ему не нужны. Повторный запуск кластер не пересоздаёт, Envoy Gateway и metrics-server применяет без изменений, образы пересобирает и загружает заново. После изменения кода достаточно `kind-up.sh` и `k8s-deploy.sh`: новый тег меняет спецификацию подов, и Deployment перекатываются сами.
 
 **`scripts/init-k8s-env.sh`** создаёт `k8s/overlays/local/app.env` (`SECRET_KEY`) и `db.env` (три пароля баз) по шаблонам [app.env.example](overlays/local/app.env.example) и [db.env.example](overlays/local/db.env.example) со случайными значениями, права 600. Повторный запуск дописывает только отсутствующие или пустые ключи, значения не печатает. Если сгенерировать значение не удалось (нет python3 и openssl), скрипт печатает ошибку и завершается с кодом 1, пустых значений в файлах нет; после установки python3 или openssl повторный запуск допишет недостающее. Файлы в `.gitignore`, с корневым `.env` compose они не связаны.
 
-**`scripts/k8s-deploy.sh`** — аналог `docker compose up --wait`. Работает только с контекстом `kind-freelance` и сначала проверяет, что в кластере есть Envoy Gateway, в overlay — файлы секретов и `image-tag`, а в узле — пять образов с этим тегом (иначе просит запустить `kind-up.sh`). Ещё он сверяет тег с рабочим деревом: при чистом дереве тег должен быть `HEAD`, при незакоммиченных правках — `<HEAD>-dirty-…`, и ни один изменённый или новый файл не должен быть новее `image-tag` (правки после сборки). Иначе — ошибка с просьбой запустить `kind-up.sh`: без этой проверки после `docker start` узла без `kind-up.sh` в кластер молча вставали образы прошлого коммита. Выкатить такой тег намеренно (например, откатиться на старую сборку) — `ALLOW_STALE_TAG=1 ./scripts/k8s-deploy.sh`, скрипт напечатает предупреждение. Затем генерирует в `k8s/overlays/.deploy/` (в `.gitignore`) две kustomization: `app` (ресурс `../../local`) и `seed` (`../../local-seed`) с одинаковым блоком `images:` (`newTag` — тег из `image-tag`). Overlay `local` и `local-seed` в git остаются на `:latest`. Порядок:
+**`scripts/k8s-deploy.sh`** — аналог `docker compose up --wait`. Работает только с контекстом `kind-freelance` и сначала проверяет, что в кластере есть Envoy Gateway и metrics-server (без него HPA применится, но масштабировать не будет — `TARGETS <unknown>`), в overlay — файлы секретов и `image-tag`, а в узле — пять образов с этим тегом (иначе просит запустить `kind-up.sh`). Ещё он сверяет тег с рабочим деревом: при чистом дереве тег должен быть `HEAD`, при незакоммиченных правках — `<HEAD>-dirty-…`, и ни один изменённый или новый файл не должен быть новее `image-tag` (правки после сборки). Иначе — ошибка с просьбой запустить `kind-up.sh`: без этой проверки после `docker start` узла без `kind-up.sh` в кластер молча вставали образы прошлого коммита. Выкатить такой тег намеренно (например, откатиться на старую сборку) — `ALLOW_STALE_TAG=1 ./scripts/k8s-deploy.sh`, скрипт напечатает предупреждение. Затем генерирует в `k8s/overlays/.deploy/` (в `.gitignore`) две kustomization: `app` (ресурс `../../local`) и `seed` (`../../local-seed`) с одинаковым блоком `images:` (`newTag` — тег из `image-tag`). Overlay `local` и `local-seed` в git остаются на `:latest`. Порядок:
 1. удаляет старые Job миграций и seed (по метке `app.kubernetes.io/component`);
 2. `kubectl apply -k k8s/overlays/.deploy/app`;
 3. ждёт Job `auth-migrate`, `task-migrate`, `time-migrate` (`alembic upgrade head`); при `Failed` печатает лог Job и выходит;
@@ -53,7 +54,7 @@ open http://127.0.0.1:8080
 5. ждёт `rollout status` баз и сервисов;
 6. ждёт `Programmed` у Gateway `entry`: Envoy получил маршруты, вход работает.
 
-Повторный запуск безопасен: миграции и seed идемпотентны, пользователи не дублируются. Без пересборки тег тот же, Deployment `unchanged`, поды не перекатываются.
+Повторный запуск безопасен: миграции и seed идемпотентны, пользователи не дублируются. Без пересборки тег тот же, Deployment `unchanged`, поды не перекатываются, число реплик, выставленное HPA, не сбрасывается (см. «Реплики»).
 
 ## Адрес и пользователи
 
@@ -90,7 +91,9 @@ k8s/
 │   ├── services.yaml     ser-auth, ser-task, ser-time
 │   ├── gateway-frontend.yaml  ser-gateway (API Gateway приложения), ser-frontend (nginx)
 │   ├── entrypoint.yaml   вход: Gateway entry + HTTPRoute entry-routes
-│   └── network-policy.yaml    default deny и разрешённые связи
+│   ├── network-policy.yaml    default deny и разрешённые связи
+│   ├── hpa.yaml          HPA ser-auth и ser-gateway: 2–4 реплики по CPU 70 % от requests
+│   └── pdb.yaml          PodDisruptionBudget пяти Deployment: maxUnavailable 1
 ├── overlays/local/       kind: Secret'ы из app.env и db.env, imagePullPolicy: Never,
 │                         GatewayClass + EnvoyProxy (NodePort 30080), вход от Envoy в NetworkPolicy,
 │                         BackendTrafficPolicy entry (простой соединений Envoy к бэкендам — 60 с,
@@ -137,7 +140,7 @@ Envoy нормализует путь до маршрутизации (`/api/tas
 **Режим реестра.** CI на каждый push в `main` публикует образы в GHCR: `ghcr.io/vadim-white/ser-*:<SHA 12>`, один тег на amd64 и arm64 (раздел «CI» корневого README). `IMAGE_REGISTRY=ghcr.io/vadim-white ./scripts/kind-up.sh` не собирает образы, не делает `kind load` и не чистит узел. Он ставит кластер и Envoy Gateway и пишет рядом с `image-tag` файл `image-registry` (вне git). Тег — SHA HEAD, другой опубликованный коммит — `IMAGE_TAG=<SHA 12>`. Коммит с `[skip ci]` не публикуется, и его образов в реестре нет. `k8s-deploy.sh`, увидев `image-registry`:
 - вместо проверки образов в узле проверяет, что все пять есть в реестре (`docker manifest inspect`, без скачивания слоёв). Иначе — ошибка с подсказкой про `IMAGE_TAG`, а не `ImagePullBackOff` до таймаута rollout;
 - в сгенерированных `.deploy/*/kustomization.yaml` добавляет `newName: ghcr.io/vadim-white/ser-*` и патч `imagePullPolicy: IfNotPresent` поверх `Never` (у Deployment и Job, в том числе `auth-seed`). Тег по SHA не меняет содержимое, поэтому узел скачивает образ один раз;
-- проверку тега против рабочего дерева оставляет: `IMAGE_TAG` не от HEAD или правки в дереве требуют `ALLOW_STALE_TAG=1`.
+- проверку тега против рабочего дерева оставляет: `IMAGE_TAG` не от HEAD или правки в дереве требуют `ALLOW_STALE_TAG=1`. Образы приходят из CI, а манифесты — из дерева, поэтому мешает и любой неотслеживаемый файл (например, скачанные логи CI в корне). Подсказка ошибки в этом режиме — убрать правки и лишние файлы (`git status`), для тега HEAD — `IMAGE_REGISTRY=… ./scripts/kind-up.sh`, выкатить намеренно — `ALLOW_STALE_TAG=1`; повтор `kind-up.sh` с тем же деревом не помогает, он ничего не собирает.
 
 Пакеты публичные: узел скачивает их без `imagePullSecret`, ему нужен доступ к `ghcr.io` и `pkg-containers.githubusercontent.com`. Обычный `./scripts/kind-up.sh` (без `IMAGE_REGISTRY`) удаляет `image-registry` и возвращает сборку и `kind load`.
 
@@ -145,13 +148,35 @@ Envoy нормализует путь до маршрутизации (`/api/tas
 
 ### Реплики
 
-У `ser-auth`, `ser-task`, `ser-time`, `ser-gateway`, `ser-frontend` по две реплики, у баз (StatefulSet) — одна. Состояния в памяти процесса у сервисов нет (refresh-токен — JWT), запрос может обслужить любая реплика. Обновление — rolling update по умолчанию: новый под становится `Ready` до остановки старого.
+У `ser-task`, `ser-time`, `ser-frontend` по две реплики, у `ser-auth` и `ser-gateway` — от двух до четырёх (число задаёт HPA, см. ниже), у баз (StatefulSet) — одна. Состояния в памяти процесса у сервисов нет (refresh-токен — JWT), запрос может обслужить любая реплика. Обновление — rolling update по умолчанию: новый под становится `Ready` до остановки старого.
 
 Остановка пода плавная. Снятие пода из EndpointSlice и сигнал контейнеру идут параллельно, поэтому сначала `preStop: sleep 5` (встроенное действие kubelet, бинарник `sleep` в образе не нужен): под ещё отвечает, пока Envoy и kube-proxy убирают его из балансировки. Потом сигнал: uvicorn (SIGTERM) перестаёт принимать соединения и до 20 с дообрабатывает начатые запросы (`--timeout-graceful-shutdown 20` в `CMD` образа, действует и в compose), nginx фронта получает `SIGQUIT` из `STOPSIGNAL` образа (containerd его учитывает; SIGTERM для nginx — быстрая остановка). `terminationGracePeriodSeconds: 30` больше 5 + 20, SIGKILL на практике не нужен: остановка занимает ~0,1 с после сигнала.
 
 Оставшийся случай — пул keep-alive соединений gateway к сервисам. Соединение через ClusterIP привязано к поду, и снятие из EndpointSlice его не закрывает: uvicorn закрывает его по SIGTERM, и запрос, отправленный в ту же миллисекунду, обрывается (`RemoteProtocolError`). Gateway повторяет такой запрос один раз, если метод идемпотентный (GET, OPTIONS, PUT, DELETE).
 
 Проверка — `rollout restart` каждого Deployment под непрерывной нагрузкой (два потока `curl`): только 200. Без `preStop` на том же стенде были 503 у фронта и gateway (Envoy слал на остановленный под), 502 у auth, task, time (gateway в закрытое соединение) и единичные ответы через 5–10 с (подключение к IP удалённого пода).
+
+**Автомасштабирование (HPA).** [hpa.yaml](base/hpa.yaml): `HorizontalPodAutoscaler` `autoscaling/v2` у `ser-auth` (bcrypt при входе, ~0,26 с CPU на вход) и `ser-gateway` (через него идёт весь API): `minReplicas: 2`, `maxReplicas: 4`, средний CPU 70 % от requests (50m, то есть 35m на под). Предел 4 — память узла. Метрики даёт metrics-server, HPA опрашивает их раз в 15 с. `behavior` по умолчанию: рост сразу, уменьшение — по наибольшей рекомендации за последние 5 минут. В простое auth и gateway тратят 11–27 % от requests. Поля `replicas` у этих двух Deployment нет: иначе каждый `k8s-deploy.sh` (`kubectl apply`) возвращал бы 2 и отменял решение HPA (проверено: с `replicas: 2` деплой сбросил 4 → 2, через ~10 с HPA снова поставил 4).
+
+Замер (Docker Desktop, 6 CPU): входы user1 по 4 в секунду (лимит входа — 10) в течение 60 с — через 33 с HPA поднял `ser-auth` сразу до 4 (CPU 899 % от requests), все 240 входов — 200. Во время e2e HPA поднял до 4 и `ser-gateway`; smoke ×2 и e2e при четырёх репликах проходят, новые поды встают посреди прогона без ошибок. Без нагрузки — снова 2: gateway 4 → 3 → 2 через 5–7 минут после e2e, auth — через 5 минут после последней нагрузки. Повторный `k8s-deploy.sh` реплик не трогает (`deployment … unchanged`).
+
+**Переход на HPA на уже развёрнутом кластере.** `kubectl apply` помнит прошлый манифест (аннотация `last-applied-configuration`). Поле `replicas`, которого больше нет в манифесте, он удаляет, и сервер ставит значение по умолчанию — 1. Первый `k8s-deploy.sh` после перехода на кластере, развёрнутом раньше, оставил `ser-auth` и `ser-gateway` по одному поду на 18–20 с, пока HPA не вернул 2 (до нуля не падало). Это случается один раз и только на таком кластере, поэтому принято. Чтобы обойтись без провала, до деплоя поле убирают из аннотации (проверено: после этого деплой — `unchanged`, реплики HPA на месте):
+
+```bash
+k apply view-last-applied deployment/ser-auth -o json \
+  | python3 -c 'import json,sys; d=json.load(sys.stdin); d["spec"].pop("replicas"); json.dump(d, sys.stdout)' \
+  | k apply set-last-applied -f -        # то же для ser-gateway, затем ./scripts/k8s-deploy.sh
+```
+
+**PodDisruptionBudget.** [pdb.yaml](base/pdb.yaml): у пяти Deployment `maxUnavailable: 1`. Добровольное выселение (`kubectl drain`, eviction API) снимает не больше одного пода сервиса за раз и ждёт, пока замена станет `Ready`. `maxUnavailable`, а не `minAvailable`: бюджет следует за числом реплик HPA. От падения узла и `kubectl delete pod` PDB не защищает. У баз PDB нет (см. «Известные ограничения»). Проверка без `drain` (на одном узле он выселил бы всё) — через eviction API:
+
+```bash
+k get pdb                                # ALLOWED DISRUPTIONS 1 у всех пяти
+echo '{"apiVersion":"policy/v1","kind":"Eviction","metadata":{"name":"<под>","namespace":"freelance-service"}}' \
+  | kubectl --context kind-freelance create --raw /api/v1/namespaces/freelance-service/pods/<под>/eviction -f -
+```
+
+Первый под `ser-task` выселяется (201), второй сразу после него — 429 `Cannot evict pod as it would violate the pod's disruption budget`, пока замена не `Ready`. Без PDB оба выселения прошли (201 и 201), и несколько секунд у `ser-task` не было ни одного готового пода.
 
 ### Безопасность подов
 
@@ -204,7 +229,7 @@ k exec deploy/ser-gateway -- python -c "import urllib.request as u;print(u.urlop
 
 **Почему у приложений нет лимита CPU.** Лимит CPU — это квота CFS: исчерпав её за период 100 мс, процесс стоит до следующего периода, даже если узел простаивает. При лимите 200m bcrypt при входе растягивался до 1,7–2,6 с (на узле 8 CPU, без нагрузки), а пробы с таймаутом 1 с падали, пока рядом собирался compose (1.4.9: таймауты у всех сервисов и перезапуск `ser-task`). Без лимита под берёт свободный CPU узла, а при конкуренции делит его пропорционально requests. Вход стал 0,25–0,3 с; сборка compose `--no-cache` рядом с кластером — 0 неудачных проб и 0 перезапусков, вход за это время 0,29–1,48 с. Лимит памяти остаётся: память не сжимается, без лимита утечка одного пода вытеснила бы остальные (с лимитом — OOMKill только этого пода). У баз лимит CPU 500m остаётся: в замере троттлинг баз единичный (`nr_throttled` 0–1). У Job миграций и seed лимит 200m тоже остаётся: они короткие и трафик не обслуживают.
 
-**Requests — по замеру** (`kubectl top` нет, metrics-server не установлен; замер — `cpu.stat` cgroup подов в узле): в простое сервисы тратят 6–11m (в основном пробы `/ready` с запросом к базе), фронт меньше 1m; во время smoke task и time — 13–22m, auth — 130–140m (один вход — ~0,26 с CPU). 50m покрывают устойчивую нагрузку с запасом, всплески bcrypt забирают свободный CPU узла. Сумма requests на узле — 23 % от 8 CPU.
+**Requests — по замеру** (`k top pods`; первый замер, до metrics-server, — по `cpu.stat` cgroup подов в узле, числа совпали): в простое сервисы тратят 6–13m (в основном пробы `/ready` с запросом к базе), фронт меньше 1m; во время smoke task и time — 13–22m, auth — 130–140m (один вход — ~0,26 с CPU). 50m покрывают устойчивую нагрузку с запасом, всплески bcrypt забирают свободный CPU узла. Сумма requests на узле — 23 % от 8 CPU.
 
 ### Сетевые политики
 
@@ -229,7 +254,10 @@ k() { kubectl --context kind-freelance -n freelance-service "$@"; }
 Состояние:
 
 ```bash
-k get pods -o wide                       # 10 подов приложений + 3 базы Running, 0 RESTARTS
+k get pods -o wide                       # 10 подов приложений (до 14 при HPA) + 3 базы Running, 0 RESTARTS
+k get hpa                                # TARGETS в процентах (в простое cpu: 11–27%/70%), REPLICAS 2–4
+k get pdb                                # ALLOWED DISRUPTIONS 1 у пяти сервисов
+k top pods                               # CPU и память подов (metrics-server); k top nodes — узел
 k get deploy -o wide                     # IMAGES — тег образов (SHA коммита)
 k get jobs                               # auth-migrate, task-migrate, time-migrate, auth-seed — Complete
 k get gateway,httproute                  # entry PROGRAMMED True
@@ -259,7 +287,10 @@ k describe pod <под>                     # статус контейнеро�
 k describe job auth-migrate
 k describe gateway entry                 # условия Accepted / Programmed и их причины
 k describe networkpolicy ser-task
+k describe hpa ser-auth                  # события SuccessfulRescale: новый размер и причина
 ```
+
+`TARGETS <unknown>` у HPA — нет метрик: проверьте `kubectl --context kind-freelance get apiservice v1beta1.metrics.k8s.io` (`AVAILABLE True`) и под metrics-server в `kube-system`. Разовые `FailedGetResourceMetric` в событиях HPA сразу после старта подов — норма: метрик новых подов ещё нет, через 15–30 с они появляются.
 
 Сквозной прогон: `SMOKE_MODE=k8s bash tests/smoke.sh` — 181 проверка через `http://127.0.0.1:8080`. `/health` через вход отдаёт фронт, поэтому smoke проверяет его изнутри пода `ser-gateway` (тело: `upstreams.auth/task/time` все `true`), там же — `/ready` трёх сервисов. Строки журнала прав `user_audit` smoke считает через `psql` в поде `auth-db-0`.
 
@@ -267,14 +298,14 @@ k describe networkpolicy ser-task
 
 ```bash
 kubectl kustomize k8s/overlays/local | docker run --rm -i ghcr.io/yannh/kubeconform:v0.8.0 \
-  -strict -summary -skip Gateway,GatewayClass,HTTPRoute,EnvoyProxy,BackendTrafficPolicy -   # 41 valid + 5 skipped (local-seed: 44 + 5)
+  -strict -summary -skip Gateway,GatewayClass,HTTPRoute,EnvoyProxy,BackendTrafficPolicy -   # 48 valid + 5 skipped (local-seed: 51 + 5)
 kubectl kustomize k8s/overlays/.deploy/app | kubectl --context kind-freelance apply --dry-run=server -f -   # и .deploy/seed
-# на развёрнутом кластере: 44 unchanged + 2 configured (HTTPRoute и BackendTrafficPolicy: сервер дописывает умолчания), seed — 47 + 2
+# на развёрнутом кластере: 46 unchanged + 7 configured (HTTPRoute, BackendTrafficPolicy и пять PDB — шум, см. ниже), seed — 49 + 7
 ```
 
 kubeconform можно запускать на overlay из git (`:latest`), а `apply --dry-run=server` — только на `.deploy/app` и `.deploy/seed` (их пишет `k8s-deploy.sh` с тегом из `image-tag`). У развёрнутых Job шаблон пода неизменяем, и overlay с другим тегом образа сервер отклоняет: `Job.batch "auth-migrate" is invalid: spec.template: … field is immutable`.
 
-Вывод `kubectl kustomize` содержит Secret'ы (base64), в файлы и логи его не сохраняйте. Шум, который не означает ошибку: `httproute … configured` и `backendtrafficpolicy … configured` при каждом `apply` (у CRD нет strategic merge, а в списки объекта сервер дописывает умолчания — `invert: false`, `type: Value`; объект не меняется), `namespace: freelance-service` у кластерного `GatewayClass` в выводе kustomize (kubectl это поле отбрасывает).
+Вывод `kubectl kustomize` содержит Secret'ы (base64), в файлы и логи его не сохраняйте. Шум, который не означает ошибку: `httproute … configured` и `backendtrafficpolicy … configured` при каждом `apply` (у CRD нет strategic merge, а в списки объекта сервер дописывает умолчания — `invert: false`, `type: Value`; объект не меняется), `poddisruptionbudget … configured` при каждом `apply` и `--dry-run=server` (client-side apply шлёт PDB непустой патч, но объект не меняется: `kubectl diff` пуст, `resourceVersion` и `generation` прежние), `namespace: freelance-service` у кластерного `GatewayClass` в выводе kustomize (kubectl это поле отбрасывает).
 
 ## Удаление
 
@@ -290,7 +321,7 @@ kind delete cluster --name freelance                                  # весь
 Job `kind` в [.github/workflows/ci.yml](../.github/workflows/ci.yml) (раздел «CI» корневого README) на каждом прогоне поднимает кластер с нуля на раннере `ubuntu-24.04` теми же скриптами, что и локально:
 
 1. kubectl v1.35.10 скачивается с `dl.k8s.io` со сверкой sha256, закреплённой в workflow. Свой kubectl раннера (1.37) к серверу 1.35 не подходит: разница больше одной минорной версии. kind берётся с раннера, но его версия должна быть v0.33.0, иначе job падает;
-2. `./scripts/kind-up.sh` — кластер, Envoy Gateway (sha256 `install.yaml`), сборка и загрузка образов; checkout чистый, поэтому тег — SHA коммита без `-dirty`. На push в `main` job ждёт `publish-manifest` и идёт в режиме реестра (`IMAGE_REGISTRY` из вывода job): образы `ghcr.io/vadim-white/ser-*:<SHA 12>`, опубликованные этим же прогоном, без сборки и `kind load`. Если быстрые jobs упали, публикации нет, и `kind` на `main` пропускается. В PR и других ветках — сборка, как раньше;
+2. `./scripts/kind-up.sh` — кластер, Envoy Gateway (sha256 `install.yaml`), metrics-server (sha256 `components.yaml`; ставится в обоих режимах, до выхода режима реестра, ~30 с), сборка и загрузка образов; checkout чистый, поэтому тег — SHA коммита без `-dirty`. На push в `main` job ждёт `publish-manifest` и идёт в режиме реестра (`IMAGE_REGISTRY` из вывода job): образы `ghcr.io/vadim-white/ser-*:<SHA 12>`, опубликованные этим же прогоном, без сборки и `kind load`. Если быстрые jobs упали, публикации нет, и `kind` на `main` пропускается. В PR и других ветках — сборка, как раньше;
 3. `./scripts/init-k8s-env.sh` — новые секреты; workflow сразу маскирует их значения и base64 (`::add-mask::`);
 4. `./scripts/k8s-deploy.sh`, затем шаг «образы подов»: `image` и `imageID` каждого контейнера (`imageID` показывает, откуда узел взял образ). В режиме реестра шаг падает, если хоть один `ser-*` пришёл не из `ghcr.io/vadim-white`. Потом `SMOKE_MODE=k8s bash tests/smoke.sh` (181) и e2e через вход `http://127.0.0.1:8080` (на Linux `run.sh` работает с `--network host`);
 5. `kubectl kustomize … | kubectl apply --dry-run=server -f -` для `.deploy/app` и `.deploy/seed` (overlay `local` и `local-seed` с тем тегом, что развёрнут): в лог попадают только строки `unchanged` / `configured`, содержимое манифестов — нет.
@@ -301,12 +332,14 @@ Job `kind` в [.github/workflows/ci.yml](../.github/workflows/ci.yml) (разд�
 
 ## Известные ограничения
 
-- **Один узел.** Реплики живут на одном узле kind, PodDisruptionBudget, anti-affinity и HPA не настроены (metrics-server нет). Отказ узла — отказ всего приложения.
+- **Один узел.** Реплики, HPA и PDB работают на одном узле kind. Anti-affinity не настроена (на одном узле её не проверить), PDB проверен через eviction API, а не `kubectl drain`. Отказ узла — отказ всего приложения. Несколько узлов — необязательный будущий этап «k8s: несколько узлов и облако».
+- **У баз нет PDB.** Реплика одна, том `local-path` привязан к узлу: `maxUnavailable: 0` навсегда запретил бы `drain` узла, а `1` ничего не защищает. Выселение пода базы останавливает её сервис, пока под базы не поднимется снова (readiness снимает сервис с трафика, перезапусков нет — см. «Probes»).
+- **metrics-server с `--kubelet-insecure-tls`.** metrics-server не проверяет сертификат kubelet: в kind он не подписан CA кластера. Годится только для локального кластера; в облаке metrics-server ставит провайдер, поэтому его нет в base.
 - **POST и PATCH при перекатке сервиса не повторяются.** Если gateway отправил такой запрос в keep-alive соединение ровно в момент, когда старый под auth, task или time закрывает его по SIGTERM, клиент получит 502 (запрос мог дойти до сервиса, повторять его небезопасно). Без повтора такой обрыв случился один раз на ~18 тыс. GET-запросов за 10 перекаток task и time; для логина и создания объектов риск того же порядка. При выкатке схемы таймера — один 502 на ~2,8 тыс. POST записей времени (`ReadError` в gateway за 11 мс до остановки старого пода time); при одновременной перекатке всех пяти Deployment под нагрузкой на time (GET, POST, PATCH записей) — один PATCH 502 из 6610 запросов (через 9 мс после `Shutting down` старого пода time). Клиент может повторить запрос сам.
-- **503 проверки задачи на перегруженном узле.** Старт таймера и ручная запись ждут ответа task (соединение 2 с, ответ 3 с). Когда на одном узле одновременно стартуют новые поды всех Deployment и Job, time может не дождаться соединения с task: 503 «Task service unavailable» (`ConnectTimeout` в логе `ser-time`); в замере выкатки — 2 POST из 9960, в те же секунды у старых подов task и time падала readiness по таймауту. Повтора к task нет: старт и запись клиент может отправить снова, а настоящий ответ — запас ресурсов и несколько узлов (проверим в этапе «k8s: продакшен-практики»).
+- **503 проверки задачи на перегруженном узле.** Старт таймера и ручная запись ждут ответа task (соединение 2 с, ответ 3 с). Когда на одном узле одновременно стартуют новые поды всех Deployment и Job, time может не дождаться соединения с task: 503 «Task service unavailable» (`ConnectTimeout` в логе `ser-time`); в замере выкатки — 2 POST из 9960, в те же секунды у старых подов task и time падала readiness по таймауту. Повтора к task нет: старт и запись клиент может отправить снова, а настоящий ответ — запас ресурсов и несколько узлов (необязательный будущий этап «k8s: несколько узлов и облако»).
 - **Ревизия из чужой ветки считается новее.** `/ready` отличает только «предок head» (503) от «не предок» (200). Если база окажется на ревизии, которой нет в цепочке образа, по ошибке деплоя (миграция из другой ветки), под будет `Ready`. Это осознанный компромисс ради expand/contract: отличить «новее» от «чужой» без истории ревизий в образе нельзя.
 - **Замороженная база на открытом соединении.** Медленный запрос обрывается через 5 с (`statement_timeout`), обрыв сети — через 5–7 с (TCP keepalive и `tcp_user_timeout`; замер на `docker network disconnect`: 5,5 с для запроса в уже мёртвое соединение, 7,3 с для запроса, во время которого оборвалась сеть), после перезапуска базы пул переподключается сам (`pool_pre_ping`, первый запрос — 200). Не лечится только замороженный процесс базы (`docker pause`, процесс остановлен, но ядро его контейнера отвечает на TCP): база не отменяет запрос, keepalive получает ответы, и запрос висит, пока база не оживёт. Проба падает по своему таймауту (3 с) и снимает под с трафика; висящих потоков не больше, чем соединений в пуле.
 - **Job неизменяемы, деплоить только через `k8s-deploy.sh`.** Голый `kubectl apply -k` поверх существующих Job падает на изменённом Job (`spec.template: … field is immutable`), а неизменённый не перезапускает. Тогда миграции из нового образа не выполнятся.
 - **Gateway дважды не стал `Programmed`.** При `k8s-deploy.sh` поверх уже работающего namespace скрипт два раза упал на ожидании `Programmed` у Gateway: `NoResources: Envoy replicas unavailable` (шаг 1.4.8) и `AddressNotAssigned` (1.5.2), оба раза при здоровом Envoy. На чистом деплое и на повторе не воспроизводилось. Если повторится, сохраните `k describe gateway entry` и логи `envoy-gateway` (в CI их печатает шаг «диагностика»), затем удалите namespace и задеплойте заново.
-- **Лимит входа — общий для хоста и на реплику Envoy.** Все клиенты хоста приходят на Envoy с одного адреса (`172.19.0.1`, NAT Docker Desktop), поэтому 10 запросов входа в секунду делят браузер, smoke и e2e (им хватает: smoke — до 6 в секунду, e2e — до 2). Счётчик local rate limit у каждой реплики Envoy свой: при N репликах фактический лимит — N × 10 в секунду (общий — global rate limit с Redis). За облачным балансировщиком Envoy увидит адрес клиента только с `externalTrafficPolicy: Local`, PROXY protocol или `ClientTrafficPolicy` `clientIPDetection` — этап «k8s: продакшен-практики».
+- **Лимит входа — общий для хоста и на реплику Envoy.** Все клиенты хоста приходят на Envoy с одного адреса (`172.19.0.1`, NAT Docker Desktop), поэтому 10 запросов входа в секунду делят браузер, smoke и e2e (им хватает: smoke — до 6 в секунду, e2e — до 2). Счётчик local rate limit у каждой реплики Envoy свой: при N репликах фактический лимит — N × 10 в секунду (общий — global rate limit с Redis). За облачным балансировщиком Envoy увидит адрес клиента только с `externalTrafficPolicy: Local`, PROXY protocol или `ClientTrafficPolicy` `clientIPDetection` — необязательный будущий этап «k8s: несколько узлов и облако».
 - **Локально по умолчанию — `kind load` и `imagePullPolicy: Never`.** Образы из GHCR публикуются только с push в `main`. Локальная сборка с правками в реестр не попадает, а коммит с `[skip ci]` не публикуется — для него есть `IMAGE_TAG`. Старые версии пакетов GHCR не чистятся: каждый коммит в `main` добавляет пять образов (и теги `-amd64`, `-arm64`). Облачный overlay (TLS, управляемый Postgres, внешнее хранилище секретов) — необязательный будущий этап.

@@ -1,0 +1,44 @@
+# Масштабируются два сервиса, которые реально тратят CPU: auth (bcrypt, ~0,26 с CPU на вход) и gateway
+# (прокси всего трафика). task, time и фронт — две фиксированные реплики. Процент — от requests (50m).
+# replicas в этих Deployment нет: иначе каждый apply сбрасывал бы число реплик, выставленное HPA.
+# behavior по умолчанию: рост сразу, уменьшение — после 5 минут стабилизации.
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: ser-auth
+  namespace: freelance-service
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: ser-auth
+  minReplicas: 2
+  # предел — память узла kind: +2 пода на сервис, ~60–100 МиБ каждый
+  maxReplicas: 4
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 70
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: ser-gateway
+  namespace: freelance-service
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: ser-gateway
+  minReplicas: 2
+  maxReplicas: 4
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 70

@@ -5,7 +5,7 @@ metadata:
   name: ser-auth
   namespace: freelance-service
 spec:
-  replicas: 2
+  # replicas задаёт HPA (hpa.yaml)
   selector:
     matchLabels:
       app: ser-auth

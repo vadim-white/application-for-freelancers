@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Поднимает кластер kind с Envoy Gateway и загружает образы (или готовит режим реестра); повторный запуск безопасен.
+# Поднимает кластер kind с Envoy Gateway и metrics-server и загружает образы (или готовит режим реестра); повторный запуск безопасен.
 # Совместим с macOS bash 3.2.
 set -eu
 
@@ -12,6 +12,10 @@ IMAGES="ser-auth ser-task ser-time ser-gateway ser-frontend"
 ENVOY_GATEWAY_VERSION="v1.9.3"
 ENVOY_GATEWAY_SHA256="ac89b0b564e52c97c97a3f8b4d82bb594a0fbc810431fb2e6ffd91702aabebfb"
 ENVOY_GATEWAY_URL="https://github.com/envoyproxy/gateway/releases/download/$ENVOY_GATEWAY_VERSION/install.yaml"
+# metrics-server — источник метрик CPU для HPA и kubectl top; в облаке его даёт провайдер, поэтому не в base
+METRICS_SERVER_VERSION="v0.9.0"
+METRICS_SERVER_SHA256="1cec29a5267809306a2c6ec74a3e449abbb705b4a8beed0c8a1963910f72c79b"
+METRICS_SERVER_URL="https://github.com/kubernetes-sigs/metrics-server/releases/download/$METRICS_SERVER_VERSION/components.yaml"
 # Режим реестра: IMAGE_REGISTRY=ghcr.io/vadim-white — образы ser-* публикует CI (push в main), узел скачивает
 # их сам; сборки, kind load и чистки узла нет. Тег — SHA HEAD или IMAGE_TAG (коммит с [skip ci] не публикуется).
 REGISTRY="${IMAGE_REGISTRY:-}"
@@ -49,13 +53,30 @@ kubectl --context "$CONTEXT" wait --for=condition=Ready node --all --timeout=120
 # Envoy Gateway: server-side apply (CRD слишком велики для аннотации last-applied client-side apply),
 # повторное применение того же файла ничего не меняет
 eg_tmp="$(mktemp)"
-trap 'rm -f "$eg_tmp"' EXIT
+ms_tmp="$(mktemp)"
+trap 'rm -f "$eg_tmp" "$ms_tmp"' EXIT
 curl -fsSL -o "$eg_tmp" "$ENVOY_GATEWAY_URL"
 [ "$(sha256 "$eg_tmp")" = "$ENVOY_GATEWAY_SHA256" ] \
   || { echo "sha256 $ENVOY_GATEWAY_URL не совпадает с закреплённым" >&2; exit 1; }
 kubectl --context "$CONTEXT" apply --server-side -f "$eg_tmp"
 kubectl --context "$CONTEXT" -n envoy-gateway-system wait --for=condition=Available \
   deployment/envoy-gateway --timeout=300s
+
+# metrics-server — до выхода режима реестра: он нужен в обоих режимах. Сертификат kubelet в kind не подписан
+# CA кластера, поэтому --kubelet-insecure-tls (по README metrics-server — только для тестовых кластеров);
+# флаг дописывается в файл после сверки sha256, чтобы повторный apply не терял его и не дублировал.
+curl -fsSL -o "$ms_tmp" "$METRICS_SERVER_URL"
+[ "$(sha256 "$ms_tmp")" = "$METRICS_SERVER_SHA256" ] \
+  || { echo "sha256 $METRICS_SERVER_URL не совпадает с закреплённым" >&2; exit 1; }
+ms_patched="$(awk '{ print } /^ *- --metric-resolution=/ { sub(/-.*/, "- --kubelet-insecure-tls"); print }' "$ms_tmp")"
+[ "$(printf '%s\n' "$ms_patched" | grep -c -- '--kubelet-insecure-tls')" = 1 ] \
+  || { echo "не удалось добавить --kubelet-insecure-tls в components.yaml metrics-server" >&2; exit 1; }
+printf '%s\n' "$ms_patched" | kubectl --context "$CONTEXT" apply --server-side -f -
+kubectl --context "$CONTEXT" -n kube-system wait --for=condition=Available \
+  deployment/metrics-server --timeout=180s
+# API метрик (APIService) доступен чуть позже Deployment; без него HPA показывает <unknown>
+kubectl --context "$CONTEXT" wait --for=condition=Available \
+  apiservice/v1beta1.metrics.k8s.io --timeout=60s
 
 # Режим реестра: только тег и реестр для k8s-deploy.sh; есть ли образы в реестре, проверяет он
 if [ -n "$REGISTRY" ]; then
@@ -68,7 +89,7 @@ if [ -n "$REGISTRY" ]; then
   [ "${TAG_OK:-}" = 1 ] || { echo "некорректный IMAGE_TAG: $TAG (нужен SHA коммита из 12 знаков)" >&2; exit 1; }
   printf '%s\n' "$REGISTRY" > k8s/overlays/local/image-registry
   printf '%s\n' "$TAG" > k8s/overlays/local/image-tag
-  echo "Готово. Кластер $CLUSTER, контекст $CONTEXT, Envoy Gateway $ENVOY_GATEWAY_VERSION, образы $REGISTRY/ser-*:$TAG (скачает узел)"
+  echo "Готово. Кластер $CLUSTER, контекст $CONTEXT, Envoy Gateway $ENVOY_GATEWAY_VERSION, metrics-server $METRICS_SERVER_VERSION, образы $REGISTRY/ser-*:$TAG (скачает узел)"
   exit 0
 fi
 
@@ -139,4 +160,4 @@ if [ -n "$imports$orphans" ]; then
   docker exec "$NODE" ctr -n k8s.io images rm --sync $imports $orphans >/dev/null
 fi
 
-echo "Готово. Кластер $CLUSTER, контекст $CONTEXT, Envoy Gateway $ENVOY_GATEWAY_VERSION, образы: $IMAGES, тег $TAG"
+echo "Готово. Кластер $CLUSTER, контекст $CONTEXT, Envoy Gateway $ENVOY_GATEWAY_VERSION, metrics-server $METRICS_SERVER_VERSION, образы: $IMAGES, тег $TAG"

@@ -15,3 +15,5 @@ resources:
   - gateway-frontend.yaml
   - entrypoint.yaml
   - network-policy.yaml
+  - hpa.yaml
+  - pdb.yaml
