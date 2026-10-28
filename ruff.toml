@@ -1,4 +1,4 @@
-# ruff 0.17.2: uvx ruff@0.17.2 check . и uvx ruff@0.17.2 format --check . из корня репозитория
+# ruff 0.17.3: uvx ruff@0.17.3 check . и uvx ruff@0.17.3 format --check . из корня репозитория
 target-version = "py314"
 line-length = 100
 

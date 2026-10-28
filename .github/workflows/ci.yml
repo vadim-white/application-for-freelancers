@@ -22,13 +22,13 @@ defaults:
     shell: bash
 
 env:
-  UV_VERSION: "0.13.5"
-  # sha256 uv-x86_64-unknown-linux-gnu.tar.gz релиза 0.13.5
-  UV_CHECKSUM: f68d291c75783122dad58ab77def0e13f3233f358731db5d6d7e8715603b928f
-  RUFF_VERSION: "0.17.2"
+  UV_VERSION: "0.13.6"
+  # sha256 uv-x86_64-unknown-linux-gnu.tar.gz релиза 0.13.6
+  UV_CHECKSUM: f29c3e94ffabd7e6f3ba521dba169a9b7ec12100bf3257087f0f24f6123f3645
+  RUFF_VERSION: "0.17.3"
   # kubectl в пределах ±1 минорной от сервера kind (v1.35.8); на раннере kubectl 1.37
-  KUBECTL_VERSION: v1.35.9
-  KUBECTL_SHA256: 3cfeaf80be482b435b0aa214aff6e0b2c312ee23c0ff20810c75517b6004c6eb
+  KUBECTL_VERSION: v1.35.10
+  KUBECTL_SHA256: c49a28f1f4efc4d475ed05f47f2ce8e563bf7bef69ed77fe1b924ea6d83b6327
   KIND_VERSION: v0.33.0
   SHELLCHECK_IMAGE: koalaman/shellcheck:v0.11.0@sha256:61862eba1fcf09a484ebcc6feea46f1782532571a34ed51fedf90dd25f925a8d
   ACTIONLINT_IMAGE: rhysd/actionlint:1.7.12@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667

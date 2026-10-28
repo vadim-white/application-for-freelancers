@@ -9,8 +9,8 @@ CONTEXT="kind-$CLUSTER"
 IMAGES="ser-auth ser-task ser-time ser-gateway ser-frontend"
 # install.yaml релиза содержит и CRD Gateway API той же версии (v1.6.1, канал experimental).
 # sha256 закреплён: другой файл по тому же адресу не применится.
-ENVOY_GATEWAY_VERSION="v1.9.2"
-ENVOY_GATEWAY_SHA256="0412a72907e57ff9b73c56a7bf6df5190bf0f6e4f8bb4bba34e38630bbab5778"
+ENVOY_GATEWAY_VERSION="v1.9.3"
+ENVOY_GATEWAY_SHA256="ac89b0b564e52c97c97a3f8b4d82bb594a0fbc810431fb2e6ffd91702aabebfb"
 ENVOY_GATEWAY_URL="https://github.com/envoyproxy/gateway/releases/download/$ENVOY_GATEWAY_VERSION/install.yaml"
 
 for tool in docker kind kubectl curl git; do
