@@ -1,7 +1,8 @@
 #!/bin/bash
 # Сквозной прогон через gateway: `bash tests/smoke.sh` из корня; объекты создаёт сам, проходит на чистой базе.
-# SMOKE_MODE=compose — 182 проверки, после `docker compose up --build -d --wait`, через вход http://localhost:5173 (nginx фронта);
-# SMOKE_MODE=k8s — 179, после ./scripts/k8s-deploy.sh, через вход http://127.0.0.1:8080, как браузер.
+# SMOKE_MODE=compose — 184 проверки, после `docker compose up --build -d --wait`, через вход http://localhost:5173 (nginx фронта);
+# SMOKE_MODE=k8s — 181, после ./scripts/k8s-deploy.sh, через вход http://127.0.0.1:8080, как браузер.
+# Лимит входа (10/с на адрес) проверяется залпом в конце: smoke ×2 подряд и сразу e2e его не задевают.
 # gateway :8000 наружу не опубликован ни в одном режиме (в compose это проверяет «localhost:8000 closed»).
 # В k8s нет пяти проверок закрытых портов: кластер публикует на хост только 8080, они ничего не доказывают.
 # Изоляцию NetworkPolicy внутри кластера smoke не проверяет.
@@ -13,7 +14,7 @@ case "$MODE" in
   compose)
     G="${SMOKE_G:-http://localhost:5173}"
     CLOSED_PORTS="8000 8001 8002 8003 5432"
-    EXPECTED=182
+    EXPECTED=184
     in_svc() { local s=$1; shift; docker exec "ser-$s" "$@"; }   # in_svc auth|gateway команда...
     in_auth_db() { docker exec ser-auth-db "$@"; }
     ;;
@@ -22,7 +23,7 @@ case "$MODE" in
     KNS=freelance-service
     G="${SMOKE_G:-http://127.0.0.1:8080}"
     CLOSED_PORTS=""
-    EXPECTED=179
+    EXPECTED=181
     in_svc() { local s=$1; shift; kubectl --context "$KCTX" -n "$KNS" exec "deploy/ser-$s" -- "$@"; }
     in_auth_db() { kubectl --context "$KCTX" -n "$KNS" exec auth-db-0 -c postgres -- "$@"; }
     ;;
@@ -386,6 +387,14 @@ echo "== CORS"
 chk "preflight $ORIGIN" 200 "$(code -X OPTIONS "$G/api/tasks/tasks" -H "Origin: $ORIGIN" -H "Access-Control-Request-Method: GET" -H "Access-Control-Request-Headers: authorization")"
 chk "preflight evil origin" 400 "$(code -X OPTIONS "$G/api/tasks/tasks" -H "Origin: http://evil.example" -H "Access-Control-Request-Method: GET")"
 chk "401 carries Allow-Origin" 1 "$(cu -s -D - -o /dev/null "$G/api/tasks/tasks" -H "Origin: $ORIGIN" | grep -qi "^access-control-allow-origin: $ORIGIN" && echo 1)"
+
+echo "== Лимит входа (compose — nginx, k8s — Envoy)"
+# в конце прогона: лимит 10/с на адрес общий с e2e и вторым прогоном, восстанавливается за 1–2 с.
+# Пустое тело — 422 от auth без bcrypt, пока вход пропускает; сверх лимита — 429 самого входа
+R=$(for _ in $(seq 30); do cu -s -o /dev/null -w '%{http_code}\n' -X POST "$G/api/auth/register" -H "$J" -d '{}' & done; wait)
+chk "30 parallel register: 422 and 429" "422 429" "$(echo "$R" | sort -u | xargs)"
+sleep 2
+chk "register after 2 s: 422" 422 "$(code -X POST "$G/api/auth/register" -H "$J" -d '{}')"
 
 echo; echo "PASSED $PASS, FAILED $FAIL (режим $MODE, ожидается $EXPECTED)"
 # пропущенная проверка (пустой цикл, ранний выход ветки) не даёт FAIL, но и не даёт PASS: сверяем число

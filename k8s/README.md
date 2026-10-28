@@ -93,7 +93,8 @@ k8s/
 │   └── network-policy.yaml    default deny и разрешённые связи
 ├── overlays/local/       kind: Secret'ы из app.env и db.env, imagePullPolicy: Never,
 │                         GatewayClass + EnvoyProxy (NodePort 30080), вход от Envoy в NetworkPolicy,
-│                         BackendTrafficPolicy entry (простой соединений Envoy к бэкендам — 60 с)
+│                         BackendTrafficPolicy entry (простой соединений Envoy к бэкендам — 60 с,
+│                         лимит входа 10/с на адрес)
 │                         (+ image-tag от kind-up.sh, не в git)
 ├── overlays/local-seed/  overlay local + Job auth-seed и его сетевая политика
 ├── overlays/.deploy/     app и seed: те же overlay с тегом образов (генерирует k8s-deploy.sh, не в git)
@@ -111,6 +112,10 @@ k8s/
 В base ([entrypoint.yaml](base/entrypoint.yaml)) описаны `Gateway` `entry` (listener HTTP :80) и маршруты: `PathPrefix /api` → `ser-gateway:8000`, `PathPrefix /` → `ser-frontend:8080`. В base класс Gateway только назван (`freelance`), а его реализацию задаёт overlay ([gatewayclass.yaml](overlays/local/gatewayclass.yaml)): `GatewayClass` контроллера Envoy Gateway и `EnvoyProxy`, у которого сервис Envoy — `NodePort` 30080. Этот порт узла `kind-config.yaml` пробрасывает на `127.0.0.1:8080`. Под и Service Envoy контроллер создаёт в `envoy-gateway-system`. В `freelance-service` все сервисы `ClusterIP`, `LoadBalancer` и `NodePort` нет.
 
 Там же, в overlay, — политика Envoy Gateway `BackendTrafficPolicy` `entry` на HTTPRoute `entry-routes` ([backend-traffic-policy.yaml](overlays/local/backend-traffic-policy.yaml)): Envoy закрывает простаивающее keep-alive соединение к `ser-gateway` и `ser-frontend` через 60 с (`connectionIdleTimeout`; по умолчанию — 1 час). Бэкенды держат дольше — uvicorn 75 с (`--timeout-keep-alive` в Dockerfile), nginx фронта 65 с, — поэтому соединение всегда закрывает Envoy, и запрос не уходит в соединение, которое бэкенд закрывает в ту же миллисекунду (иначе Envoy отвечал 503 `UC` и POST не повторял). Проверка: `k get backendtrafficpolicy entry -o jsonpath='{.status.ancestors[0].conditions}'` — `Accepted`.
+
+Та же политика — лимит входа (local rate limit Envoy): `POST` на `/api/auth/login`, `/register` и `/refresh` — не больше 10 в секунду с одного адреса клиента (`sourceCIDR` `Distinct` `0.0.0.0/0` — своя корзина на каждый адрес), сверх — `429` самого Envoy, до `ser-gateway` запрос не доходит. Шаблон пути — `^/api/auth/(login|register|refresh)(\?.*)?$`: Envoy сравнивает путь вместе с query (уже нормализованный — `//`, `./`, `../`, `%6c` приводятся к обычному виду), без хвоста `(\?.*)?` `POST /api/auth/login?x=1` шёл бы мимо лимита. `responseOverride` с `source: Local` добавляет `Retry-After: 1` только к `429` самого Envoy; `429` счётчика неудачных входов auth идёт от бэкенда со своим `Retry-After` и не меняется. Чтобы добавить заголовок, Envoy собирает ответ заново: тело пустое, `x-ratelimit-*` у `429` нет (у остальных ответов на вход они есть). Поле `rateLimit.type` в v1.9.2 устарело — в манифесте только блок `local`. В compose тот же лимит задаёт nginx фронта; здесь `/api` идёт в `ser-gateway` мимо nginx, и его блок `limit_req` не срабатывает.
+
+Проверка лимита: у ответа на `POST /api/auth/login` есть `x-ratelimit-limit: 10` (правило сработало; у путей вне правила — `4294967295`); залп из 30 параллельных `POST /api/auth/register` `{}` даёт `422` и `429` (последний — с `retry-after: 1`), в логе Envoy у таких `429` `response_flags` — `RL`. Это же проверяет smoke в конце прогона.
 
 Envoy нормализует путь до маршрутизации (`/api/tasks/../auth/me` → `/api/auth/me`), поэтому маршрут и авторизация gateway видят один и тот же путь. `GET /health` через вход отдаёт фронт (маршрут `/`), здоровье `ser-gateway` видно по его probes.
 
@@ -249,7 +254,7 @@ k describe gateway entry                 # условия Accepted / Programmed 
 k describe networkpolicy ser-task
 ```
 
-Сквозной прогон: `SMOKE_MODE=k8s bash tests/smoke.sh` — 179 проверок через `http://127.0.0.1:8080`. `/health` через вход отдаёт фронт, поэтому smoke проверяет его изнутри пода `ser-gateway` (тело: `upstreams.auth/task/time` все `true`), там же — `/ready` трёх сервисов. Строки журнала прав `user_audit` smoke считает через `psql` в поде `auth-db-0`.
+Сквозной прогон: `SMOKE_MODE=k8s bash tests/smoke.sh` — 181 проверка через `http://127.0.0.1:8080`. `/health` через вход отдаёт фронт, поэтому smoke проверяет его изнутри пода `ser-gateway` (тело: `upstreams.auth/task/time` все `true`), там же — `/ready` трёх сервисов. Строки журнала прав `user_audit` smoke считает через `psql` в поде `auth-db-0`.
 
 Статическая проверка — на выводе kustomize, а не на каталоге `k8s/` (там лежит `kind-config.yaml`, не манифест). kubeconform не знает схем CRD, поэтому пять ресурсов входа пропускаются явно, а проверяет их API-сервер:
 
@@ -257,12 +262,12 @@ k describe networkpolicy ser-task
 kubectl kustomize k8s/overlays/local | docker run --rm -i ghcr.io/yannh/kubeconform:v0.8.0 \
   -strict -summary -skip Gateway,GatewayClass,HTTPRoute,EnvoyProxy,BackendTrafficPolicy -   # 41 valid + 5 skipped (local-seed: 44 + 5)
 kubectl kustomize k8s/overlays/.deploy/app | kubectl --context kind-freelance apply --dry-run=server -f -   # и .deploy/seed
-# на развёрнутом кластере: 45 unchanged + 1 configured (HTTPRoute: сервер дописывает умолчания), seed — 48 + 1
+# на развёрнутом кластере: 44 unchanged + 2 configured (HTTPRoute и BackendTrafficPolicy: сервер дописывает умолчания), seed — 47 + 2
 ```
 
 kubeconform можно запускать на overlay из git (`:latest`), а `apply --dry-run=server` — только на `.deploy/app` и `.deploy/seed` (их пишет `k8s-deploy.sh` с тегом из `image-tag`). У развёрнутых Job шаблон пода неизменяем, и overlay с другим тегом образа сервер отклоняет: `Job.batch "auth-migrate" is invalid: spec.template: … field is immutable`.
 
-Вывод `kubectl kustomize` содержит Secret'ы (base64), в файлы и логи его не сохраняйте. Шум, который не означает ошибку: `httproute … configured` при каждом `apply` (у CRD нет strategic merge, объект не меняется), `namespace: freelance-service` у кластерного `GatewayClass` в выводе kustomize (kubectl это поле отбрасывает).
+Вывод `kubectl kustomize` содержит Secret'ы (base64), в файлы и логи его не сохраняйте. Шум, который не означает ошибку: `httproute … configured` и `backendtrafficpolicy … configured` при каждом `apply` (у CRD нет strategic merge, а в списки объекта сервер дописывает умолчания — `invert: false`, `type: Value`; объект не меняется), `namespace: freelance-service` у кластерного `GatewayClass` в выводе kustomize (kubectl это поле отбрасывает).
 
 ## Удаление
 
@@ -280,7 +285,7 @@ Job `kind` в [.github/workflows/ci.yml](../.github/workflows/ci.yml) (разд�
 1. kubectl v1.35.9 скачивается с `dl.k8s.io` со сверкой sha256, закреплённой в workflow. Свой kubectl раннера (1.37) к серверу 1.35 не подходит: разница больше одной минорной версии. kind берётся с раннера, но его версия должна быть v0.33.0, иначе job падает;
 2. `./scripts/kind-up.sh` — кластер, Envoy Gateway (sha256 `install.yaml`), сборка и загрузка образов; checkout чистый, поэтому тег — SHA коммита без `-dirty`;
 3. `./scripts/init-k8s-env.sh` — новые секреты; workflow сразу маскирует их значения и base64 (`::add-mask::`);
-4. `./scripts/k8s-deploy.sh`, затем `SMOKE_MODE=k8s bash tests/smoke.sh` (179) и e2e через вход `http://127.0.0.1:8080` (на Linux `run.sh` работает с `--network host`);
+4. `./scripts/k8s-deploy.sh`, затем `SMOKE_MODE=k8s bash tests/smoke.sh` (181) и e2e через вход `http://127.0.0.1:8080` (на Linux `run.sh` работает с `--network host`);
 5. `kubectl kustomize … | kubectl apply --dry-run=server -f -` для `.deploy/app` и `.deploy/seed` (overlay `local` и `local-seed` с тем тегом, что развёрнут): в лог попадают только строки `unchanged` / `configured`, содержимое манифестов — нет.
 
 Если что-то упало, шаг «диагностика» печатает `get pods,jobs -o wide`, `get deploy -o wide` (виден тег образов), события, `describe gateway entry`, поды и логи контроллера Envoy Gateway, логи подов приложения (`--all-containers`, хвост, и `--previous`, если контейнер перезапускался). Скриншоты и trace e2e — артефакт `e2e-kind`. Шаг 5 проверяет те же манифесты, что применил `k8s-deploy.sh`: с overlay из git (`:latest`) Job миграций дают `field is immutable`, а Deployment — `configured` вместо `unchanged`.
@@ -296,4 +301,5 @@ Job `kind` в [.github/workflows/ci.yml](../.github/workflows/ci.yml) (разд�
 - **Замороженная база на открытом соединении.** Медленный запрос обрывается через 5 с (`statement_timeout`), обрыв сети — через 5–7 с (TCP keepalive и `tcp_user_timeout`; замер на `docker network disconnect`: 5,5 с для запроса в уже мёртвое соединение, 7,3 с для запроса, во время которого оборвалась сеть), после перезапуска базы пул переподключается сам (`pool_pre_ping`, первый запрос — 200). Не лечится только замороженный процесс базы (`docker pause`, процесс остановлен, но ядро его контейнера отвечает на TCP): база не отменяет запрос, keepalive получает ответы, и запрос висит, пока база не оживёт. Проба падает по своему таймауту (3 с) и снимает под с трафика; висящих потоков не больше, чем соединений в пуле.
 - **Job неизменяемы, деплоить только через `k8s-deploy.sh`.** Голый `kubectl apply -k` поверх существующих Job падает на изменённом Job (`spec.template: … field is immutable`), а неизменённый не перезапускает. Тогда миграции из нового образа не выполнятся.
 - **Gateway дважды не стал `Programmed`.** При `k8s-deploy.sh` поверх уже работающего namespace скрипт два раза упал на ожидании `Programmed` у Gateway: `NoResources: Envoy replicas unavailable` (шаг 1.4.8) и `AddressNotAssigned` (1.5.2), оба раза при здоровом Envoy. На чистом деплое и на повторе не воспроизводилось. Если повторится, сохраните `k describe gateway entry` и логи `envoy-gateway` (в CI их печатает шаг «диагностика»), затем удалите namespace и задеплойте заново.
+- **Лимит входа — общий для хоста и на реплику Envoy.** Все клиенты хоста приходят на Envoy с одного адреса (`172.19.0.1`, NAT Docker Desktop), поэтому 10 запросов входа в секунду делят браузер, smoke и e2e (им хватает: smoke — до 6 в секунду, e2e — до 2). Счётчик local rate limit у каждой реплики Envoy свой: при N репликах фактический лимит — N × 10 в секунду (общий — global rate limit с Redis). За облачным балансировщиком Envoy увидит адрес клиента только с `externalTrafficPolicy: Local`, PROXY protocol или `ClientTrafficPolicy` `clientIPDetection` — этап «k8s: продакшен-практики».
 - **Реестра нет, `imagePullPolicy: Never`.** Образы есть только в узле kind (`kind load`), теги по коммиту живут только там. Облачный overlay (реестр и публикация образов из CI с тем же SHA, TLS, управляемый Postgres, внешнее хранилище секретов) — будущий этап.

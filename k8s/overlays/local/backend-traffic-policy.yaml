@@ -3,6 +3,14 @@
 # соединение, которое бэкенд как раз закрывает, и Envoy ответит 503 (UC) без повтора. Поэтому 60 с —
 # меньше, чем держат бэкенды: uvicorn 75 с (--timeout-keep-alive в Dockerfile), nginx фронта 65 с.
 # Без политики Envoy держит соединение к бэкенду 1 час.
+#
+# Лимит входа: POST на login, register и refresh — 10 в секунду с одного адреса клиента (Distinct:
+# своя корзина на каждый адрес), сверх — 429 самого Envoy (Retry-After: 1, см. ниже). Лимит local —
+# у каждой реплики Envoy свой счётчик. Остальные пути не ограничены. Envoy сравнивает путь вместе
+# с query (уже нормализованный: //, ./, ../, %6c приводятся к /login), поэтому в шаблоне — хвост
+# (\?.*)? : без него POST /api/auth/login?x=1 шёл мимо лимита. В compose тот же лимит задаёт
+# nginx фронта (frontend/nginx/default.conf.template), здесь /api идёт в ser-gateway мимо него.
+# Поле rateLimit.type в v1.9.2 устарело — достаточно блока local.
 apiVersion: gateway.envoyproxy.io/v1alpha1
 kind: BackendTrafficPolicy
 metadata:
@@ -16,3 +24,32 @@ spec:
   timeout:
     http:
       connectionIdleTimeout: 60s
+  rateLimit:
+    local:
+      rules:
+      - clientSelectors:
+        - sourceCIDR:
+            type: Distinct
+            value: 0.0.0.0/0
+          methods:
+          - value: POST
+          path:
+            type: RegularExpression
+            value: '^/api/auth/(login|register|refresh)(\?.*)?$'
+        limit:
+          requests: 10
+          unit: Second
+  # Retry-After: 1 — только к 429, которые ответил сам Envoy (source: Local, то есть лимит выше);
+  # 429 счётчика неудачных входов auth идёт от бэкенда со своим Retry-After и не меняется.
+  # Envoy собирает такой ответ заново: у 429 лимита пустое тело и нет x-ratelimit-* (без override
+  # были тело local_rate_limited и x-ratelimit-*); взамен — стандартный Retry-After, как у nginx в compose
+  responseOverride:
+  - match:
+      statusCodes:
+      - value: 429
+    source: Local
+    response:
+      header:
+        add:
+        - name: Retry-After
+          value: "1"

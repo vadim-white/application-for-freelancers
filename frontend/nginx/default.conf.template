@@ -1,6 +1,13 @@
 # Шаблон конфига nginx фронтенда. При старте контейнера envsubst подставляет переменные окружения
 # GATEWAY_URL и NGINX_LOCAL_RESOLVERS (фильтр NGINX_ENVSUBST_FILTER в Dockerfile),
 # переменные nginx (uri, host, gateway…) не трогает. Подстановка работает и в комментариях.
+
+# Лимит входа (login, register, refresh): 10 запросов в секунду с одного адреса, запас 20 без задержки,
+# сверх — 429. Действует только в compose: в k8s /api идёт Envoy → ser-gateway мимо nginx, там тот же
+# лимит задаёт политика Envoy Gateway (k8s/overlays/local/backend-traffic-policy.yaml).
+# Файл подключается внутри http {}, поэтому зона объявляется здесь, вне server.
+limit_req_zone $binary_remote_addr zone=auth:1m rate=10r/s;
+
 server {
     listen 8080;
     server_name _;
@@ -23,6 +30,26 @@ server {
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    # вход под лимитом: регулярное выражение важнее префикса /api/, проксирование то же, что выше
+    location ~ ^/api/auth/(login|register|refresh)$ {
+        limit_req zone=auth burst=20 nodelay;
+        limit_req_status 429;
+        error_page 429 = @auth_limited;
+        set $gateway ${GATEWAY_URL};
+        proxy_pass $gateway;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    # Retry-After только у 429 лимита: add_header … always в location выше поставил бы его
+    # и на ответы gateway (422, 401…)
+    location @auth_limited {
+        add_header Retry-After 1 always;
+        return 429;
     }
 
     # файлы сборки с хешем в имени: можно кэшировать надолго
