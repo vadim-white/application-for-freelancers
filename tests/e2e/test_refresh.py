@@ -2,7 +2,7 @@
 
 На 401 (кроме login/register/refresh) интерцептор делает один общий POST /api/auth/refresh на все
 параллельные запросы (refreshPromise) и повторяет их; неудачный refresh удаляет токены
-и уводит на /login.
+и уводит на /login; 429 на refresh (лимит входа) сессию не завершает.
 При перезагрузке /dashboard запросы идут параллельно: GET /api/auth/me из стора и из onMounted —
 так проверяется именно общий промис, а не один запрос.
 """
@@ -79,4 +79,31 @@ def test_failed_refresh_logs_out(open_session, base_url):
     assert local_storage(s.page, "access_token") is None
     assert local_storage(s.page, "refresh_token") is None
     expect(s.page.get_by_role("button", name="Войти")).to_be_visible()
+    assert s.net.foreign(base_url) == [], "запросы не на origin фронта"
+
+
+def test_refresh_429_keeps_session(open_session, base_url):
+    """Настоящий 429 на refresh — залп больше 10/с, общий лимит со smoke и e2e; ответ подменён."""
+    s = open_session()
+    login(s.page, USER1)
+    refresh_token = local_storage(s.page, "refresh_token")
+
+    s.page.route(
+        "**/api/auth/refresh",
+        lambda route: route.fulfill(status=429, headers={"Retry-After": "1"}, body="Too Many"),
+    )
+    s.page.evaluate("localStorage.setItem('access_token', 'abc')")
+    s.net.clear()
+    with s.page.expect_response(
+        lambda r: r.request.method == REFRESH[0] and r.url.endswith(REFRESH[1])
+    ):
+        s.page.reload()
+    s.page.wait_for_load_state("networkidle")
+
+    # запросы, получившие 401 позже, делают новый refresh (общий промис живёт до ответа)
+    refreshes = s.net.api(*REFRESH)
+    assert refreshes and set(refreshes) == {429}, f"ответы API: {s.net.responses}"
+    expect(s.page).to_have_url(re.compile(r"/dashboard$"))
+    assert local_storage(s.page, "access_token") == "abc"
+    assert local_storage(s.page, "refresh_token") == refresh_token
     assert s.net.foreign(base_url) == [], "запросы не на origin фронта"

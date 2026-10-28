@@ -79,6 +79,7 @@ import { ref } from 'vue'
 import api from '../services/api'
 import { useRouter } from 'vue-router'
 import { useMessage } from 'naive-ui'
+import { authErrorText } from '../services/errors'
 import { useAuthStore } from '../stores/auth'
 
 const router = useRouter()
@@ -98,7 +99,7 @@ async function onRegister() {
     message.success('Зарегистрировано — выполните вход')
     router.push('/login')
   } catch (e: any) {
-    message.error(e?.response?.data?.detail || 'Ошибка регистрации')
+    message.error(authErrorText(e, 'Ошибка регистрации'))
   } finally {
     loading.value = false
   }

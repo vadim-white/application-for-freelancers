@@ -70,6 +70,7 @@ import { ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '../stores/auth'
 import { useMessage } from 'naive-ui'
+import { authErrorText } from '../services/errors'
 
 const auth = useAuthStore()
 const router = useRouter()
@@ -91,7 +92,7 @@ async function onSubmit() {
     router.push('/dashboard')
   } catch (err: any) {
     console.error(err)
-    message.error(err?.response?.data?.detail || 'Ошибка входа')
+    message.error(authErrorText(err, 'Ошибка входа'))
   } finally {
     loading.value = false
   }

@@ -1,4 +1,4 @@
-import axios, { AxiosError, InternalAxiosRequestConfig } from 'axios'
+import axios, { AxiosError, InternalAxiosRequestConfig, isAxiosError } from 'axios'
 
 // по умолчанию тот же origin: /api проксирует nginx (Docker) или Vite (npm run dev)
 const API_BASE = (import.meta.env.VITE_API_BASE as string | undefined) ?? ''
@@ -67,8 +67,9 @@ api.interceptors.response.use(
     config._retry = true
     try {
       await refreshAccessToken()
-    } catch {
-      forceLogout()
+    } catch (refreshError) {
+      // 429 — лимит входа, не конец сессии: токены остаются, запрос отклоняется с ошибкой
+      if (!(isAxiosError(refreshError) && refreshError.response?.status === 429)) forceLogout()
       return Promise.reject(error)
     }
     // новый токен подставит request-интерцептор
