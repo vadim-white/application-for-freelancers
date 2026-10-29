@@ -32,3 +32,6 @@ frontend/login_page/dist/
 
 # Внутренние заметки
 docs/
+
+# Настройки и агенты Claude Code (локальные)
+.claude/
