@@ -9,13 +9,13 @@
 
         <div class="header-nav">
           <n-button-group>
-            <n-button 
+            <n-button
               :type="currentTab === 'tasks' ? 'primary' : 'tertiary'"
               @click="currentTab = 'tasks'"
             >
               📋 Задачи
             </n-button>
-            <n-button 
+            <n-button
               v-if="isAdmin"
               :type="currentTab === 'statistics' ? 'primary' : 'tertiary'"
               @click="currentTab = 'statistics'"
@@ -30,11 +30,7 @@
 
         <div class="header-user">
           <div class="user-info">
-            <n-avatar 
-              v-if="auth.user"
-              round
-              :style="{ background: 'rgba(255,255,255,0.3)' }"
-            >
+            <n-avatar v-if="auth.user" round :style="{ background: 'rgba(255,255,255,0.3)' }">
               {{ (auth.user.full_name || auth.user.email).charAt(0).toUpperCase() }}
             </n-avatar>
             <div class="user-text">
@@ -44,10 +40,10 @@
             </div>
           </div>
           <n-button-group>
-            <n-button text @click="toProfile" style="color: rgba(255,255,255,0.8)">
+            <n-button text @click="toProfile" style="color: rgba(255, 255, 255, 0.8)">
               👤 Профиль
             </n-button>
-            <n-button text @click="onLogout" style="color: rgba(255,255,255,0.8)">
+            <n-button text @click="onLogout" style="color: rgba(255, 255, 255, 0.8)">
               🚪 Выйти
             </n-button>
           </n-button-group>
@@ -57,12 +53,7 @@
 
     <n-layout-content class="dashboard-content">
       <!-- Идущий таймер -->
-      <n-button
-        v-if="timer.entry"
-        type="warning"
-        class="running-timer"
-        @click="openRunningTimer"
-      >
+      <n-button v-if="timer.entry" type="warning" class="running-timer" @click="openRunningTimer">
         ⏱️ {{ timer.runningTitle }} · {{ timer.formatted }}
       </n-button>
 
@@ -88,7 +79,11 @@
 
         <div class="projects-grid">
           <!-- Задачи вне проекта: всегда первая, не зависит от страницы, сортировки и архива -->
-          <NoProjectCard :total="noProjectTotal" :preview="noProjectPreview" @open="openNoProject" />
+          <NoProjectCard
+            :total="noProjectTotal"
+            :preview="noProjectPreview"
+            @open="openNoProject"
+          />
           <!-- Карточки проектов -->
           <ProjectCard
             v-for="p in projects"
@@ -101,10 +96,7 @@
           />
 
           <!-- Карточка создания проекта (для всех) -->
-          <div
-            class="create-project-card"
-            @click="createProjectOpen"
-          >
+          <div class="create-project-card" @click="createProjectOpen">
             <div class="create-project-icon">+</div>
             <div class="create-project-text">
               <div class="create-project-title">Создать проект</div>
@@ -116,7 +108,9 @@
           <div v-if="projects.length === 0" class="empty-state">
             <div style="font-size: 48px; margin-bottom: 12px">📭</div>
             <div style="font-weight: 600; margin-bottom: 4px">Нет проектов</div>
-            <div style="color: var(--color-text-secondary)">Создайте первый проект — нажмите «Создать проект»</div>
+            <div style="color: var(--color-text-secondary)">
+              Создайте первый проект — нажмите «Создать проект»
+            </div>
           </div>
         </div>
 
@@ -161,7 +155,9 @@
                   <n-tag type="success" round>{{ formatHoursMinutes(row.total_seconds) }}</n-tag>
                 </td>
                 <td class="text-center">
-                  <n-tag type="success" round>{{ formatHoursMinutes(row.avg_seconds_per_task) }}</n-tag>
+                  <n-tag type="success" round>{{
+                    formatHoursMinutes(row.avg_seconds_per_task)
+                  }}</n-tag>
                 </td>
               </tr>
             </tbody>
@@ -171,7 +167,9 @@
         <div v-if="usersStats.length === 0" class="empty-state">
           <div style="font-size: 48px; margin-bottom: 12px">📊</div>
           <div style="font-weight: 600; margin-bottom: 4px">Нет данных</div>
-          <div style="color: var(--color-text-secondary)">Статистика будет доступна после создания задач</div>
+          <div style="color: var(--color-text-secondary)">
+            Статистика будет доступна после создания задач
+          </div>
         </div>
       </div>
     </n-layout-content>
@@ -326,7 +324,12 @@ async function load() {
 async function loadNoProject() {
   const seq = ++noProjectSeq
   try {
-    const data = await getTasks({ project_id: NO_PROJECT_ID, is_active: true, limit: 3, sort: 'created_at' })
+    const data = await getTasks({
+      project_id: NO_PROJECT_ID,
+      is_active: true,
+      limit: 3,
+      sort: 'created_at'
+    })
     if (seq !== noProjectSeq) return
     noProjectTotal.value = data.total
     noProjectPreview.value = data.items

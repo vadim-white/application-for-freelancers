@@ -4,7 +4,7 @@
     :closable="true"
     preset="dialog"
     class="project-edit-modal"
-    style="min-width:420px"
+    style="min-width: 420px"
   >
     <template #header>
       <div style="font-weight: 600; color: var(--color-text-primary)">✏️ Изменить проект</div>
@@ -57,7 +57,10 @@ const props = defineProps({
 const emit = defineEmits(['update:show', 'saved'])
 
 const innerShow = ref(props.show)
-watch(() => props.show, (v) => (innerShow.value = v))
+watch(
+  () => props.show,
+  (v) => (innerShow.value = v)
+)
 watch(innerShow, (v) => emit('update:show', v))
 
 const form = reactive({ name: '', description: '' })
@@ -89,7 +92,8 @@ async function onSave() {
   // уходят только изменённые поля, очищенное описание — null
   const patch: ProjectPatch = {}
   if (name !== project.name) patch.name = name
-  if (norm(form.description) !== norm(project.description)) patch.description = norm(form.description)
+  if (norm(form.description) !== norm(project.description))
+    patch.description = norm(form.description)
   if (Object.keys(patch).length === 0) {
     innerShow.value = false
     return

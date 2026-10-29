@@ -10,16 +10,16 @@
 
       <n-card>
         <template #header>
-          <div style="text-align:center;width:100%">
-            <h2 style="margin:0;color:var(--color-text-primary)">Регистрация</h2>
+          <div style="text-align: center; width: 100%">
+            <h2 style="margin: 0; color: var(--color-text-primary)">Регистрация</h2>
           </div>
         </template>
 
         <n-form :model="form">
           <n-form-item label="Email" path="email">
-            <n-input 
-              v-model:value="form.email" 
-              type="email" 
+            <n-input
+              v-model:value="form.email"
+              type="email"
               placeholder="your@email.com"
               clearable
               @keyup.enter="onRegister"
@@ -27,8 +27,8 @@
           </n-form-item>
 
           <n-form-item label="Полное имя" path="full_name">
-            <n-input 
-              v-model:value="form.full_name" 
+            <n-input
+              v-model:value="form.full_name"
               placeholder="Ваше имя"
               clearable
               @keyup.enter="onRegister"
@@ -36,21 +36,21 @@
           </n-form-item>
 
           <n-form-item label="Пароль" path="password">
-            <n-input 
-              v-model:value="form.password" 
-              type="password" 
+            <n-input
+              v-model:value="form.password"
+              type="password"
               placeholder="••••••••"
               show-password-on="click"
               @keyup.enter="onRegister"
             />
           </n-form-item>
 
-          <div style="margin-top:24px;text-align:center">
-            <n-button 
-              type="primary" 
-              @click="onRegister" 
+          <div style="margin-top: 24px; text-align: center">
+            <n-button
+              type="primary"
+              @click="onRegister"
               :loading="loading"
-              style="width:100%;padding:10px"
+              style="width: 100%; padding: 10px"
               size="large"
             >
               Зарегистрироваться
@@ -59,11 +59,16 @@
         </n-form>
 
         <template #footer>
-          <div style="text-align:center;color:var(--color-text-secondary);font-size:14px">
+          <div style="text-align: center; color: var(--color-text-secondary); font-size: 14px">
             Уже есть аккаунт?
-            <router-link 
+            <router-link
               to="/login"
-              style="color:var(--color-primary);text-decoration:none;font-weight:600;cursor:pointer"
+              style="
+                color: var(--color-primary);
+                text-decoration: none;
+                font-weight: 600;
+                cursor: pointer;
+              "
             >
               Войти
             </router-link>

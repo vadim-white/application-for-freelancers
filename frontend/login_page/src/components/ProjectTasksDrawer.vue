@@ -9,153 +9,157 @@
   >
     <!-- n-drawer сам слот header не выводит: заголовок — в n-drawer-content -->
     <n-drawer-content :native-scrollbar="false" closable>
-    <template #header>
-      <div class="drawer-title" style="font-weight: 600">📋 {{ project ? project.name : 'Проект' }}</div>
-    </template>
+      <template #header>
+        <div class="drawer-title" style="font-weight: 600">
+          📋 {{ project ? project.name : 'Проект' }}
+        </div>
+      </template>
 
-    <div class="drawer-content">
-      <div class="task-filters">
-        <n-select
-          v-model:value="sort"
-          class="task-sort"
-          :options="sortOptions"
-          style="width: 220px"
-          @update:value="onFilterChange"
-        />
-        <label class="archive-switch">
-          <n-switch v-model:value="showArchive" @update:value="onFilterChange" />
-          Показать архив
-        </label>
-      </div>
+      <div class="drawer-content">
+        <div class="task-filters">
+          <n-select
+            v-model:value="sort"
+            class="task-sort"
+            :options="sortOptions"
+            style="width: 220px"
+            @update:value="onFilterChange"
+          />
+          <label class="archive-switch">
+            <n-switch v-model:value="showArchive" @update:value="onFilterChange" />
+            Показать архив
+          </label>
+        </div>
 
-      <n-spin :show="loading">
-        <!-- Текущие задачи -->
-        <div class="tasks-section tasks-current">
-          <h3 class="section-title">📝 Текущие задачи ({{ currentTotal }})</h3>
-          <div v-if="!currentTasks.length && !loading" class="no-active-tasks">
-            {{ showArchive ? 'Нет архивных задач' : 'Нет текущих задач' }}
-          </div>
-          <div class="tasks-list">
-            <div
-              v-for="task in currentTasks"
-              :key="task.id"
-              class="task-item"
-            >
-              <div class="task-main">
-                <div class="task-header">
-                  <div class="task-title-row">
-                    <span class="task-status-badge" :class="`badge-${task.status}`">
-                      {{ formatStatus(task.status) }}
-                    </span>
-                    <div class="task-title">{{ task.title }}</div>
+        <n-spin :show="loading">
+          <!-- Текущие задачи -->
+          <div class="tasks-section tasks-current">
+            <h3 class="section-title">📝 Текущие задачи ({{ currentTotal }})</h3>
+            <div v-if="!currentTasks.length && !loading" class="no-active-tasks">
+              {{ showArchive ? 'Нет архивных задач' : 'Нет текущих задач' }}
+            </div>
+            <div class="tasks-list">
+              <div v-for="task in currentTasks" :key="task.id" class="task-item">
+                <div class="task-main">
+                  <div class="task-header">
+                    <div class="task-title-row">
+                      <span class="task-status-badge" :class="`badge-${task.status}`">
+                        {{ formatStatus(task.status) }}
+                      </span>
+                      <div class="task-title">{{ task.title }}</div>
+                    </div>
+                  </div>
+                  <div v-if="task.description" class="task-desc">{{ task.description }}</div>
+                  <div v-if="task.deadline" class="task-deadline">
+                    🗓 Срок: {{ formatDeadline(task.deadline) }}
                   </div>
                 </div>
-                <div v-if="task.description" class="task-desc">{{ task.description }}</div>
-                <div v-if="task.deadline" class="task-deadline">
-                  🗓 Срок: {{ formatDeadline(task.deadline) }}
-                </div>
-              </div>
 
-              <div class="task-actions">
-                <template v-if="task.is_active">
-                  <n-button size="small" type="primary" text @click="openTask(task)">
-                    ⏱️
+                <div class="task-actions">
+                  <template v-if="task.is_active">
+                    <n-button size="small" type="primary" text @click="openTask(task)">
+                      ⏱️
+                    </n-button>
+                    <n-button
+                      size="small"
+                      type="success"
+                      text
+                      @click="markDone(task)"
+                      :loading="task.isSaving"
+                    >
+                      ✓
+                    </n-button>
+                  </template>
+                  <n-button size="small" text :disabled="task.isSaving" @click="openEdit(task)">
+                    Изменить
                   </n-button>
                   <n-button
                     size="small"
-                    type="success"
                     text
-                    @click="markDone(task)"
-                    :loading="task.isSaving"
+                    :disabled="task.isSaving"
+                    @click="toggleArchive(task)"
                   >
-                    ✓
+                    {{ task.is_active ? 'В архив' : 'Восстановить' }}
                   </n-button>
-                </template>
-                <n-button size="small" text :disabled="task.isSaving" @click="openEdit(task)">
-                  Изменить
-                </n-button>
-                <n-button size="small" text :disabled="task.isSaving" @click="toggleArchive(task)">
-                  {{ task.is_active ? 'В архив' : 'Восстановить' }}
-                </n-button>
+                </div>
               </div>
             </div>
+            <n-pagination
+              v-if="currentTotal > PAGE_SIZE"
+              :page="currentPage"
+              :page-size="PAGE_SIZE"
+              :item-count="currentTotal"
+              @update:page="onCurrentPage"
+            />
           </div>
-          <n-pagination
-            v-if="currentTotal > PAGE_SIZE"
-            :page="currentPage"
-            :page-size="PAGE_SIZE"
-            :item-count="currentTotal"
-            @update:page="onCurrentPage"
-          />
-        </div>
 
-        <!-- Выполненные задачи -->
-        <div v-if="doneTotal" class="tasks-section tasks-done">
-          <h3 class="section-title section-toggle" @click="showDone = !showDone">
-            {{ showDone ? '▾' : '▸' }} ✅ Выполненные ({{ doneTotal }})
-          </h3>
-          <div v-if="showDone" class="tasks-list">
-            <div
-              v-for="task in doneTasks"
-              :key="task.id"
-              class="task-item task-item-done"
-            >
-              <div class="task-main">
-                <div class="task-header">
-                  <div class="task-title-row">
-                    <span class="task-status-badge" :class="`badge-${task.status}`">
-                      {{ formatStatus(task.status) }}
-                    </span>
-                    <div class="task-title">{{ task.title }}</div>
+          <!-- Выполненные задачи -->
+          <div v-if="doneTotal" class="tasks-section tasks-done">
+            <h3 class="section-title section-toggle" @click="showDone = !showDone">
+              {{ showDone ? '▾' : '▸' }} ✅ Выполненные ({{ doneTotal }})
+            </h3>
+            <div v-if="showDone" class="tasks-list">
+              <div v-for="task in doneTasks" :key="task.id" class="task-item task-item-done">
+                <div class="task-main">
+                  <div class="task-header">
+                    <div class="task-title-row">
+                      <span class="task-status-badge" :class="`badge-${task.status}`">
+                        {{ formatStatus(task.status) }}
+                      </span>
+                      <div class="task-title">{{ task.title }}</div>
+                    </div>
+                  </div>
+                  <div v-if="task.description" class="task-desc">{{ task.description }}</div>
+                  <div v-if="task.deadline" class="task-deadline">
+                    🗓 Срок: {{ formatDeadline(task.deadline) }}
                   </div>
                 </div>
-                <div v-if="task.description" class="task-desc">{{ task.description }}</div>
-                <div v-if="task.deadline" class="task-deadline">
-                  🗓 Срок: {{ formatDeadline(task.deadline) }}
+
+                <div class="task-actions">
+                  <n-button size="small" text :disabled="task.isSaving" @click="openEdit(task)">
+                    Изменить
+                  </n-button>
+                  <n-button
+                    size="small"
+                    text
+                    :disabled="task.isSaving"
+                    @click="toggleArchive(task)"
+                  >
+                    {{ task.is_active ? 'В архив' : 'Восстановить' }}
+                  </n-button>
                 </div>
               </div>
+            </div>
+            <n-pagination
+              v-if="showDone && doneTotal > PAGE_SIZE"
+              :page="donePage"
+              :page-size="PAGE_SIZE"
+              :item-count="doneTotal"
+              @update:page="onDonePage"
+            />
+          </div>
 
-              <div class="task-actions">
-                <n-button size="small" text :disabled="task.isSaving" @click="openEdit(task)">
-                  Изменить
-                </n-button>
-                <n-button size="small" text :disabled="task.isSaving" @click="toggleArchive(task)">
-                  {{ task.is_active ? 'В архив' : 'Восстановить' }}
-                </n-button>
-              </div>
+          <div v-if="!currentTotal && !doneTotal && !loading && !showArchive" class="empty-tasks">
+            <div style="font-size: 48px; margin-bottom: 12px">📭</div>
+            <div style="font-weight: 600">Нет задач</div>
+            <div style="color: var(--color-text-secondary); font-size: 13px">
+              Создайте первую задачу ниже
             </div>
           </div>
-          <n-pagination
-            v-if="showDone && doneTotal > PAGE_SIZE"
-            :page="donePage"
-            :page-size="PAGE_SIZE"
-            :item-count="doneTotal"
-            @update:page="onDonePage"
-          />
-        </div>
-
-        <div v-if="!currentTotal && !doneTotal && !loading && !showArchive" class="empty-tasks">
-          <div style="font-size: 48px; margin-bottom: 12px">📭</div>
-          <div style="font-weight: 600">Нет задач</div>
-          <div style="color: var(--color-text-secondary); font-size: 13px">
-            Создайте первую задачу ниже
-          </div>
-        </div>
-      </n-spin>
+        </n-spin>
 
         <!-- Форма добавления задачи -->
         <div class="add-task-section">
           <h3 class="section-title">➕ Добавить задачу</h3>
           <n-form :model="newTask" label-placement="top">
             <n-form-item label="Название задачи" path="title">
-              <n-input 
+              <n-input
                 v-model:value="newTask.title"
                 placeholder="Введите название задачи..."
                 clearable
               />
             </n-form-item>
             <n-form-item label="Описание" path="description">
-              <n-input 
+              <n-input
                 v-model:value="newTask.description"
                 type="textarea"
                 placeholder="Описание задачи (опционально)"
@@ -163,18 +167,13 @@
               />
             </n-form-item>
             <div style="display: flex; gap: 8px">
-              <n-button 
-                type="primary" 
-                @click="addTask" 
-                :loading="adding"
-                style="flex: 1"
-              >
+              <n-button type="primary" @click="addTask" :loading="adding" style="flex: 1">
                 ✓ Добавить задачу
               </n-button>
             </div>
           </n-form>
         </div>
-    </div>
+      </div>
     </n-drawer-content>
 
     <TaskEditModal
@@ -210,7 +209,10 @@ const props = defineProps({
 const emit = defineEmits(['update:show', 'open-task', 'changed'])
 
 const innerShow = ref(props.show)
-watch(() => props.show, (v) => (innerShow.value = v))
+watch(
+  () => props.show,
+  (v) => (innerShow.value = v)
+)
 
 function updateShow(v: boolean) {
   innerShow.value = v
@@ -387,10 +389,10 @@ async function onTaskSaved(updated: Task) {
 
 function formatStatus(status: string): string {
   const statusMap: Record<string, string> = {
-    'todo': 'К выполнению',
-    'in_progress': 'В работе',
-    'done': 'Завершена',
-    'blocked': 'Заблокирована'
+    todo: 'К выполнению',
+    in_progress: 'В работе',
+    done: 'Завершена',
+    blocked: 'Заблокирована'
   }
   return statusMap[status] || status
 }

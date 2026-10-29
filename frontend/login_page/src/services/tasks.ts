@@ -81,7 +81,10 @@ export interface ProjectPatch {
   is_active?: boolean
 }
 
-export async function updateProject(projectId: number | string, payload: ProjectPatch): Promise<Project> {
+export async function updateProject(
+  projectId: number | string,
+  payload: ProjectPatch
+): Promise<Project> {
   const r = await api.patch(`/api/tasks/projects/${projectId}`, payload)
   return r.data
 }
@@ -122,7 +125,11 @@ export async function getTask(taskId: number | string) {
 }
 
 // без project_id задача создаётся вне проекта
-export async function createTask(payload: { title: string; description?: string; project_id?: number }) {
+export async function createTask(payload: {
+  title: string
+  description?: string
+  project_id?: number
+}) {
   const r = await api.post('/api/tasks/tasks', payload)
   return r.data
 }

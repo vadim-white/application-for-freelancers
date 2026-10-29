@@ -3,9 +3,7 @@
     <!-- Header -->
     <div class="profile-header">
       <div class="header-content">
-        <router-link to="/dashboard" class="back-link">
-          ← Вернуться
-        </router-link>
+        <router-link to="/dashboard" class="back-link"> ← Вернуться </router-link>
         <h1>👤 Профиль</h1>
       </div>
     </div>
@@ -173,12 +171,7 @@
 
       <!-- Actions -->
       <div class="actions-section">
-        <n-button 
-          type="error" 
-          @click="onLogout"
-          style="width: 100%; padding: 12px"
-          size="large"
-        >
+        <n-button type="error" @click="onLogout" style="width: 100%; padding: 12px" size="large">
           🚪 Выйти из системы
         </n-button>
       </div>

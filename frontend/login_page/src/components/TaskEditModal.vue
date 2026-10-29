@@ -4,7 +4,7 @@
     :closable="true"
     preset="dialog"
     class="task-edit-modal"
-    style="min-width:420px"
+    style="min-width: 420px"
   >
     <template #header>
       <div style="font-weight: 600; color: var(--color-text-primary)">✏️ Изменить задачу</div>
@@ -65,12 +65,7 @@
     <template #action>
       <n-space justify="end">
         <n-button @click="innerShow = false">Отмена</n-button>
-        <n-button
-          type="primary"
-          :loading="saving"
-          :disabled="projectsLoading"
-          @click="onSave"
-        >
+        <n-button type="primary" :loading="saving" :disabled="projectsLoading" @click="onSave">
           ✓ Сохранить
         </n-button>
       </n-space>
@@ -98,7 +93,10 @@ const props = defineProps({
 const emit = defineEmits(['update:show', 'saved'])
 
 const innerShow = ref(props.show)
-watch(() => props.show, (v) => (innerShow.value = v))
+watch(
+  () => props.show,
+  (v) => (innerShow.value = v)
+)
 watch(innerShow, (v) => emit('update:show', v))
 
 // у n-select значение null — «ничего не выбрано», поэтому «Без проекта» — 0
@@ -118,7 +116,9 @@ const form = reactive({
   status: 'todo' as TaskStatus,
   project: NO_PROJECT
 })
-const projectOptions = ref<{ label: string; value: number }[]>([{ label: 'Без проекта', value: NO_PROJECT }])
+const projectOptions = ref<{ label: string; value: number }[]>([
+  { label: 'Без проекта', value: NO_PROJECT }
+])
 const projectsLoading = ref(false)
 const saving = ref(false)
 const message = useMessage()

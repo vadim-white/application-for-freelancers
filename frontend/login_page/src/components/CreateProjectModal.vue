@@ -1,10 +1,5 @@
 <template>
-  <n-modal
-    v-model:show="innerShow"
-    :closable="true"
-    preset="dialog"
-    style="min-width:420px"
-  >
+  <n-modal v-model:show="innerShow" :closable="true" preset="dialog" style="min-width: 420px">
     <template #header>
       <div style="font-weight: 600; color: var(--color-text-primary)">📋 Создать новый проект</div>
     </template>
@@ -39,13 +34,7 @@
     <template #action>
       <n-space justify="end">
         <n-button @click="onCancel">Отмена</n-button>
-        <n-button
-          type="primary"
-          :loading="saving"
-          @click="onSave"
-        >
-          ✓ Создать
-        </n-button>
+        <n-button type="primary" :loading="saving" @click="onSave"> ✓ Создать </n-button>
       </n-space>
     </template>
   </n-modal>
@@ -64,7 +53,10 @@ const emit = defineEmits(['update:show', 'created'])
 
 /* видимость модалки — синхронизируем с родителем */
 const innerShow = ref(props.show)
-watch(() => props.show, (v) => (innerShow.value = v))
+watch(
+  () => props.show,
+  (v) => (innerShow.value = v)
+)
 watch(innerShow, (v) => emit('update:show', v))
 
 /* форма и состояния */

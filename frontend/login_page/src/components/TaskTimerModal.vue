@@ -26,8 +26,8 @@
 
         <!-- Таймер идёт на другой задаче -->
         <n-alert v-if="otherRunning" type="warning" class="other-timer">
-          Идёт таймер на «{{ timer.runningTitle }}» — {{ timer.formatted }}.
-          Старт остановит его и запустит эту задачу.
+          Идёт таймер на «{{ timer.runningTitle }}» — {{ timer.formatted }}. Старт остановит его и
+          запустит эту задачу.
         </n-alert>
 
         <!-- Таймер -->
@@ -73,7 +73,14 @@
 
         <!-- Заметка -->
         <div class="note-section">
-          <label style="font-weight: 500; color: var(--color-text-primary); display: block; margin-bottom: 8px">
+          <label
+            style="
+              font-weight: 500;
+              color: var(--color-text-primary);
+              display: block;
+              margin-bottom: 8px;
+            "
+          >
             📝 Заметка (опционально, сохраняется сама)
           </label>
           <n-input
@@ -91,7 +98,9 @@
         <div class="task-info">
           <div class="info-item">
             <span class="info-label">Статус:</span>
-            <n-tag type="info" round size="small" class="task-status">{{ status || 'pending' }}</n-tag>
+            <n-tag type="info" round size="small" class="task-status">{{
+              status || 'pending'
+            }}</n-tag>
           </div>
         </div>
       </div>
@@ -156,7 +165,9 @@ const otherRunning = computed(() => !!timer.entry && !running.value)
 const paused = computed(() => !!props.task && timer.lastStopped?.task_id === props.task.id)
 
 // запись, к которой относится заметка: идущая, а после паузы — последняя закрытая
-const noteEntry = computed(() => (running.value ? timer.entry : paused.value ? timer.lastStopped : null))
+const noteEntry = computed(() =>
+  running.value ? timer.entry : paused.value ? timer.lastStopped : null
+)
 
 // смена задачи или записи подставляет её заметку; пока записи нет, заметка уйдёт со стартом
 watch(
@@ -198,7 +209,8 @@ function startErrorText(err: unknown): string {
     const code = err.response?.status
     const detail = err.response?.data?.detail
     if (code === 404) return 'Задача не найдена — возможно, её удалили'
-    if (code === 409 && detail === 'Task is archived') return 'Задача или проект в архиве — таймер не запустить'
+    if (code === 409 && detail === 'Task is archived')
+      return 'Задача или проект в архиве — таймер не запустить'
     if (code === 409) return 'Таймер запустили одновременно в другом месте, попробуйте ещё раз'
     if (code === 503) return 'Сервис задач недоступен, попробуйте позже'
   }

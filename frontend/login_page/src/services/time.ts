@@ -35,7 +35,10 @@ export async function getTimer(): Promise<TimerState> {
   return r.data
 }
 
-export async function startTimer(payload: { task_id: number; description?: string }): Promise<TimerStarted> {
+export async function startTimer(payload: {
+  task_id: number
+  description?: string
+}): Promise<TimerStarted> {
   const r = await api.post('/api/time/timer/start', payload)
   return r.data
 }
@@ -46,7 +49,10 @@ export async function stopTimer(): Promise<TimerStopped> {
 }
 
 // описание можно менять и у идущей записи, и у закрытой; null очищает
-export async function updateTimeEntry(id: number, payload: { description: string | null }): Promise<TimeEntry> {
+export async function updateTimeEntry(
+  id: number,
+  payload: { description: string | null }
+): Promise<TimeEntry> {
   const r = await api.patch(`/api/time/time-entries/${id}`, payload)
   return r.data
 }

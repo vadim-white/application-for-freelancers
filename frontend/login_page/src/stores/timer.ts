@@ -5,8 +5,12 @@ import { getTask, type Task } from '../services/tasks'
 
 export function formatDuration(seconds: number): string {
   const s = Math.max(0, Math.floor(seconds))
-  const hh = Math.floor(s / 3600).toString().padStart(2, '0')
-  const mm = Math.floor((s % 3600) / 60).toString().padStart(2, '0')
+  const hh = Math.floor(s / 3600)
+    .toString()
+    .padStart(2, '0')
+  const mm = Math.floor((s % 3600) / 60)
+    .toString()
+    .padStart(2, '0')
   const ss = (s % 60).toString().padStart(2, '0')
   return `${hh}:${mm}:${ss}`
 }
@@ -14,7 +18,9 @@ export function formatDuration(seconds: number): string {
 // чч:мм для итогов (статистика): до ближайшей минуты
 export function formatHoursMinutes(seconds: number): string {
   const m = Math.round(Math.max(0, seconds) / 60)
-  return `${Math.floor(m / 60).toString().padStart(2, '0')}:${(m % 60).toString().padStart(2, '0')}`
+  return `${Math.floor(m / 60)
+    .toString()
+    .padStart(2, '0')}:${(m % 60).toString().padStart(2, '0')}`
 }
 
 // Источник истины — сервер; здесь только его последнее состояние и счёт секунд для показа
@@ -32,7 +38,10 @@ export const useTimerStore = defineStore('timer', () => {
 
   const elapsedSeconds = computed(() => {
     if (!entry.value) return 0
-    return Math.max(0, (now.value + clockOffsetMs.value - Date.parse(entry.value.started_at)) / 1000)
+    return Math.max(
+      0,
+      (now.value + clockOffsetMs.value - Date.parse(entry.value.started_at)) / 1000
+    )
   })
   const formatted = computed(() => formatDuration(elapsedSeconds.value))
   const runningTitle = computed(() => {

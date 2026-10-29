@@ -4,11 +4,11 @@
   </n-message-provider>
 </template>
 
-<script setup>
-</script>
+<script setup></script>
 
 <style>
-html, body {
+html,
+body {
   margin: 0;
   padding: 0;
   height: 100%;

@@ -8,18 +8,18 @@
         <p class="login-subtitle">Система управления проектами и временем</p>
       </div>
 
-      <n-card style="max-width:420px;">
+      <n-card style="max-width: 420px">
         <template #header>
-          <div style="text-align:center;width:100%">
-            <h2 style="margin:0;color:var(--color-text-primary)">Вход в систему</h2>
+          <div style="text-align: center; width: 100%">
+            <h2 style="margin: 0; color: var(--color-text-primary)">Вход в систему</h2>
           </div>
         </template>
 
         <n-form :model="form" ref="formRef">
           <n-form-item label="Email" path="email">
-            <n-input 
-              v-model:value="form.email" 
-              type="email" 
+            <n-input
+              v-model:value="form.email"
+              type="email"
               placeholder="your@email.com"
               clearable
               @keyup.enter="onSubmit"
@@ -27,21 +27,21 @@
           </n-form-item>
 
           <n-form-item label="Пароль" path="password">
-            <n-input 
-              v-model:value="form.password" 
-              type="password" 
+            <n-input
+              v-model:value="form.password"
+              type="password"
               placeholder="••••••••"
               show-password-on="click"
               @keyup.enter="onSubmit"
             />
           </n-form-item>
 
-          <div style="margin-top:24px;text-align:center">
-            <n-button 
-              type="primary" 
-              @click="onSubmit" 
+          <div style="margin-top: 24px; text-align: center">
+            <n-button
+              type="primary"
+              @click="onSubmit"
               :loading="loading"
-              style="width:100%;padding:10px"
+              style="width: 100%; padding: 10px"
               size="large"
             >
               Войти
@@ -50,11 +50,16 @@
         </n-form>
 
         <template #footer>
-          <div style="text-align:center;color:var(--color-text-secondary);font-size:14px">
+          <div style="text-align: center; color: var(--color-text-secondary); font-size: 14px">
             Еще не зарегистрированы?
-            <router-link 
+            <router-link
               to="/register"
-              style="color:var(--color-primary);text-decoration:none;font-weight:600;cursor:pointer"
+              style="
+                color: var(--color-primary);
+                text-decoration: none;
+                font-weight: 600;
+                cursor: pointer;
+              "
             >
               Зарегистрироваться
             </router-link>
