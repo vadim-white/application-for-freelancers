@@ -15,7 +15,7 @@
           </div>
         </template>
 
-        <n-form :model="form" ref="formRef">
+        <n-form ref="formRef" :model="form">
           <n-form-item label="Email" path="email">
             <n-input
               v-model:value="form.email"
@@ -39,10 +39,10 @@
           <div style="margin-top: 24px; text-align: center">
             <n-button
               type="primary"
-              @click="onSubmit"
               :loading="loading"
               style="width: 100%; padding: 10px"
               size="large"
+              @click="onSubmit"
             >
               Войти
             </n-button>
@@ -96,7 +96,6 @@ async function onSubmit() {
     message.success('Успешный вход')
     router.push('/dashboard')
   } catch (err: any) {
-    console.error(err)
     message.error(authErrorText(err, 'Ошибка входа'))
   } finally {
     loading.value = false

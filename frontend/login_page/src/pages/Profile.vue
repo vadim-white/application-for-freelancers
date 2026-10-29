@@ -171,7 +171,7 @@
 
       <!-- Actions -->
       <div class="actions-section">
-        <n-button type="error" @click="onLogout" style="width: 100%; padding: 12px" size="large">
+        <n-button type="error" style="width: 100%; padding: 12px" size="large" @click="onLogout">
           🚪 Выйти из системы
         </n-button>
       </div>

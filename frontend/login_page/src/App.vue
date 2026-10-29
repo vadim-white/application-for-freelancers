@@ -4,8 +4,6 @@
   </n-message-provider>
 </template>
 
-<script setup></script>
-
 <style>
 html,
 body {

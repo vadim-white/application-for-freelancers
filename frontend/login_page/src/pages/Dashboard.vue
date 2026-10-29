@@ -40,10 +40,10 @@
             </div>
           </div>
           <n-button-group>
-            <n-button text @click="toProfile" style="color: rgba(255, 255, 255, 0.8)">
+            <n-button text style="color: rgba(255, 255, 255, 0.8)" @click="toProfile">
               👤 Профиль
             </n-button>
-            <n-button text @click="onLogout" style="color: rgba(255, 255, 255, 0.8)">
+            <n-button text style="color: rgba(255, 255, 255, 0.8)" @click="onLogout">
               🚪 Выйти
             </n-button>
           </n-button-group>
@@ -290,24 +290,26 @@ async function loadStatistics() {
   try {
     const stats = await api.get('/api/tasks/statistics/users')
     usersStats.value = stats.data
-  } catch (err) {
-    console.error('Error loading statistics:', err)
+  } catch {
     message.error('Ошибка загрузки статистики')
     return
   }
   await loadStatsUsers(usersStats.value.map((row) => row.user_id))
 }
 
-// email и имя из auth порциями по 200 (лимит фильтра id); не нашёлся или auth ответил ошибкой — «#id»
+// email и имя из auth порциями по 200 (лимит фильтра id); не нашёлся или auth ответил ошибкой — «#id».
+// Об ошибке — одно предупреждение на всю загрузку, а не на каждую порцию
 async function loadStatsUsers(ids: number[]) {
+  let failed = false
   for (let i = 0; i < ids.length; i += 200) {
     try {
       const page = await listUsers({ id: ids.slice(i, i + 200), limit: 200 })
       for (const u of page.items) statsUsers[u.id] = u
-    } catch (err) {
-      console.error('Error loading statistics users:', err)
+    } catch {
+      failed = true
     }
   }
+  if (failed) message.warning('Не удалось загрузить email пользователей, показаны номера')
 }
 
 function userLabel(id: number) {
@@ -436,7 +438,7 @@ function createProjectOpen() {
   createProjectModal.value = true
 }
 
-function onProjectCreated(created: any) {
+function onProjectCreated() {
   load()
 }
 

@@ -48,10 +48,10 @@
           <div style="margin-top: 24px; text-align: center">
             <n-button
               type="primary"
-              @click="onRegister"
               :loading="loading"
               style="width: 100%; padding: 10px"
               size="large"
+              @click="onRegister"
             >
               Зарегистрироваться
             </n-button>
@@ -81,7 +81,6 @@
 
 <script setup lang="ts">
 import { ref } from 'vue'
-import api from '../services/api'
 import { useRouter } from 'vue-router'
 import { useMessage } from 'naive-ui'
 import { authErrorText } from '../services/errors'

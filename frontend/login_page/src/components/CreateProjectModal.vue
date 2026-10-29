@@ -19,8 +19,8 @@
 
           <n-form-item label="Описание" path="description">
             <n-input
-              type="textarea"
               v-model:value="form.description"
+              type="textarea"
               placeholder="Краткое описание проекта (опционально)"
               rows="4"
               maxlength="500"
@@ -91,8 +91,7 @@ async function onSave() {
     form.name = ''
     form.description = ''
     innerShow.value = false
-  } catch (err: any) {
-    console.error(err)
+  } catch {
     message.error('Ошибка при создании проекта')
   } finally {
     saving.value = false

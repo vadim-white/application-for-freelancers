@@ -88,7 +88,7 @@ import { errorText } from '../services/errors'
 
 const props = defineProps({
   show: { type: Boolean, default: false },
-  task: Object as PropType<Task | null>
+  task: { type: Object as PropType<Task | null>, default: null }
 })
 const emit = defineEmits(['update:show', 'saved'])
 

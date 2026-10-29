@@ -54,7 +54,7 @@ export const useAuthStore = defineStore('auth', () => {
       }
       user.value = r.data
       return user.value
-    } catch (err) {
+    } catch {
       user.value = null
       return null
     }

@@ -52,7 +52,7 @@ import { errorText } from '../services/errors'
 
 const props = defineProps({
   show: { type: Boolean, default: false },
-  project: Object as PropType<Project | null>
+  project: { type: Object as PropType<Project | null>, default: null }
 })
 const emit = defineEmits(['update:show', 'saved'])
 

@@ -1,10 +1,10 @@
 <template>
   <n-modal
     :show="innerShow"
-    @update:show="updateShow"
     :closable="true"
     preset="dialog"
     class="timer-modal"
+    @update:show="updateShow"
   >
     <template #header>
       <div style="font-weight: 600; display: flex; align-items: center; gap: 8px">
@@ -44,28 +44,28 @@
         <div class="timer-controls">
           <n-button
             type="primary"
-            @click="onStart"
             :disabled="running || busy"
             :loading="busy === 'start'"
             class="control-btn"
+            @click="onStart"
           >
             {{ paused ? '▶ Продолжить' : '▶ Старт' }}
           </n-button>
           <n-button
             type="warning"
-            @click="onPause"
             :disabled="!running || busy"
             :loading="busy === 'stop'"
             class="control-btn"
+            @click="onPause"
           >
             ⏸ Пауза
           </n-button>
           <n-button
             type="success"
-            @click="onMarkDone"
             :disabled="status === 'done' || busy"
             :loading="busy === 'done'"
             class="control-btn"
+            @click="onMarkDone"
           >
             ✓ Выполнена
           </n-button>
@@ -85,12 +85,12 @@
           </label>
           <n-input
             :value="note"
-            @update:value="onNoteInput"
             type="textarea"
             placeholder="Добавьте описание работы..."
             rows="3"
             maxlength="200"
             show-count
+            @update:value="onNoteInput"
           />
         </div>
 
@@ -123,7 +123,7 @@ import { useMessage } from 'naive-ui'
 
 const props = defineProps({
   show: Boolean,
-  task: Object as PropType<Task | null>
+  task: { type: Object as PropType<Task | null>, default: null }
 })
 const emit = defineEmits(['update:show', 'changed'])
 

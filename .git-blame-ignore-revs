@@ -3,3 +3,6 @@
 
 # ruff format: форматирование Python-кода четырёх сервисов (шаг 1.5.4)
 085f29303555e827531af4a3bd5d0f172db1b41f
+
+# Prettier: форматирование фронтенда frontend/login_page (шаг 3.1.1)
+5bb1b2cb293e4ed6f8338acc6028fc11e2de38f5

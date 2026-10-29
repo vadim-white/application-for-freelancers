@@ -1,11 +1,11 @@
 <template>
   <n-drawer
     :show="innerShow"
-    @update:show="updateShow"
     size="640px"
     :show-mask="true"
     placement="right"
     class="tasks-drawer"
+    @update:show="updateShow"
   >
     <!-- n-drawer сам слот header не выводит: заголовок — в n-drawer-content -->
     <n-drawer-content :native-scrollbar="false" closable>
@@ -63,8 +63,8 @@
                       size="small"
                       type="success"
                       text
-                      @click="markDone(task)"
                       :loading="task.isSaving"
+                      @click="markDone(task)"
                     >
                       ✓
                     </n-button>
@@ -167,7 +167,7 @@
               />
             </n-form-item>
             <div style="display: flex; gap: 8px">
-              <n-button type="primary" @click="addTask" :loading="adding" style="flex: 1">
+              <n-button type="primary" :loading="adding" style="flex: 1" @click="addTask">
                 ✓ Добавить задачу
               </n-button>
             </div>
@@ -204,7 +204,7 @@ import { useMessage } from 'naive-ui'
 // project — проект или { id: NO_PROJECT_ID, name: 'Без проекта' }: задачи вне проекта
 const props = defineProps({
   show: Boolean,
-  project: Object
+  project: { type: Object, default: null }
 })
 const emit = defineEmits(['update:show', 'open-task', 'changed'])
 
