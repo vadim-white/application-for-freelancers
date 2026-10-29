@@ -13,6 +13,15 @@ export interface TimeEntry {
   updated_at: string | null
 }
 
+// Строка статистики по пользователю (схема UserStatistics time-service; task-service проксирует)
+export interface UserStatistics {
+  user_id: number
+  entries_count: number
+  tasks_count: number
+  total_seconds: number
+  avg_seconds_per_task: number
+}
+
 export interface TimerState {
   entry: TimeEntry | null
   server_time: string

@@ -13,7 +13,7 @@
       <!-- User Card -->
       <div class="user-card">
         <div class="user-avatar">
-          {{ (auth.user?.full_name || auth.user?.email).charAt(0).toUpperCase() }}
+          {{ (auth.user?.full_name || auth.user?.email || '').charAt(0).toUpperCase() }}
         </div>
         <div class="user-info">
           <h2 class="user-name">{{ auth.user?.full_name || 'Пользователь' }}</h2>

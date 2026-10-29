@@ -15,8 +15,7 @@ export default defineConfigWithVueTs(
     name: 'app/rules',
     rules: {
       'no-console': 'error',
-      // пока предупреждение: станет error, когда any заменят типами
-      '@typescript-eslint/no-explicit-any': 'warn'
+      '@typescript-eslint/no-explicit-any': 'error'
     }
   },
   {

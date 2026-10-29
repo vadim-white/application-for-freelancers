@@ -186,12 +186,13 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch } from 'vue'
+import { ref, computed, watch, type PropType } from 'vue'
 import {
   NO_PROJECT_ID,
   getTasks,
   createTask,
   updateTask,
+  type ProjectRef,
   type Task,
   type TaskListParams,
   type TaskStatus
@@ -204,9 +205,12 @@ import { useMessage } from 'naive-ui'
 // project — проект или { id: NO_PROJECT_ID, name: 'Без проекта' }: задачи вне проекта
 const props = defineProps({
   show: Boolean,
-  project: { type: Object, default: null }
+  project: { type: Object as PropType<ProjectRef | null>, default: null }
 })
 const emit = defineEmits(['update:show', 'open-task', 'changed'])
+
+// isSaving — клиентский флаг на время запроса (кнопки «✓» и архива), в API его нет
+type DrawerTask = Task & { isSaving?: boolean }
 
 const innerShow = ref(props.show)
 watch(
@@ -236,10 +240,10 @@ const sortOptions = [
   { label: 'Статус ↓', value: '-status' }
 ]
 
-const currentTasks = ref<any[]>([])
+const currentTasks = ref<DrawerTask[]>([])
 const currentTotal = ref(0)
 const currentPage = ref(1)
-const doneTasks = ref<any[]>([])
+const doneTasks = ref<DrawerTask[]>([])
 const doneTotal = ref(0)
 const donePage = ref(1)
 const sort = ref<TaskListParams['sort']>(DEFAULT_SORT)
@@ -363,7 +367,7 @@ function onDonePage(p: number) {
 
 defineExpose({ loadTasks })
 
-function openTask(t: any) {
+function openTask(t: DrawerTask) {
   emit('open-task', t)
 }
 
@@ -397,7 +401,7 @@ function formatStatus(status: string): string {
   return statusMap[status] || status
 }
 
-async function markDone(t: any) {
+async function markDone(t: DrawerTask) {
   if (!t || !t.id) return
   t.isSaving = true
   try {
@@ -412,7 +416,7 @@ async function markDone(t: any) {
   }
 }
 
-async function toggleArchive(t: any) {
+async function toggleArchive(t: DrawerTask) {
   if (!t || !t.id) return
   t.isSaving = true
   try {

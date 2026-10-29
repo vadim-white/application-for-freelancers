@@ -95,7 +95,7 @@ async function onSubmit() {
     await auth.login(form.value.email, form.value.password)
     message.success('Успешный вход')
     router.push('/dashboard')
-  } catch (err: any) {
+  } catch (err) {
     message.error(authErrorText(err, 'Ошибка входа'))
   } finally {
     loading.value = false

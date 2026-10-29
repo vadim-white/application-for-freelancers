@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import api, { refreshAccessToken } from '../services/api'
+import type { UserItem } from '../services/users'
 
 // role из тела access-токена; подпись проверяет сервер, здесь токен только читается
 function tokenRole(token: string | null): string | null {
@@ -19,7 +20,7 @@ function tokenRole(token: string | null): string | null {
 export const useAuthStore = defineStore('auth', () => {
   const accessToken = ref<string | null>(localStorage.getItem('access_token'))
   const refreshToken = ref<string | null>(localStorage.getItem('refresh_token'))
-  const user = ref<any | null>(null)
+  const user = ref<UserItem | null>(null)
 
   const isAuthenticated = computed(() => !!accessToken.value)
 

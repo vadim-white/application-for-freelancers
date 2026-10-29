@@ -102,7 +102,7 @@ async function onRegister() {
     await auth.register(form.value)
     message.success('Зарегистрировано — выполните вход')
     router.push('/login')
-  } catch (e: any) {
+  } catch (e) {
     message.error(authErrorText(e, 'Ошибка регистрации'))
   } finally {
     loading.value = false

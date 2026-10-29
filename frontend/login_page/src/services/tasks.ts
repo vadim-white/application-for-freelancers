@@ -30,6 +30,12 @@ export interface Project {
 // Вместо проекта в панели задач: задачи вне проекта (project_id=none), карточка «Без проекта»
 export const NO_PROJECT_ID = 'none'
 
+// Проект в панели задач: проект из списка или карточка «Без проекта» (id = NO_PROJECT_ID)
+export interface ProjectRef {
+  id: number | typeof NO_PROJECT_ID
+  name: string
+}
+
 // Задача в превью карточки проекта
 export interface TaskPreview {
   id: number

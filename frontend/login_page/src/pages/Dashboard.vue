@@ -220,6 +220,7 @@ import {
   getTasks,
   updateProject,
   type ProjectListItem,
+  type ProjectRef,
   type Task
 } from '../services/tasks'
 import { errorText } from '../services/errors'
@@ -231,6 +232,7 @@ import CreateProjectModal from '../components/CreateProjectModal.vue'
 import ProjectEditModal from '../components/ProjectEditModal.vue'
 import { useMessage } from 'naive-ui'
 import api from '../services/api'
+import type { UserStatistics } from '../services/time'
 import { listUsers, type UserItem } from '../services/users'
 
 const router = useRouter()
@@ -264,16 +266,16 @@ const noProjectPreview = ref<Task[]>([])
 // ответ устаревшего запроса не должен затереть более новый
 let requestSeq = 0
 let noProjectSeq = 0
-const usersStats = ref<any[]>([])
+const usersStats = ref<UserStatistics[]>([])
 const statsUsers = reactive<Record<number, UserItem>>({})
 
 const currentTab = ref('tasks')
 
 const drawerShow = ref(false)
 const tasksDrawer = ref<InstanceType<typeof ProjectTasksDrawer> | null>(null)
-const activeProject = ref<any | null>(null)
+const activeProject = ref<ProjectRef | null>(null)
 
-const selectedTask = ref<any | null>(null)
+const selectedTask = ref<Task | null>(null)
 const taskModalShow = ref(false)
 
 const createProjectModal = ref(false)
@@ -288,7 +290,7 @@ function openEditProject(p: ProjectListItem) {
 
 async function loadStatistics() {
   try {
-    const stats = await api.get('/api/tasks/statistics/users')
+    const stats = await api.get<UserStatistics[]>('/api/tasks/statistics/users')
     usersStats.value = stats.data
   } catch {
     message.error('Ошибка загрузки статистики')
@@ -395,12 +397,12 @@ function openNoProject() {
   drawerShow.value = true
 }
 
-function openProject(p: any) {
+function openProject(p: ProjectListItem) {
   activeProject.value = p
   drawerShow.value = true
 }
 
-function openTaskModal(task: any) {
+function openTaskModal(task: Task) {
   selectedTask.value = task
   taskModalShow.value = true
 }
@@ -412,7 +414,14 @@ function openRunningTimer() {
   selectedTask.value =
     timer.runningTask?.id === entry.task_id
       ? timer.runningTask
-      : { id: entry.task_id, title: timer.runningTitle, description: null, status: null }
+      : // заглушка: задачи нет в runningTask (удалена или ещё не загрузилась), у окна таймера есть
+        // только id и название; остальные поля Task не заполнены, status — null, окно это терпит
+        ({
+          id: entry.task_id,
+          title: timer.runningTitle,
+          description: null,
+          status: null
+        } as unknown as Task)
   taskModalShow.value = true
 }
 
