@@ -44,7 +44,7 @@
         <div class="timer-controls">
           <n-button
             type="primary"
-            :disabled="running || busy"
+            :disabled="running || busy !== null"
             :loading="busy === 'start'"
             class="control-btn"
             @click="onStart"
@@ -53,7 +53,7 @@
           </n-button>
           <n-button
             type="warning"
-            :disabled="!running || busy"
+            :disabled="!running || busy !== null"
             :loading="busy === 'stop'"
             class="control-btn"
             @click="onPause"
@@ -62,7 +62,7 @@
           </n-button>
           <n-button
             type="success"
-            :disabled="status === 'done' || busy"
+            :disabled="status === 'done' || busy !== null"
             :loading="busy === 'done'"
             class="control-btn"
             @click="onMarkDone"
@@ -119,7 +119,7 @@ import { ref, watch, computed, type PropType } from 'vue'
 import { isAxiosError } from 'axios'
 import { updateTask, type Task } from '../services/tasks'
 import { useTimerStore, formatDuration } from '../stores/timer'
-import { useMessage } from 'naive-ui'
+import { NAlert, NButton, NInput, NModal, NSpace, NTag, useMessage } from 'naive-ui'
 
 const props = defineProps({
   show: Boolean,

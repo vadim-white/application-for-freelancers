@@ -230,7 +230,20 @@ import ProjectTasksDrawer from '../components/ProjectTasksDrawer.vue'
 import TaskTimerModal from '../components/TaskTimerModal.vue'
 import CreateProjectModal from '../components/CreateProjectModal.vue'
 import ProjectEditModal from '../components/ProjectEditModal.vue'
-import { useMessage } from 'naive-ui'
+import {
+  NAvatar,
+  NButton,
+  NButtonGroup,
+  NCard,
+  NLayout,
+  NLayoutContent,
+  NLayoutHeader,
+  NPagination,
+  NSelect,
+  NSwitch,
+  NTag,
+  useMessage
+} from 'naive-ui'
 import api from '../services/api'
 import type { UserStatistics } from '../services/time'
 import { listUsers, type UserItem } from '../services/users'

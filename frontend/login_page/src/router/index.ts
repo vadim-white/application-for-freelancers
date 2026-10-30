@@ -1,10 +1,12 @@
 import { createRouter, createWebHistory } from 'vue-router'
-import LoginPage from '../pages/Login.vue'
-import RegisterPage from '../pages/Register.vue'
-import Dashboard from '../pages/Dashboard.vue'
-import Profile from '../pages/Profile.vue'
-import Users from '../pages/Users.vue'
 import { useAuthStore } from '../stores/auth'
+
+// Страницы — ленивые: каждая в своём чанке, грузится при первом переходе на неё
+const LoginPage = () => import('../pages/Login.vue')
+const RegisterPage = () => import('../pages/Register.vue')
+const Dashboard = () => import('../pages/Dashboard.vue')
+const Profile = () => import('../pages/Profile.vue')
+const Users = () => import('../pages/Users.vue')
 
 const routes = [
   { path: '/', redirect: () => (useAuthStore().isAuthenticated ? '/dashboard' : '/login') },

@@ -20,6 +20,7 @@
 
 <script setup lang="ts">
 import type { PropType } from 'vue'
+import { NButton, NCard } from 'naive-ui'
 import type { TaskPreview } from '../services/tasks'
 
 // preview — первые три активные задачи вне проекта, total — число всех активных

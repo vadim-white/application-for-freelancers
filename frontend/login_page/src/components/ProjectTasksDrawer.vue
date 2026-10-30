@@ -200,7 +200,19 @@ import {
 import { errorText } from '../services/errors'
 import { useTimerStore } from '../stores/timer'
 import TaskEditModal from './TaskEditModal.vue'
-import { useMessage } from 'naive-ui'
+import {
+  NButton,
+  NDrawer,
+  NDrawerContent,
+  NForm,
+  NFormItem,
+  NInput,
+  NPagination,
+  NSelect,
+  NSpin,
+  NSwitch,
+  useMessage
+} from 'naive-ui'
 
 // project — проект или { id: NO_PROJECT_ID, name: 'Без проекта' }: задачи вне проекта
 const props = defineProps({

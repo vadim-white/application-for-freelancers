@@ -54,6 +54,7 @@
 
 <script setup lang="ts">
 import { defineProps, defineEmits, type PropType } from 'vue'
+import { NButton, NCard, NTag } from 'naive-ui'
 import type { ProjectListItem } from '../services/tasks'
 
 // tasks_preview — первые три активные задачи, tasks_count — число всех активных

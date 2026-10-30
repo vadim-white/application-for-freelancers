@@ -75,7 +75,17 @@
 
 <script setup lang="ts">
 import { reactive, ref, watch, type PropType } from 'vue'
-import { useMessage } from 'naive-ui'
+import {
+  NButton,
+  NDatePicker,
+  NForm,
+  NFormItem,
+  NInput,
+  NModal,
+  NSelect,
+  NSpace,
+  useMessage
+} from 'naive-ui'
 import {
   getProject,
   getProjects,

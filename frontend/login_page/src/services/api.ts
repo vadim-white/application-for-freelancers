@@ -24,7 +24,7 @@ api.interceptors.request.use((config) => {
 // 401 на этих путях — ответ на сами учётные данные, refresh не поможет
 const NO_REFRESH_PATHS = ['/api/auth/login', '/api/auth/register', '/api/auth/refresh']
 
-// один общий запрос refresh на все параллельные 401
+// один общий запрос refresh на все 401, пришедшие, пока он идёт
 let refreshPromise: Promise<string> | null = null
 
 async function requestRefresh(): Promise<string> {
@@ -65,6 +65,10 @@ api.interceptors.response.use(
       return Promise.reject(error)
     }
     config._retry = true
+    // запрос ушёл со старым токеном, а ответ пришёл, когда refresh уже прошёл: повторить с новым,
+    // второй refresh не нужен
+    const current = localStorage.getItem('access_token')
+    if (current && config.headers.Authorization !== `Bearer ${current}`) return api(config)
     try {
       await refreshAccessToken()
     } catch (refreshError) {

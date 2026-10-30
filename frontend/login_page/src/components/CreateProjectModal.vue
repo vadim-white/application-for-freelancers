@@ -43,7 +43,7 @@
 <script setup lang="ts">
 import { reactive, ref, watch } from 'vue'
 import { createProject as createTaskProject } from '../services/tasks'
-import { useMessage } from 'naive-ui'
+import { NButton, NForm, NFormItem, NInput, NModal, NSpace, useMessage } from 'naive-ui'
 
 /* props / emits */
 const props = defineProps({

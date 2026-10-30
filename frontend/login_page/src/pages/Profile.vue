@@ -181,6 +181,7 @@
 
 <script setup lang="ts">
 import { computed } from 'vue'
+import { NButton, NCard, NTag } from 'naive-ui'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '../stores/auth'
 

@@ -1,8 +1,36 @@
-import { defineConfig } from 'vite'
+import { defineConfig, type Plugin } from 'vite'
 import vue from '@vitejs/plugin-vue'
 
+// Vite только предупреждает о чанке больше 500 kB и сборку не останавливает — здесь сборка падает
+// (локально и в CI). Порог тот же, что у предупреждения Vite: 500 000 байт минифицированного JS
+const MAX_CHUNK_BYTES = 500_000
+
+function chunkSizeLimit(): Plugin {
+  return {
+    name: 'chunk-size-limit',
+    apply: 'build',
+    generateBundle: {
+      // после хуков Vite: они дописывают в чанки карту preload, мерить надо итоговый код
+      order: 'post',
+      handler(_options, bundle) {
+        const tooBig = Object.values(bundle)
+          .filter((item) => item.type === 'chunk')
+          .map((chunk) => ({
+            name: chunk.fileName,
+            bytes: new TextEncoder().encode(chunk.code).length
+          }))
+          .filter((chunk) => chunk.bytes > MAX_CHUNK_BYTES)
+        if (tooBig.length > 0) {
+          const list = tooBig.map((chunk) => `${chunk.name} ${chunk.bytes} байт`).join(', ')
+          this.error(`JS-чанк больше ${MAX_CHUNK_BYTES} байт: ${list}`)
+        }
+      }
+    }
+  }
+}
+
 export default defineConfig({
-  plugins: [vue()],
+  plugins: [vue(), chunkSizeLimit()],
   server: {
     port: 5173,
     hmr: {

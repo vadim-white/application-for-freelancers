@@ -46,7 +46,7 @@
 
 <script setup lang="ts">
 import { reactive, ref, watch, type PropType } from 'vue'
-import { useMessage } from 'naive-ui'
+import { NButton, NForm, NFormItem, NInput, NModal, NSpace, useMessage } from 'naive-ui'
 import { updateProject, type Project, type ProjectPatch } from '../services/tasks'
 import { errorText } from '../services/errors'
 

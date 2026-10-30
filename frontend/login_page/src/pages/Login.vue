@@ -19,7 +19,7 @@
           <n-form-item label="Email" path="email">
             <n-input
               v-model:value="form.email"
-              type="email"
+              :input-props="{ type: 'email', autocomplete: 'email' }"
               placeholder="your@email.com"
               clearable
               @keyup.enter="onSubmit"
@@ -74,7 +74,7 @@
 import { ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '../stores/auth'
-import { useMessage } from 'naive-ui'
+import { NButton, NCard, NForm, NFormItem, NInput, useMessage } from 'naive-ui'
 import { authErrorText } from '../services/errors'
 
 const auth = useAuthStore()
