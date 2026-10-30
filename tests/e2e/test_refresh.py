@@ -3,16 +3,17 @@
 На 401 (кроме login/register/refresh) интерцептор делает один общий POST /api/auth/refresh на все
 параллельные запросы (refreshPromise) и повторяет их; неудачный refresh удаляет токены
 и уводит на /login; 429 на refresh (лимит входа) сессию не завершает.
-При перезагрузке /dashboard GET /api/auth/me идёт и из стора, и из onMounted (дашборд — ленивый
-чанк, его запрос может уйти со старым токеном, пока refresh в пути, и получить 401 уже после него):
-refresh всё равно один — 401 до него ждут общий промис, 401 после него повторяются с новым токеном.
+При перезагрузке /dashboard GET /api/auth/me идёт из стора и из onMounted дашборда. Дашборд —
+ленивый чанк, и без задержки второй запрос мог уйти и до, и во время, и после refresh (зависит от
+скорости машины), поэтому тест держит ответ refresh, пока оба запроса не получат 401: так
+проверяется именно общий промис, а не один запрос.
 """
 
 import re
 
 from playwright.sync_api import expect
 
-from helpers import USER1, api_path, local_storage, login
+from helpers import USER1, local_storage, login, wait_responses
 
 REFRESH = ("POST", "/api/auth/refresh")
 
@@ -24,20 +25,16 @@ def test_expired_access_token_refreshed_once(open_session, base_url):
 
     s.page.evaluate("localStorage.setItem('access_token', 'abc')")
     s.net.clear()
-    # 401 только на запросы со старым токеном: (путь, код, Authorization)
-    sent = []
-    s.page.on(
-        "response",
-        lambda r: (
-            sent.append((api_path(r.url), r.status, r.request.headers.get("authorization")))
-            if api_path(r.url).startswith("/api/")
-            else None
-        ),
-    )
+    held = []
+    s.page.route("**/api/auth/refresh", lambda route: held.append(route))
+    s.page.reload()
+    wait_responses(s, "GET", "/api/auth/me", 2)
+    assert len(held) == 1, f"refresh до двух 401: {len(held)}; ответы API: {s.net.responses}"
     with s.page.expect_response(
         lambda r: r.request.method == REFRESH[0] and r.url.endswith(REFRESH[1])
     ):
-        s.page.reload()
+        held[0].continue_()
+    s.page.unroute("**/api/auth/refresh")
     # повторы после refresh и загрузка проектов — дождаться, пока сеть затихнет
     s.page.wait_for_load_state("networkidle")
 
@@ -58,9 +55,7 @@ def test_expired_access_token_refreshed_once(open_session, base_url):
         assert (m, p, 200) in log[i_refresh + 1 :], (
             f"{m} {p} не повторён с 200 после refresh; {log}"
         )
-    assert all(st in (200, 401) for _, _, st in log[i_refresh + 1 :]), f"после refresh: {log}"
-    stale = [(p, auth) for p, st, auth in sent if st == 401 and auth != "Bearer abc"]
-    assert stale == [], f"401 на запрос не со старым токеном: {stale}; ответы API: {log}"
+    assert all(st == 200 for _, _, st in log[i_refresh + 1 :]), f"после refresh не все 200: {log}"
 
     expect(s.page).to_have_url(re.compile(r"/dashboard$"))
     new_access = local_storage(s.page, "access_token")
