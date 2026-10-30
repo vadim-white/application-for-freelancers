@@ -1,22 +1,15 @@
 <template>
-  <n-message-provider>
-    <router-view />
-  </n-message-provider>
+  <n-config-provider :theme-overrides="overrides">
+    <n-message-provider>
+      <router-view />
+    </n-message-provider>
+  </n-config-provider>
 </template>
 
 <script setup lang="ts">
-import { NMessageProvider } from 'naive-ui'
+import { NConfigProvider, NMessageProvider } from 'naive-ui'
+import { palettes, themeOverrides } from './styles/tokens'
+
+// Светлая тема; тёмную и переключатель добавляет 3.2.5
+const overrides = themeOverrides(palettes.light)
 </script>
-
-<style>
-html,
-body {
-  margin: 0;
-  padding: 0;
-  height: 100%;
-}
-
-#app {
-  height: 100%;
-}
-</style>

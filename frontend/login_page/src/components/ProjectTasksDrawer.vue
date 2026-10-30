@@ -474,11 +474,6 @@ async function addTask() {
 </script>
 
 <style scoped>
-.tasks-drawer :deep(.n-drawer__header) {
-  background: var(--primary-gradient) !important;
-  color: white !important;
-}
-
 .drawer-content {
   padding: 20px;
   height: 100%;
@@ -495,8 +490,8 @@ async function addTask() {
 
 .section-title {
   font-size: 14px;
-  font-weight: 600;
-  color: var(--color-text-primary);
+  font-weight: var(--weight-strong);
+  color: var(--color-text);
   margin: 0 0 16px 0;
   display: flex;
   align-items: center;
@@ -518,14 +513,16 @@ async function addTask() {
   align-items: flex-start;
   gap: 12px;
   padding: 12px;
-  background: rgba(102, 126, 234, 0.05);
-  border-radius: 8px;
-  border-left: 4px solid var(--color-primary);
-  transition: var(--transition-smooth);
+  background: var(--color-surface-hover);
+  border-radius: var(--radius-md);
+  border-left: 4px solid var(--color-accent);
+  transition:
+    background var(--transition),
+    transform var(--transition);
 }
 
 .task-item:hover {
-  background: rgba(102, 126, 234, 0.1);
+  background: var(--color-accent-soft);
   transform: translateX(4px);
 }
 
@@ -547,30 +544,30 @@ async function addTask() {
 
 .task-status-badge {
   font-size: 11px;
-  font-weight: 600;
+  font-weight: var(--weight-strong);
   padding: 4px 8px;
   border-radius: 4px;
   white-space: nowrap;
 }
 
 .badge-todo {
-  background: rgba(79, 172, 254, 0.2);
-  color: #4facfe;
+  background: var(--color-status-todo-soft);
+  color: var(--color-text);
 }
 
 .badge-in_progress {
-  background: rgba(247, 151, 30, 0.2);
-  color: #f7971e;
+  background: var(--color-status-in-progress-soft);
+  color: var(--color-text);
 }
 
 .badge-done {
-  background: rgba(86, 171, 47, 0.2);
-  color: #56ab2f;
+  background: var(--color-status-done-soft);
+  color: var(--color-text);
 }
 
 .badge-blocked {
-  background: rgba(235, 87, 87, 0.2);
-  color: #eb5757;
+  background: var(--color-status-blocked-soft);
+  color: var(--color-text);
 }
 
 .task-filters {
@@ -599,7 +596,7 @@ async function addTask() {
 
 .task-item-done {
   opacity: 0.7;
-  border-left-color: #56ab2f;
+  border-left-color: var(--color-status-done);
 }
 
 .task-item-done .task-title {
@@ -607,8 +604,8 @@ async function addTask() {
 }
 
 .task-title {
-  font-weight: 600;
-  color: var(--color-text-primary);
+  font-weight: var(--weight-strong);
+  color: var(--color-text);
   flex: 1;
 }
 
@@ -639,8 +636,8 @@ async function addTask() {
 
 .add-task-section {
   padding: 16px;
-  background: rgba(102, 126, 234, 0.05);
-  border-radius: 8px;
-  border: 1px dashed var(--color-border);
+  background: var(--color-surface-hover);
+  border-radius: var(--radius-md);
+  border: 1px dashed var(--color-line);
 }
 </style>

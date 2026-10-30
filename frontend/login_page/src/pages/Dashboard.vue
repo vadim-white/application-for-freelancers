@@ -1,10 +1,9 @@
 <template>
   <n-layout>
-    <!-- Header with gradient -->
     <n-layout-header class="dashboard-header">
       <div class="header-content">
         <div class="header-title">
-          <h1 style="margin: 0; color: white; font-size: 24px">📊 Проекты</h1>
+          <h1 style="margin: 0; color: var(--color-text); font-size: 24px">📊 Проекты</h1>
         </div>
 
         <div class="header-nav">
@@ -30,7 +29,11 @@
 
         <div class="header-user">
           <div class="user-info">
-            <n-avatar v-if="auth.user" round :style="{ background: 'rgba(255,255,255,0.3)' }">
+            <n-avatar
+              v-if="auth.user"
+              round
+              :style="{ background: 'var(--color-accent-soft)', color: 'var(--color-text)' }"
+            >
               {{ (auth.user.full_name || auth.user.email).charAt(0).toUpperCase() }}
             </n-avatar>
             <div class="user-text">
@@ -40,10 +43,10 @@
             </div>
           </div>
           <n-button-group>
-            <n-button text style="color: rgba(255, 255, 255, 0.8)" @click="toProfile">
+            <n-button text style="color: var(--color-text-secondary)" @click="toProfile">
               👤 Профиль
             </n-button>
-            <n-button text style="color: rgba(255, 255, 255, 0.8)" @click="onLogout">
+            <n-button text style="color: var(--color-text-secondary)" @click="onLogout">
               🚪 Выйти
             </n-button>
           </n-button-group>
@@ -483,9 +486,8 @@ onUnmounted(() => {
 
 <style scoped>
 .dashboard-header {
-  background: var(--primary-gradient) !important;
-  padding: 0 !important;
-  height: auto !important;
+  padding: 0;
+  height: auto;
 }
 
 .header-content {
@@ -512,7 +514,7 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   gap: 16px;
-  color: white;
+  color: var(--color-text);
 }
 
 .user-info {
@@ -527,7 +529,7 @@ onUnmounted(() => {
 }
 
 .user-name {
-  font-weight: 600;
+  font-weight: var(--weight-strong);
   font-size: 14px;
 }
 
@@ -537,8 +539,8 @@ onUnmounted(() => {
 }
 
 .dashboard-content {
-  padding: 32px 24px !important;
-  background: var(--color-bg-light);
+  padding: 32px 24px;
+  background: var(--color-bg);
   min-height: calc(100vh - 80px);
 }
 
@@ -552,8 +554,8 @@ onUnmounted(() => {
 
 .section-header h2 {
   font-size: 28px;
-  font-weight: 700;
-  color: var(--color-text-primary);
+  font-weight: var(--weight-heading);
+  color: var(--color-text);
   margin: 0;
 }
 
@@ -582,9 +584,9 @@ onUnmounted(() => {
 }
 
 .create-project-card {
-  background: white;
-  border: 2px dashed var(--color-primary);
-  border-radius: 12px;
+  background: var(--color-surface);
+  border: 2px dashed var(--color-accent);
+  border-radius: var(--radius-lg);
   padding: 24px;
   cursor: pointer;
   display: flex;
@@ -592,20 +594,22 @@ onUnmounted(() => {
   align-items: center;
   justify-content: center;
   min-height: 200px;
-  transition: var(--transition-smooth);
-  color: var(--color-primary);
+  transition:
+    box-shadow var(--transition),
+    transform var(--transition);
+  color: var(--color-accent);
 }
 
 .create-project-card:hover {
-  background: linear-gradient(135deg, rgba(102, 126, 234, 0.05) 0%, rgba(118, 75, 162, 0.05) 100%);
+  background: var(--color-accent-soft);
   transform: translateY(-4px);
-  box-shadow: 0 8px 20px rgba(102, 126, 234, 0.15);
+  box-shadow: var(--shadow-overlay);
 }
 
 .create-project-icon {
   font-size: 48px;
   margin-bottom: 12px;
-  font-weight: 700;
+  font-weight: var(--weight-heading);
 }
 
 .create-project-text {
@@ -613,7 +617,7 @@ onUnmounted(() => {
 }
 
 .create-project-title {
-  font-weight: 600;
+  font-weight: var(--weight-strong);
   font-size: 16px;
   margin-bottom: 4px;
 }
@@ -630,35 +634,31 @@ onUnmounted(() => {
   color: var(--color-text-secondary);
 }
 
-.stats-table-card {
-  border-radius: 12px !important;
-}
-
 .stats-table {
   width: 100%;
   border-collapse: collapse;
 }
 
 .stats-table thead tr {
-  background: linear-gradient(135deg, rgba(102, 126, 234, 0.1) 0%, rgba(118, 75, 162, 0.1) 100%);
+  background: var(--color-surface-hover);
 }
 
 .stats-table th {
   padding: 14px 16px;
   text-align: left;
-  font-weight: 600;
-  color: var(--color-text-primary);
-  border-bottom: 2px solid var(--color-border);
+  font-weight: var(--weight-strong);
+  color: var(--color-text);
+  border-bottom: 2px solid var(--color-line);
 }
 
 .stats-table td {
   padding: 14px 16px;
-  border-bottom: 1px solid var(--color-border);
-  color: var(--color-text-primary);
+  border-bottom: 1px solid var(--color-line);
+  color: var(--color-text);
 }
 
 .stats-table tbody tr:hover {
-  background: rgba(102, 126, 234, 0.05);
+  background: var(--color-surface-hover);
 }
 
 .text-center {
@@ -697,7 +697,7 @@ onUnmounted(() => {
 
 @media (max-width: 640px) {
   .dashboard-content {
-    padding: 20px 16px !important;
+    padding: 20px 16px;
   }
 
   .header-content {

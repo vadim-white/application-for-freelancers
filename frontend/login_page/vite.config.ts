@@ -1,5 +1,6 @@
 import { defineConfig, type Plugin } from 'vite'
 import vue from '@vitejs/plugin-vue'
+import { tokensCss } from './src/styles/tokens.ts'
 
 // Vite только предупреждает о чанке больше 500 kB и сборку не останавливает — здесь сборка падает
 // (локально и в CI). Порог тот же, что у предупреждения Vite: 500 000 байт минифицированного JS
@@ -29,8 +30,24 @@ function chunkSizeLimit(): Plugin {
   }
 }
 
+// CSS-переменные из src/styles/tokens.ts кладутся в <head> inline: они на месте до первой отрисовки
+// и общий источник с themeOverrides Naive UI (там hex нужен в JS)
+function designTokens(): Plugin {
+  return {
+    name: 'design-tokens',
+    transformIndexHtml: () => [
+      {
+        tag: 'style',
+        attrs: { id: 'design-tokens' },
+        children: tokensCss(),
+        injectTo: 'head-prepend'
+      }
+    ]
+  }
+}
+
 export default defineConfig({
-  plugins: [vue(), chunkSizeLimit()],
+  plugins: [vue(), designTokens(), chunkSizeLimit()],
   server: {
     port: 5173,
     hmr: {

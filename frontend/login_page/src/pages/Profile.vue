@@ -201,16 +201,16 @@ function onLogout() {
 <style scoped>
 .profile-container {
   min-height: 100vh;
-  background: var(--color-bg-light);
+  background: var(--color-bg);
   display: flex;
   flex-direction: column;
 }
 
 .profile-header {
-  background: var(--primary-gradient);
-  color: white;
+  background: var(--color-surface);
+  color: var(--color-text);
   padding: 24px;
-  box-shadow: 0 4px 12px var(--color-shadow);
+  border-bottom: 1px solid var(--color-line);
 }
 
 .header-content {
@@ -223,21 +223,21 @@ function onLogout() {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  color: rgba(255, 255, 255, 0.8);
+  color: var(--color-text-secondary);
   text-decoration: none;
   margin-bottom: 12px;
-  transition: color 0.3s ease;
-  font-weight: 500;
+  transition: color var(--transition);
+  font-weight: var(--weight-text);
 }
 
 .back-link:hover {
-  color: white;
+  color: var(--color-text);
 }
 
 .header-content h1 {
   font-size: 32px;
   margin: 0;
-  font-weight: 700;
+  font-weight: var(--weight-heading);
 }
 
 .profile-content {
@@ -254,9 +254,9 @@ function onLogout() {
   align-items: center;
   gap: 24px;
   padding: 24px;
-  background: white;
-  border-radius: 12px;
-  box-shadow: 0 4px 12px var(--color-shadow);
+  background: var(--color-surface);
+  border: 1px solid var(--color-line);
+  border-radius: var(--radius-lg);
   margin-bottom: 32px;
   animation: slideInUp 0.4s ease-out;
 }
@@ -265,13 +265,13 @@ function onLogout() {
   width: 100px;
   height: 100px;
   border-radius: 50%;
-  background: var(--primary-gradient);
-  color: white;
+  background: var(--color-accent);
+  color: var(--color-on-accent);
   display: flex;
   align-items: center;
   justify-content: center;
   font-size: 48px;
-  font-weight: 700;
+  font-weight: var(--weight-heading);
   flex-shrink: 0;
 }
 
@@ -281,8 +281,8 @@ function onLogout() {
 
 .user-name {
   font-size: 24px;
-  font-weight: 700;
-  color: var(--color-text-primary);
+  font-weight: var(--weight-heading);
+  color: var(--color-text);
   margin: 0 0 4px 0;
 }
 
@@ -296,18 +296,18 @@ function onLogout() {
   display: inline-block;
   padding: 8px 16px;
   border-radius: 20px;
-  font-weight: 600;
+  font-weight: var(--weight-strong);
   font-size: 13px;
 }
 
 .role-admin {
-  background: linear-gradient(135deg, rgba(247, 151, 30, 0.2) 0%, rgba(255, 210, 0, 0.2) 100%);
-  color: #f7971e;
+  background: var(--color-accent-soft);
+  color: var(--color-text);
 }
 
 .role-user {
-  background: linear-gradient(135deg, rgba(79, 172, 254, 0.2) 0%, rgba(0, 242, 254, 0.2) 100%);
-  color: #4facfe;
+  background: var(--color-status-todo-soft);
+  color: var(--color-text);
 }
 
 /* Capabilities Section */
@@ -317,8 +317,8 @@ function onLogout() {
 
 .section-title {
   font-size: 18px;
-  font-weight: 700;
-  color: var(--color-text-primary);
+  font-weight: var(--weight-heading);
+  color: var(--color-text);
   margin-bottom: 20px;
   display: flex;
   align-items: center;
@@ -337,22 +337,24 @@ function onLogout() {
   align-items: flex-start;
   gap: 16px;
   padding: 16px;
-  background: white;
-  border-radius: 12px;
-  border-left: 4px solid var(--color-primary);
-  box-shadow: 0 4px 12px var(--color-shadow);
-  transition: var(--transition-smooth);
+  background: var(--color-surface);
+  border: 1px solid var(--color-line);
+  border-radius: var(--radius-lg);
+  border-left: 4px solid var(--color-accent);
+  transition:
+    box-shadow var(--transition),
+    transform var(--transition);
 }
 
 .capability-card:hover:not(.disabled) {
-  box-shadow: 0 8px 24px rgba(102, 126, 234, 0.2);
+  box-shadow: var(--shadow-overlay);
   transform: translateY(-4px);
 }
 
 .capability-card.disabled {
-  border-left-color: var(--color-border);
+  border-left-color: var(--color-line);
   opacity: 0.7;
-  background: rgba(0, 0, 0, 0.02);
+  background: var(--color-surface-hover);
 }
 
 .capability-icon {
@@ -365,8 +367,8 @@ function onLogout() {
 }
 
 .capability-title {
-  font-weight: 600;
-  color: var(--color-text-primary);
+  font-weight: var(--weight-strong);
+  color: var(--color-text);
   margin-bottom: 4px;
   font-size: 14px;
 }
@@ -378,18 +380,18 @@ function onLogout() {
 }
 
 .capability-status {
-  color: #56ab2f;
-  font-weight: 600;
+  color: var(--color-text);
+  font-weight: var(--weight-strong);
   font-size: 12px;
   padding: 4px 8px;
-  background: rgba(86, 171, 47, 0.1);
+  background: var(--color-accent-soft);
   border-radius: 4px;
   white-space: nowrap;
 }
 
 .capability-card.disabled .capability-status {
-  color: #f5576c;
-  background: rgba(245, 87, 108, 0.1);
+  color: var(--color-text);
+  background: var(--color-status-blocked-soft);
 }
 
 /* Info Section */
@@ -398,11 +400,7 @@ function onLogout() {
 }
 
 .info-card {
-  background: white !important;
-  border: none !important;
-  border-radius: 12px !important;
-  box-shadow: 0 4px 12px var(--color-shadow) !important;
-  padding: 20px !important;
+  padding: 20px;
 }
 
 .info-row {
@@ -410,7 +408,7 @@ function onLogout() {
   justify-content: space-between;
   align-items: center;
   padding: 12px 0;
-  border-bottom: 1px solid var(--color-border);
+  border-bottom: 1px solid var(--color-line);
 }
 
 .info-row:last-child {
@@ -418,8 +416,8 @@ function onLogout() {
 }
 
 .info-label {
-  font-weight: 600;
-  color: var(--color-text-primary);
+  font-weight: var(--weight-strong);
+  color: var(--color-text);
   font-size: 14px;
 }
 

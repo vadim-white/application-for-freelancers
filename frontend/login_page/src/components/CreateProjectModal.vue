@@ -1,7 +1,7 @@
 <template>
   <n-modal v-model:show="innerShow" :closable="true" preset="dialog" style="min-width: 420px">
     <template #header>
-      <div style="font-weight: 600; color: var(--color-text-primary)">📋 Создать новый проект</div>
+      <div style="font-weight: 600; color: var(--color-text)">📋 Создать новый проект</div>
     </template>
 
     <template #default>

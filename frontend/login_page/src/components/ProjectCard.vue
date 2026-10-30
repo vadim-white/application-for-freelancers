@@ -83,14 +83,12 @@ function formatStatus(status: string): string {
 <style scoped>
 .project-card {
   cursor: pointer;
-  transition: var(--transition-smooth);
+  transition:
+    box-shadow var(--transition),
+    transform var(--transition);
   display: flex;
   flex-direction: column;
   height: 100%;
-  border: none !important;
-  border-radius: 12px !important;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08) !important;
-  background: white !important;
   overflow: hidden;
 }
 
@@ -101,12 +99,12 @@ function formatStatus(status: string): string {
   left: 0;
   right: 0;
   height: 4px;
-  background: var(--primary-gradient);
-  transition: height 0.3s ease;
+  background: var(--color-accent);
+  transition: height var(--transition);
 }
 
 .project-card:hover {
-  box-shadow: 0 8px 24px rgba(102, 126, 234, 0.2) !important;
+  box-shadow: var(--shadow-overlay);
   transform: translateY(-4px);
 }
 
@@ -120,7 +118,7 @@ function formatStatus(status: string): string {
   justify-content: space-between;
   gap: 12px;
   padding: 16px;
-  border-bottom: 1px solid var(--color-border);
+  border-bottom: 1px solid var(--color-line);
 }
 
 .card-title-section {
@@ -131,8 +129,8 @@ function formatStatus(status: string): string {
 .card-title {
   margin: 0 0 4px 0;
   font-size: 16px;
-  font-weight: 600;
-  color: var(--color-text-primary);
+  font-weight: var(--weight-strong);
+  color: var(--color-text);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -160,8 +158,8 @@ function formatStatus(status: string): string {
 }
 
 .tasks-label {
-  font-weight: 600;
-  color: var(--color-text-primary);
+  font-weight: var(--weight-strong);
+  color: var(--color-text);
   font-size: 13px;
   display: flex;
   align-items: center;
@@ -169,7 +167,7 @@ function formatStatus(status: string): string {
 }
 
 .task-count {
-  font-weight: 500;
+  font-weight: var(--weight-text);
   color: var(--color-text-secondary);
 }
 
@@ -184,13 +182,13 @@ function formatStatus(status: string): string {
   align-items: flex-start;
   gap: 10px;
   padding: 8px;
-  border-radius: 6px;
-  background: rgba(102, 126, 234, 0.04);
-  transition: background 0.2s ease;
+  border-radius: var(--radius-md);
+  background: var(--color-surface-hover);
+  transition: background var(--transition);
 }
 
 .task-item:hover {
-  background: rgba(102, 126, 234, 0.08);
+  background: var(--color-accent-soft);
 }
 
 .task-icon {
@@ -200,7 +198,7 @@ function formatStatus(status: string): string {
   align-items: center;
   justify-content: center;
   font-size: 12px;
-  font-weight: 600;
+  font-weight: var(--weight-strong);
 }
 
 .status-icon {
@@ -210,8 +208,8 @@ function formatStatus(status: string): string {
   width: 16px;
   height: 16px;
   border-radius: 50%;
-  background: var(--color-primary);
-  color: white;
+  background: var(--color-accent);
+  color: var(--color-on-accent);
   font-size: 10px;
 }
 
@@ -222,8 +220,8 @@ function formatStatus(status: string): string {
 
 .task-title {
   font-size: 13px;
-  font-weight: 500;
-  color: var(--color-text-primary);
+  font-weight: var(--weight-text);
+  color: var(--color-text);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -238,23 +236,23 @@ function formatStatus(status: string): string {
 }
 
 .status-done {
-  background: rgba(86, 171, 47, 0.15);
-  color: #56ab2f;
+  background: var(--color-status-done-soft);
+  color: var(--color-text);
 }
 
 .status-in_progress {
-  background: rgba(247, 151, 30, 0.15);
-  color: #f7971e;
+  background: var(--color-status-in-progress-soft);
+  color: var(--color-text);
 }
 
 .status-todo {
-  background: rgba(79, 172, 254, 0.15);
-  color: #4facfe;
+  background: var(--color-status-todo-soft);
+  color: var(--color-text);
 }
 
 .status-blocked {
-  background: rgba(235, 87, 87, 0.15);
-  color: #eb5757;
+  background: var(--color-status-blocked-soft);
+  color: var(--color-text);
 }
 
 .empty-tasks {
@@ -270,8 +268,8 @@ function formatStatus(status: string): string {
 .card-footer {
   display: flex;
   padding: 12px 16px;
-  border-top: 1px solid var(--color-border);
-  background: rgba(102, 126, 234, 0.02);
+  border-top: 1px solid var(--color-line);
+  background: var(--color-surface-hover);
 }
 
 @media (max-width: 640px) {

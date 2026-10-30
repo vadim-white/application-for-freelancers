@@ -7,7 +7,7 @@
     style="min-width: 420px"
   >
     <template #header>
-      <div style="font-weight: 600; color: var(--color-text-primary)">✏️ Изменить задачу</div>
+      <div style="font-weight: 600; color: var(--color-text)">✏️ Изменить задачу</div>
     </template>
 
     <template #default>

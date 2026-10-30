@@ -2,16 +2,14 @@
   <div class="login-container">
     <div class="login-content">
       <div class="login-header">
-        <h1 class="login-title">
-          <span class="gradient-text">Freelance Service</span>
-        </h1>
+        <h1 class="login-title">Freelance Service</h1>
         <p class="login-subtitle">Система управления проектами и временем</p>
       </div>
 
       <n-card style="max-width: 420px">
         <template #header>
           <div style="text-align: center; width: 100%">
-            <h2 style="margin: 0; color: var(--color-text-primary)">Вход в систему</h2>
+            <h2 style="margin: 0; color: var(--color-text)">Вход в систему</h2>
           </div>
         </template>
 
@@ -55,7 +53,7 @@
             <router-link
               to="/register"
               style="
-                color: var(--color-primary);
+                color: var(--color-accent);
                 text-decoration: none;
                 font-weight: 600;
                 cursor: pointer;
@@ -109,7 +107,6 @@ async function onSubmit() {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: linear-gradient(135deg, #10b981 0%, #f59e0b 100%);
   padding: 20px;
 }
 
@@ -122,21 +119,21 @@ async function onSubmit() {
 .login-header {
   text-align: center;
   margin-bottom: 40px;
-  color: white;
+  color: var(--color-text);
 }
 
 .login-title {
   font-size: 40px;
   margin-bottom: 8px;
-  font-weight: 700;
+  font-weight: var(--weight-heading);
   letter-spacing: -0.5px;
 }
 
 .login-subtitle {
   font-size: 16px;
-  color: rgba(255, 255, 255, 0.8);
+  color: var(--color-text-secondary);
   margin: 0;
-  font-weight: 500;
+  font-weight: var(--weight-text);
 }
 
 @media (max-width: 640px) {

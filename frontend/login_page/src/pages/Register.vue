@@ -2,16 +2,14 @@
   <div class="register-container">
     <div class="register-content">
       <div class="register-header">
-        <h1 class="register-title">
-          <span class="gradient-text">Создать аккаунт</span>
-        </h1>
+        <h1 class="register-title">Создать аккаунт</h1>
         <p class="register-subtitle">Присоединитесь к системе управления проектами</p>
       </div>
 
       <n-card>
         <template #header>
           <div style="text-align: center; width: 100%">
-            <h2 style="margin: 0; color: var(--color-text-primary)">Регистрация</h2>
+            <h2 style="margin: 0; color: var(--color-text)">Регистрация</h2>
           </div>
         </template>
 
@@ -64,7 +62,7 @@
             <router-link
               to="/login"
               style="
-                color: var(--color-primary);
+                color: var(--color-accent);
                 text-decoration: none;
                 font-weight: 600;
                 cursor: pointer;
@@ -116,7 +114,6 @@ async function onRegister() {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: linear-gradient(135deg, #10b981 0%, #f59e0b 100%);
   padding: 20px;
 }
 
@@ -129,21 +126,21 @@ async function onRegister() {
 .register-header {
   text-align: center;
   margin-bottom: 40px;
-  color: white;
+  color: var(--color-text);
 }
 
 .register-title {
   font-size: 36px;
   margin-bottom: 8px;
-  font-weight: 700;
+  font-weight: var(--weight-heading);
   letter-spacing: -0.5px;
 }
 
 .register-subtitle {
   font-size: 16px;
-  color: rgba(255, 255, 255, 0.8);
+  color: var(--color-text-secondary);
   margin: 0;
-  font-weight: 500;
+  font-weight: var(--weight-text);
 }
 
 @media (max-width: 640px) {

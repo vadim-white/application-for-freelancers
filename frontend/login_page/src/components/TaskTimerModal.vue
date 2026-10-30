@@ -74,12 +74,7 @@
         <!-- Заметка -->
         <div class="note-section">
           <label
-            style="
-              font-weight: 500;
-              color: var(--color-text-primary);
-              display: block;
-              margin-bottom: 8px;
-            "
+            style="font-weight: 500; color: var(--color-text); display: block; margin-bottom: 8px"
           >
             📝 Заметка (опционально, сохраняется сама)
           </label>
@@ -283,11 +278,6 @@ function onClose() {
 </script>
 
 <style scoped>
-.timer-modal :deep(.n-modal__header) {
-  background: linear-gradient(135deg, #f7971e 0%, #ffd200 100%) !important;
-  color: white !important;
-}
-
 .modal-content {
   padding: 24px 0;
 }
@@ -298,9 +288,9 @@ function onClose() {
 
 .task-description {
   padding: 12px;
-  background: rgba(102, 126, 234, 0.08);
-  border-left: 4px solid var(--color-primary);
-  border-radius: 4px;
+  background: var(--color-surface-hover);
+  border-left: 4px solid var(--color-accent);
+  border-radius: var(--radius-sm);
   color: var(--color-text-secondary);
   margin-bottom: 24px;
   font-size: 14px;
@@ -313,11 +303,12 @@ function onClose() {
 
 .timer-value {
   font-size: 64px;
-  font-weight: 700;
-  color: var(--color-primary);
-  font-family: 'Courier New', monospace;
+  font-weight: var(--weight-heading);
+  color: var(--color-accent);
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
   margin-bottom: 12px;
-  letter-spacing: 2px;
+  letter-spacing: 0;
 }
 
 .timer-status {
@@ -333,15 +324,15 @@ function onClose() {
 }
 
 .control-btn {
-  width: 100% !important;
+  width: 100%;
 }
 
 .note-section {
   margin-bottom: 24px;
   padding: 16px;
-  background: rgba(102, 126, 234, 0.05);
-  border-radius: 8px;
-  border: 1px dashed var(--color-border);
+  background: var(--color-surface-hover);
+  border-radius: var(--radius-md);
+  border: 1px dashed var(--color-line);
 }
 
 .task-info {
@@ -349,8 +340,8 @@ function onClose() {
   flex-direction: column;
   gap: 12px;
   padding: 12px;
-  background: rgba(86, 171, 47, 0.08);
-  border-radius: 6px;
+  background: var(--color-surface-hover);
+  border-radius: var(--radius-md);
 }
 
 .info-item {
