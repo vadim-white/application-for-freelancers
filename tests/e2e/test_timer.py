@@ -56,7 +56,7 @@ def stop_timer(s: Session, headers: dict) -> None:
 
 def open_task(page: Page, title: str) -> Locator:
     page.locator(".n-drawer .task-item").filter(has_text=title).get_by_role(
-        "button", name="⏱️"
+        "button", name="Открыть таймер"
     ).click()
     modal = page.locator(".timer-modal")
     expect(modal).to_contain_text(title)

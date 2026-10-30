@@ -3,7 +3,7 @@
     <n-layout-header class="dashboard-header">
       <div class="header-content">
         <div class="header-title">
-          <h1 style="margin: 0; color: var(--color-text); font-size: 24px">📊 Проекты</h1>
+          <h1 style="margin: 0; color: var(--color-text); font-size: 24px">Проекты</h1>
         </div>
 
         <div class="header-nav">
@@ -12,17 +12,20 @@
               :type="currentTab === 'tasks' ? 'primary' : 'tertiary'"
               @click="currentTab = 'tasks'"
             >
-              📋 Задачи
+              <template #icon><app-icon :icon="ListChecks" /></template>
+              Задачи
             </n-button>
             <n-button
               v-if="isAdmin"
               :type="currentTab === 'statistics' ? 'primary' : 'tertiary'"
               @click="currentTab = 'statistics'"
             >
-              📈 Статистика
+              <template #icon><app-icon :icon="ChartColumn" /></template>
+              Статистика
             </n-button>
             <n-button v-if="isAdmin" type="tertiary" @click="router.push('/users')">
-              👥 Пользователи
+              <template #icon><app-icon :icon="Users" /></template>
+              Пользователи
             </n-button>
           </n-button-group>
         </div>
@@ -38,16 +41,20 @@
             </n-avatar>
             <div class="user-text">
               <div class="user-name">{{ auth.user?.full_name || auth.user?.email }}</div>
-              <div v-if="isAdmin" class="user-role">👑 Администратор</div>
-              <div v-else class="user-role">👤 Пользователь</div>
+              <div v-if="isAdmin" class="user-role">
+                <app-icon :icon="Crown" :size="14" /> Администратор
+              </div>
+              <div v-else class="user-role"><app-icon :icon="User" :size="14" /> Пользователь</div>
             </div>
           </div>
           <n-button-group>
             <n-button text style="color: var(--color-text-secondary)" @click="toProfile">
-              👤 Профиль
+              <template #icon><app-icon :icon="User" /></template>
+              Профиль
             </n-button>
             <n-button text style="color: var(--color-text-secondary)" @click="onLogout">
-              🚪 Выйти
+              <template #icon><app-icon :icon="LogOut" /></template>
+              Выйти
             </n-button>
           </n-button-group>
         </div>
@@ -57,7 +64,8 @@
     <n-layout-content class="dashboard-content">
       <!-- Идущий таймер -->
       <n-button v-if="timer.entry" type="warning" class="running-timer" @click="openRunningTimer">
-        ⏱️ {{ timer.runningTitle }} · {{ timer.formatted }}
+        <template #icon><app-icon :icon="Timer" /></template>
+        {{ timer.runningTitle }} · {{ timer.formatted }}
       </n-button>
 
       <!-- TAB: TASKS -->
@@ -109,7 +117,9 @@
 
           <!-- Пустое состояние -->
           <div v-if="projects.length === 0" class="empty-state">
-            <div style="font-size: 48px; margin-bottom: 12px">📭</div>
+            <div style="color: var(--color-text-secondary); margin-bottom: 12px">
+              <app-icon :icon="Inbox" :size="40" />
+            </div>
             <div style="font-weight: 600; margin-bottom: 4px">Нет проектов</div>
             <div style="color: var(--color-text-secondary)">
               Создайте первый проект — нажмите «Создать проект»
@@ -140,11 +150,11 @@
           <table class="stats-table">
             <thead>
               <tr>
-                <th>👤 Пользователь</th>
-                <th>🧾 Записей</th>
-                <th>📝 Задач</th>
-                <th>⏱️ Всего (чч:мм)</th>
-                <th>⏱️ Среднее на задачу (чч:мм)</th>
+                <th>Пользователь</th>
+                <th>Записей</th>
+                <th>Задач</th>
+                <th>Всего (чч:мм)</th>
+                <th>Среднее на задачу (чч:мм)</th>
               </tr>
             </thead>
             <tbody>
@@ -168,7 +178,9 @@
         </n-card>
 
         <div v-if="usersStats.length === 0" class="empty-state">
-          <div style="font-size: 48px; margin-bottom: 12px">📊</div>
+          <div style="color: var(--color-text-secondary); margin-bottom: 12px">
+            <app-icon :icon="ChartColumn" :size="40" />
+          </div>
           <div style="font-weight: 600; margin-bottom: 4px">Нет данных</div>
           <div style="color: var(--color-text-secondary)">
             Статистика будет доступна после создания задач
@@ -213,6 +225,8 @@
 </template>
 
 <script setup lang="ts">
+import { ChartColumn, Crown, Inbox, ListChecks, LogOut, Timer, User, Users } from '@lucide/vue'
+import AppIcon from '../components/AppIcon.vue'
 import { ref, reactive, computed, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '../stores/auth'

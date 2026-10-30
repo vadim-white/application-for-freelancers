@@ -1,7 +1,7 @@
 <template>
   <n-modal v-model:show="innerShow" :closable="true" preset="dialog" style="min-width: 420px">
     <template #header>
-      <div style="font-weight: 600; color: var(--color-text)">📋 Создать новый проект</div>
+      <div style="font-weight: 600; color: var(--color-text)">Создать новый проект</div>
     </template>
 
     <template #default>
@@ -34,13 +34,18 @@
     <template #action>
       <n-space justify="end">
         <n-button @click="onCancel">Отмена</n-button>
-        <n-button type="primary" :loading="saving" @click="onSave"> ✓ Создать </n-button>
+        <n-button type="primary" :loading="saving" @click="onSave">
+          <template #icon><app-icon :icon="Check" /></template>
+          Создать
+        </n-button>
       </n-space>
     </template>
   </n-modal>
 </template>
 
 <script setup lang="ts">
+import { Check } from '@lucide/vue'
+import AppIcon from './AppIcon.vue'
 import { reactive, ref, watch } from 'vue'
 import { createProject as createTaskProject } from '../services/tasks'
 import { NButton, NForm, NFormItem, NInput, NModal, NSpace, useMessage } from 'naive-ui'

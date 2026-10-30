@@ -1,6 +1,6 @@
 <template>
   <div class="users-page">
-    <router-link to="/dashboard">← К проектам</router-link>
+    <router-link to="/dashboard"><app-icon :icon="ArrowLeft" /> К проектам</router-link>
     <h1>Пользователи</h1>
 
     <div class="filters">
@@ -80,6 +80,8 @@
 </template>
 
 <script setup lang="ts">
+import { ArrowLeft } from '@lucide/vue'
+import AppIcon from '../components/AppIcon.vue'
 import { ref, onMounted, onUnmounted } from 'vue'
 import { NButton, NInput, NPagination, NSelect, NSpin, useMessage } from 'naive-ui'
 import { useAuthStore } from '../stores/auth'

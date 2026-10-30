@@ -1,6 +1,7 @@
 import { defineConfig, type Plugin } from 'vite'
 import vue from '@vitejs/plugin-vue'
-import { tokensCss } from './src/styles/tokens.ts'
+import { readFileSync } from 'node:fs'
+import { palettes, tokensCss } from './src/styles/tokens.ts'
 
 // Vite только предупреждает о чанке больше 500 kB и сборку не останавливает — здесь сборка падает
 // (локально и в CI). Порог тот же, что у предупреждения Vite: 500 000 байт минифицированного JS
@@ -32,9 +33,19 @@ function chunkSizeLimit(): Plugin {
 
 // CSS-переменные из src/styles/tokens.ts кладутся в <head> inline: они на месте до первой отрисовки
 // и общий источник с themeOverrides Naive UI (там hex нужен в JS)
+// public/favicon.svg не читает CSS-переменные, его цвета — hex из светлой палитры; сборка падает,
+// если файл разошёлся с tokens.ts
 function designTokens(): Plugin {
   return {
     name: 'design-tokens',
+    buildStart() {
+      const favicon = readFileSync(new URL('./public/favicon.svg', import.meta.url), 'utf8')
+      const expected = [palettes.light.accent, palettes.light.text]
+      const missing = expected.filter((hex) => !favicon.includes(`"${hex}"`))
+      if (missing.length > 0) {
+        this.error(`public/favicon.svg расходится с tokens.ts: нет цветов ${missing.join(', ')}`)
+      }
+    },
     transformIndexHtml: () => [
       {
         tag: 'style',

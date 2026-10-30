@@ -7,7 +7,7 @@
     style="min-width: 420px"
   >
     <template #header>
-      <div style="font-weight: 600; color: var(--color-text)">✏️ Изменить задачу</div>
+      <div style="font-weight: 600; color: var(--color-text)">Изменить задачу</div>
     </template>
 
     <template #default>
@@ -66,7 +66,8 @@
       <n-space justify="end">
         <n-button @click="innerShow = false">Отмена</n-button>
         <n-button type="primary" :loading="saving" :disabled="projectsLoading" @click="onSave">
-          ✓ Сохранить
+          <template #icon><app-icon :icon="Check" /></template>
+          Сохранить
         </n-button>
       </n-space>
     </template>
@@ -74,6 +75,8 @@
 </template>
 
 <script setup lang="ts">
+import { Check } from '@lucide/vue'
+import AppIcon from './AppIcon.vue'
 import { reactive, ref, watch, type PropType } from 'vue'
 import {
   NButton,

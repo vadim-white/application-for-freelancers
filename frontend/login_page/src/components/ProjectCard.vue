@@ -6,22 +6,20 @@
           <h3 class="card-title">{{ project.name }}</h3>
           <p class="card-description">{{ project.description }}</p>
         </div>
-        <n-tag v-if="project.is_active" type="success" round size="small"> ✓ Активен </n-tag>
-        <n-tag v-else type="warning" round size="small"> ⏸ Неактивен </n-tag>
+        <n-tag v-if="project.is_active" type="success" round size="small">Активен</n-tag>
+        <n-tag v-else type="warning" round size="small">Неактивен</n-tag>
       </div>
     </template>
 
     <div class="card-body">
       <div v-if="project.tasks_preview.length" class="tasks-list">
         <div class="tasks-label">
-          📋 Задачи <span class="task-count">({{ project.tasks_count }})</span>
+          Задачи <span class="task-count">({{ project.tasks_count }})</span>
         </div>
         <div class="tasks-items">
           <div v-for="t in project.tasks_preview" :key="t.id" class="task-item">
             <div class="task-icon">
-              <span v-if="t.status === 'done'" class="status-icon">✓</span>
-              <span v-else-if="t.status === 'in_progress'" class="status-icon">⟳</span>
-              <span v-else class="status-icon">○</span>
+              <status-icon :status="t.status" />
             </div>
             <div class="task-info">
               <div class="task-title">{{ t.title }}</div>
@@ -33,14 +31,18 @@
         </div>
       </div>
       <div v-else class="empty-tasks">
-        <div style="font-size: 24px; margin-bottom: 8px">📭</div>
+        <div style="color: var(--color-text-secondary); margin-bottom: 8px">
+          <app-icon :icon="Inbox" :size="24" />
+        </div>
         <div style="color: var(--color-text-secondary); font-size: 13px">Нет задач в проекте</div>
       </div>
     </div>
 
     <template #footer>
       <div class="card-footer">
-        <n-button type="primary" text style="flex: 1; text-align: center"> Открыть → </n-button>
+        <n-button type="primary" text style="flex: 1; text-align: center">
+          Открыть <app-icon :icon="ArrowRight" />
+        </n-button>
         <n-button size="small" :disabled="busy" @click.stop="emit('edit', project)">
           Изменить
         </n-button>
@@ -53,6 +55,9 @@
 </template>
 
 <script setup lang="ts">
+import { ArrowRight, Inbox } from '@lucide/vue'
+import AppIcon from './AppIcon.vue'
+import StatusIcon from './StatusIcon.vue'
 import { defineProps, defineEmits, type PropType } from 'vue'
 import { NButton, NCard, NTag } from 'naive-ui'
 import type { ProjectListItem } from '../services/tasks'
@@ -197,20 +202,6 @@ function formatStatus(status: string): string {
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 12px;
-  font-weight: var(--weight-strong);
-}
-
-.status-icon {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 16px;
-  height: 16px;
-  border-radius: 50%;
-  background: var(--color-accent);
-  color: var(--color-on-accent);
-  font-size: 10px;
 }
 
 .task-info {

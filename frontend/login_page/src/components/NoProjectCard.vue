@@ -6,19 +6,21 @@
 
     <div v-if="preview.length" class="tasks-items">
       <div class="tasks-label">
-        📋 Задачи <span class="task-count">({{ total }})</span>
+        Задачи <span class="task-count">({{ total }})</span>
       </div>
       <div v-for="t in preview" :key="t.id" class="task-title">{{ t.title }}</div>
     </div>
     <div v-else class="empty-tasks">Нет задач вне проекта</div>
 
     <template #footer>
-      <n-button type="primary" text>Открыть →</n-button>
+      <n-button type="primary" text> Открыть <app-icon :icon="ArrowRight" /> </n-button>
     </template>
   </n-card>
 </template>
 
 <script setup lang="ts">
+import { ArrowRight } from '@lucide/vue'
+import AppIcon from './AppIcon.vue'
 import type { PropType } from 'vue'
 import { NButton, NCard } from 'naive-ui'
 import type { TaskPreview } from '../services/tasks'

@@ -11,7 +11,7 @@
     <n-drawer-content :native-scrollbar="false" closable>
       <template #header>
         <div class="drawer-title" style="font-weight: 600">
-          📋 {{ project ? project.name : 'Проект' }}
+          {{ project ? project.name : 'Проект' }}
         </div>
       </template>
 
@@ -33,7 +33,7 @@
         <n-spin :show="loading">
           <!-- Текущие задачи -->
           <div class="tasks-section tasks-current">
-            <h3 class="section-title">📝 Текущие задачи ({{ currentTotal }})</h3>
+            <h3 class="section-title">Текущие задачи ({{ currentTotal }})</h3>
             <div v-if="!currentTasks.length && !loading" class="no-active-tasks">
               {{ showArchive ? 'Нет архивных задач' : 'Нет текущих задач' }}
             </div>
@@ -43,6 +43,7 @@
                   <div class="task-header">
                     <div class="task-title-row">
                       <span class="task-status-badge" :class="`badge-${task.status}`">
+                        <status-icon :status="task.status" />
                         {{ formatStatus(task.status) }}
                       </span>
                       <div class="task-title">{{ task.title }}</div>
@@ -50,23 +51,32 @@
                   </div>
                   <div v-if="task.description" class="task-desc">{{ task.description }}</div>
                   <div v-if="task.deadline" class="task-deadline">
-                    🗓 Срок: {{ formatDeadline(task.deadline) }}
+                    Срок: {{ formatDeadline(task.deadline) }}
                   </div>
                 </div>
 
                 <div class="task-actions">
                   <template v-if="task.is_active">
-                    <n-button size="small" type="primary" text @click="openTask(task)">
-                      ⏱️
+                    <n-button
+                      size="small"
+                      type="primary"
+                      text
+                      aria-label="Открыть таймер"
+                      title="Открыть таймер"
+                      @click="openTask(task)"
+                    >
+                      <app-icon :icon="Timer" />
                     </n-button>
                     <n-button
                       size="small"
                       type="success"
                       text
+                      aria-label="Отметить выполненной"
+                      title="Отметить выполненной"
                       :loading="task.isSaving"
                       @click="markDone(task)"
                     >
-                      ✓
+                      <app-icon :icon="Check" />
                     </n-button>
                   </template>
                   <n-button size="small" text :disabled="task.isSaving" @click="openEdit(task)">
@@ -95,7 +105,9 @@
           <!-- Выполненные задачи -->
           <div v-if="doneTotal" class="tasks-section tasks-done">
             <h3 class="section-title section-toggle" @click="showDone = !showDone">
-              {{ showDone ? '▾' : '▸' }} ✅ Выполненные ({{ doneTotal }})
+              <app-icon :icon="showDone ? ChevronDown : ChevronRight" /> Выполненные ({{
+                doneTotal
+              }})
             </h3>
             <div v-if="showDone" class="tasks-list">
               <div v-for="task in doneTasks" :key="task.id" class="task-item task-item-done">
@@ -103,6 +115,7 @@
                   <div class="task-header">
                     <div class="task-title-row">
                       <span class="task-status-badge" :class="`badge-${task.status}`">
+                        <status-icon :status="task.status" />
                         {{ formatStatus(task.status) }}
                       </span>
                       <div class="task-title">{{ task.title }}</div>
@@ -110,7 +123,7 @@
                   </div>
                   <div v-if="task.description" class="task-desc">{{ task.description }}</div>
                   <div v-if="task.deadline" class="task-deadline">
-                    🗓 Срок: {{ formatDeadline(task.deadline) }}
+                    Срок: {{ formatDeadline(task.deadline) }}
                   </div>
                 </div>
 
@@ -139,7 +152,9 @@
           </div>
 
           <div v-if="!currentTotal && !doneTotal && !loading && !showArchive" class="empty-tasks">
-            <div style="font-size: 48px; margin-bottom: 12px">📭</div>
+            <div style="color: var(--color-text-secondary); margin-bottom: 12px">
+              <app-icon :icon="Inbox" :size="40" />
+            </div>
             <div style="font-weight: 600">Нет задач</div>
             <div style="color: var(--color-text-secondary); font-size: 13px">
               Создайте первую задачу ниже
@@ -149,7 +164,7 @@
 
         <!-- Форма добавления задачи -->
         <div class="add-task-section">
-          <h3 class="section-title">➕ Добавить задачу</h3>
+          <h3 class="section-title">Добавить задачу</h3>
           <n-form :model="newTask" label-placement="top">
             <n-form-item label="Название задачи" path="title">
               <n-input
@@ -168,7 +183,8 @@
             </n-form-item>
             <div style="display: flex; gap: 8px">
               <n-button type="primary" :loading="adding" style="flex: 1" @click="addTask">
-                ✓ Добавить задачу
+                <template #icon><app-icon :icon="Check" /></template>
+                Добавить задачу
               </n-button>
             </div>
           </n-form>
@@ -186,6 +202,9 @@
 </template>
 
 <script setup lang="ts">
+import { Check, ChevronDown, ChevronRight, Inbox, Timer } from '@lucide/vue'
+import AppIcon from './AppIcon.vue'
+import StatusIcon from './StatusIcon.vue'
 import { ref, computed, watch, type PropType } from 'vue'
 import {
   NO_PROJECT_ID,
@@ -221,7 +240,7 @@ const props = defineProps({
 })
 const emit = defineEmits(['update:show', 'open-task', 'changed'])
 
-// isSaving — клиентский флаг на время запроса (кнопки «✓» и архива), в API его нет
+// isSaving — клиентский флаг на время запроса (кнопки «Отметить выполненной» и архива), в API его нет
 type DrawerTask = Task & { isSaving?: boolean }
 
 const innerShow = ref(props.show)
@@ -543,6 +562,9 @@ async function addTask() {
 }
 
 .task-status-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   font-size: 11px;
   font-weight: var(--weight-strong);
   padding: 4px 8px;

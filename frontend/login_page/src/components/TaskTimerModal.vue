@@ -8,7 +8,7 @@
   >
     <template #header>
       <div style="font-weight: 600; display: flex; align-items: center; gap: 8px">
-        <span style="font-size: 20px">⏱️</span>
+        <app-icon :icon="Timer" :size="20" />
         <span>{{ task ? task.title : 'Таймер' }}</span>
       </div>
     </template>
@@ -35,7 +35,8 @@
           <div class="timer-value">{{ formattedElapsed }}</div>
           <div class="timer-status">
             <n-tag :type="running ? 'warning' : 'default'" round>
-              {{ running ? '▶ Идет отсчет' : '⏸ Остановлен' }}
+              <template #icon><app-icon :icon="running ? Play : Pause" :size="14" /></template>
+              {{ running ? 'Идет отсчет' : 'Остановлен' }}
             </n-tag>
           </div>
         </div>
@@ -49,7 +50,8 @@
             class="control-btn"
             @click="onStart"
           >
-            {{ paused ? '▶ Продолжить' : '▶ Старт' }}
+            <template #icon><app-icon :icon="Play" /></template>
+            {{ paused ? 'Продолжить' : 'Старт' }}
           </n-button>
           <n-button
             type="warning"
@@ -58,7 +60,8 @@
             class="control-btn"
             @click="onPause"
           >
-            ⏸ Пауза
+            <template #icon><app-icon :icon="Pause" /></template>
+            Пауза
           </n-button>
           <n-button
             type="success"
@@ -67,7 +70,8 @@
             class="control-btn"
             @click="onMarkDone"
           >
-            ✓ Выполнена
+            <template #icon><app-icon :icon="Check" /></template>
+            Выполнена
           </n-button>
         </div>
 
@@ -76,7 +80,7 @@
           <label
             style="font-weight: 500; color: var(--color-text); display: block; margin-bottom: 8px"
           >
-            📝 Заметка (опционально, сохраняется сама)
+            Заметка (опционально, сохраняется сама)
           </label>
           <n-input
             :value="note"
@@ -110,6 +114,8 @@
 </template>
 
 <script setup lang="ts">
+import { Check, Pause, Play, Timer } from '@lucide/vue'
+import AppIcon from './AppIcon.vue'
 import { ref, watch, computed, type PropType } from 'vue'
 import { isAxiosError } from 'axios'
 import { updateTask, type Task } from '../services/tasks'

@@ -30,7 +30,7 @@ def no_project_total(page: Page) -> int:
 
 def open_panel(page: Page) -> None:
     page.locator(".no-project-card").click()
-    expect(page.locator(".n-drawer .drawer-title")).to_have_text("📋 Без проекта")
+    expect(page.locator(".n-drawer .drawer-title")).to_have_text("Без проекта")
     choose(page, ".n-drawer .task-sort", "Создана ↓")
 
 
@@ -72,7 +72,7 @@ def test_create_task_without_project(open_session, base_url, run_label):
     assert api_task["project_id"] is None
 
     # таймер на задаче вне проекта стартует
-    row.get_by_role("button", name="⏱️").click()
+    row.get_by_role("button", name="Открыть таймер").click()
     try:
         with page.expect_response(
             lambda r: r.request.method == "POST" and r.url.endswith("/api/time/timer/start")

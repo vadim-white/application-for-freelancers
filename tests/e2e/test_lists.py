@@ -95,8 +95,8 @@ def test_task_archive_and_restore(open_session, base_url, run_label):
 
     page.locator(".n-drawer .task-filters").get_by_role("switch").click()
     expect(row).to_have_count(1)
-    expect(row.get_by_role("button", name="⏱️")).to_have_count(0)
-    expect(row.get_by_role("button", name="✓")).to_have_count(0)
+    expect(row.get_by_role("button", name="Открыть таймер")).to_have_count(0)
+    expect(row.get_by_role("button", name="Отметить выполненной")).to_have_count(0)
 
     with patch_ok(page, f"/api/tasks/tasks/{ids[title]}") as restored:
         row.get_by_role("button", name="Восстановить").click()
@@ -106,7 +106,7 @@ def test_task_archive_and_restore(open_session, base_url, run_label):
 
     page.locator(".n-drawer .task-filters").get_by_role("switch").click()
     expect(row).to_have_count(1)
-    expect(row.get_by_role("button", name="⏱️")).to_have_count(1)
+    expect(row.get_by_role("button", name="Открыть таймер")).to_have_count(1)
     assert s.net.foreign(base_url) == [], "запросы не на origin фронта"
 
 

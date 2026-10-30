@@ -7,7 +7,7 @@
     style="min-width: 420px"
   >
     <template #header>
-      <div style="font-weight: 600; color: var(--color-text)">✏️ Изменить проект</div>
+      <div style="font-weight: 600; color: var(--color-text)">Изменить проект</div>
     </template>
 
     <template #default>
@@ -38,13 +38,18 @@
     <template #action>
       <n-space justify="end">
         <n-button @click="innerShow = false">Отмена</n-button>
-        <n-button type="primary" :loading="saving" @click="onSave">✓ Сохранить</n-button>
+        <n-button type="primary" :loading="saving" @click="onSave">
+          <template #icon><app-icon :icon="Check" /></template>
+          Сохранить
+        </n-button>
       </n-space>
     </template>
   </n-modal>
 </template>
 
 <script setup lang="ts">
+import { Check } from '@lucide/vue'
+import AppIcon from './AppIcon.vue'
 import { reactive, ref, watch, type PropType } from 'vue'
 import { NButton, NForm, NFormItem, NInput, NModal, NSpace, useMessage } from 'naive-ui'
 import { updateProject, type Project, type ProjectPatch } from '../services/tasks'

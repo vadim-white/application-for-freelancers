@@ -3,8 +3,10 @@
     <!-- Header -->
     <div class="profile-header">
       <div class="header-content">
-        <router-link to="/dashboard" class="back-link"> ← Вернуться </router-link>
-        <h1>👤 Профиль</h1>
+        <router-link to="/dashboard" class="back-link">
+          <app-icon :icon="ArrowLeft" /> Вернуться
+        </router-link>
+        <h1>Профиль</h1>
       </div>
     </div>
 
@@ -19,146 +21,147 @@
           <h2 class="user-name">{{ auth.user?.full_name || 'Пользователь' }}</h2>
           <p class="user-email">{{ auth.user?.email }}</p>
           <div class="user-role-badge" :class="`role-${auth.user?.role}`">
-            <span v-if="isAdmin">👑 Администратор</span>
-            <span v-else>👤 Пользователь</span>
+            <span v-if="isAdmin"><app-icon :icon="Crown" :size="14" /> Администратор</span>
+            <span v-else><app-icon :icon="User" :size="14" /> Пользователь</span>
           </div>
         </div>
       </div>
 
       <!-- Capabilities Grid -->
       <div class="capabilities-section">
-        <h3 class="section-title">📋 Доступные возможности</h3>
+        <h3 class="section-title">Доступные возможности</h3>
 
         <!-- User Capabilities -->
         <div v-if="!isAdmin" class="capabilities-grid">
           <div class="capability-card">
-            <div class="capability-icon">📝</div>
+            <div class="capability-icon"><app-icon :icon="ListPlus" :size="24" /></div>
             <div class="capability-content">
               <div class="capability-title">Создание задач</div>
               <div class="capability-desc">Создавайте новые задачи в проектах</div>
             </div>
-            <div class="capability-status">✓ Доступно</div>
+            <div class="capability-status"><app-icon :icon="Check" :size="14" /> Доступно</div>
           </div>
 
           <div class="capability-card">
-            <div class="capability-icon">✓</div>
+            <div class="capability-icon"><app-icon :icon="CircleCheck" :size="24" /></div>
             <div class="capability-content">
               <div class="capability-title">Отметить выполненной</div>
               <div class="capability-desc">Отмечайте завершенные задачи</div>
             </div>
-            <div class="capability-status">✓ Доступно</div>
+            <div class="capability-status"><app-icon :icon="Check" :size="14" /> Доступно</div>
           </div>
 
           <div class="capability-card">
-            <div class="capability-icon">⏱️</div>
+            <div class="capability-icon"><app-icon :icon="Timer" :size="24" /></div>
             <div class="capability-content">
               <div class="capability-title">Таймер для задач</div>
               <div class="capability-desc">Отслеживайте время на выполнение</div>
             </div>
-            <div class="capability-status">✓ Доступно</div>
+            <div class="capability-status"><app-icon :icon="Check" :size="14" /> Доступно</div>
           </div>
 
           <div class="capability-card">
-            <div class="capability-icon">📊</div>
+            <div class="capability-icon"><app-icon :icon="FolderOpen" :size="24" /></div>
             <div class="capability-content">
               <div class="capability-title">Просмотр проектов</div>
               <div class="capability-desc">Видите все доступные проекты</div>
             </div>
-            <div class="capability-status">✓ Доступно</div>
+            <div class="capability-status"><app-icon :icon="Check" :size="14" /> Доступно</div>
           </div>
 
           <div class="capability-card disabled">
-            <div class="capability-icon">➕</div>
+            <div class="capability-icon"><app-icon :icon="FolderPlus" :size="24" /></div>
             <div class="capability-content">
               <div class="capability-title">Создание проектов</div>
               <div class="capability-desc">Только для администраторов</div>
             </div>
-            <div class="capability-status">✗ Недоступно</div>
+            <div class="capability-status"><app-icon :icon="X" :size="14" /> Недоступно</div>
           </div>
 
           <div class="capability-card disabled">
-            <div class="capability-icon">📈</div>
+            <div class="capability-icon"><app-icon :icon="ChartColumn" :size="24" /></div>
             <div class="capability-content">
               <div class="capability-title">Просмотр статистики</div>
               <div class="capability-desc">Только для администраторов</div>
             </div>
-            <div class="capability-status">✗ Недоступно</div>
+            <div class="capability-status"><app-icon :icon="X" :size="14" /> Недоступно</div>
           </div>
         </div>
 
         <!-- Admin Capabilities -->
         <div v-else class="capabilities-grid">
           <div class="capability-card">
-            <div class="capability-icon">➕</div>
+            <div class="capability-icon"><app-icon :icon="FolderPlus" :size="24" /></div>
             <div class="capability-content">
               <div class="capability-title">Создание проектов</div>
               <div class="capability-desc">Создавайте новые проекты для команды</div>
             </div>
-            <div class="capability-status">✓ Доступно</div>
+            <div class="capability-status"><app-icon :icon="Check" :size="14" /> Доступно</div>
           </div>
 
           <div class="capability-card">
-            <div class="capability-icon">📈</div>
+            <div class="capability-icon"><app-icon :icon="ChartColumn" :size="24" /></div>
             <div class="capability-content">
               <div class="capability-title">Просмотр статистики</div>
               <div class="capability-desc">Анализируйте работу команды</div>
             </div>
-            <div class="capability-status">✓ Доступно</div>
+            <div class="capability-status"><app-icon :icon="Check" :size="14" /> Доступно</div>
           </div>
 
           <div class="capability-card">
-            <div class="capability-icon">👥</div>
+            <div class="capability-icon"><app-icon :icon="Users" :size="24" /></div>
             <div class="capability-content">
               <div class="capability-title">Управление пользователями</div>
               <div class="capability-desc">Видите активность всех пользователей</div>
             </div>
-            <div class="capability-status">✓ Доступно</div>
+            <div class="capability-status"><app-icon :icon="Check" :size="14" /> Доступно</div>
           </div>
 
           <div class="capability-card">
-            <div class="capability-icon">📊</div>
+            <div class="capability-icon"><app-icon :icon="FolderOpen" :size="24" /></div>
             <div class="capability-content">
               <div class="capability-title">Просмотр всех проектов</div>
               <div class="capability-desc">Полный доступ ко всем проектам</div>
             </div>
-            <div class="capability-status">✓ Доступно</div>
+            <div class="capability-status"><app-icon :icon="Check" :size="14" /> Доступно</div>
           </div>
 
           <div class="capability-card">
-            <div class="capability-icon">⏱️</div>
+            <div class="capability-icon"><app-icon :icon="Timer" :size="24" /></div>
             <div class="capability-content">
               <div class="capability-title">Таймер для задач</div>
               <div class="capability-desc">Отслеживайте время на выполнение</div>
             </div>
-            <div class="capability-status">✓ Доступно</div>
+            <div class="capability-status"><app-icon :icon="Check" :size="14" /> Доступно</div>
           </div>
 
           <div class="capability-card">
-            <div class="capability-icon">✓</div>
+            <div class="capability-icon"><app-icon :icon="Pencil" :size="24" /></div>
             <div class="capability-content">
               <div class="capability-title">Редактирование задач</div>
               <div class="capability-desc">Управляйте всеми задачами проектов</div>
             </div>
-            <div class="capability-status">✓ Доступно</div>
+            <div class="capability-status"><app-icon :icon="Check" :size="14" /> Доступно</div>
           </div>
         </div>
       </div>
 
       <!-- Info Section -->
       <div class="info-section">
-        <h3 class="section-title">ℹ️ Информация</h3>
+        <h3 class="section-title">Информация</h3>
         <n-card class="info-card">
           <div class="info-row">
             <span class="info-label">Статус:</span>
             <span class="info-value">
-              <n-tag type="success" round>🟢 В сети</n-tag>
+              <n-tag type="success" round>В сети</n-tag>
             </span>
           </div>
           <div class="info-row">
             <span class="info-label">Роль:</span>
             <span class="info-value">
               <n-tag :type="isAdmin ? 'warning' : 'info'" round>
-                {{ isAdmin ? '👑 Администратор' : '👤 Пользователь' }}
+                <template #icon><app-icon :icon="isAdmin ? Crown : User" :size="14" /></template>
+                {{ isAdmin ? 'Администратор' : 'Пользователь' }}
               </n-tag>
             </span>
           </div>
@@ -172,7 +175,8 @@
       <!-- Actions -->
       <div class="actions-section">
         <n-button type="error" style="width: 100%; padding: 12px" size="large" @click="onLogout">
-          🚪 Выйти из системы
+          <template #icon><app-icon :icon="LogOut" /></template>
+          Выйти из системы
         </n-button>
       </div>
     </div>
@@ -180,6 +184,23 @@
 </template>
 
 <script setup lang="ts">
+import {
+  ArrowLeft,
+  Check,
+  ChartColumn,
+  CircleCheck,
+  Crown,
+  FolderOpen,
+  FolderPlus,
+  ListPlus,
+  LogOut,
+  Pencil,
+  Timer,
+  User,
+  Users,
+  X
+} from '@lucide/vue'
+import AppIcon from '../components/AppIcon.vue'
 import { computed } from 'vue'
 import { NButton, NCard, NTag } from 'naive-ui'
 import { useRouter } from 'vue-router'
