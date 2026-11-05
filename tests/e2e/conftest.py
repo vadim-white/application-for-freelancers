@@ -28,11 +28,12 @@ def open_session(new_context):
     """Новый контекст браузера (свой localStorage — свой пользователь) со страницей и записью сети.
 
     new_context из pytest-playwright: base_url подставляет сам (из фикстуры base_url выше), скриншот
-    и trace упавшего теста сохраняет и для этих контекстов.
+    и trace упавшего теста сохраняет и для этих контекстов. Аргументы `_open` уходят в new_context
+    (например, color_scheme="dark").
     """
 
-    def _open() -> Session:
-        context = new_context()
+    def _open(**context_args) -> Session:
+        context = new_context(**context_args)
         context.set_default_timeout(TIMEOUT_MS)
         context.set_default_navigation_timeout(NAVIGATION_TIMEOUT_MS)
         page = context.new_page()

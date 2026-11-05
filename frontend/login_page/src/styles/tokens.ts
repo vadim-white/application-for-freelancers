@@ -227,6 +227,14 @@ export function themeOverrides(p: Palette): GlobalThemeOverrides {
     Drawer: {
       color: p.surface,
       headerBorderBottom: `1px solid ${p.line}`
+    },
+    // тёмные темы Naive UI рисуют поля без рамки (на фоне поля), а наш фон поля — поверхность:
+    // на карточке и в панели поле пропало бы. Рамка — линия палитры, как в светлой теме
+    Input: {
+      border: `1px solid ${p.line}`
+    },
+    InternalSelection: {
+      border: `1px solid ${p.line}`
     }
   }
 }

@@ -37,7 +37,7 @@
 
       <span class="spacer" />
 
-      <!-- Переключатель темы (3.2.5) -->
+      <theme-switcher @open="menuOpen = false" />
 
       <div v-if="auth.user" class="user">
         <span class="avatar">{{ initial }}</span>
@@ -72,10 +72,11 @@ import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import AppIcon from '../components/AppIcon.vue'
 import BrandMark from '../components/BrandMark.vue'
+import ThemeSwitcher from '../components/ThemeSwitcher.vue'
 import { useAuthStore } from '../stores/auth'
 
 // Раскладка страниц после входа: общая шапка и страница под ней. На узком экране разделы уходят
-// в меню под кнопкой; меню закрывается по выбору раздела и по Esc
+// в меню под кнопкой; меню закрывается по выбору раздела и по Esc, а также когда открыт список темы
 const auth = useAuthStore()
 const route = useRoute()
 
