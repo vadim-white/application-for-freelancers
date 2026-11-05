@@ -1,4 +1,4 @@
-"""Статистика admin: email из auth и роль после смены (stores/auth.ts, Dashboard.vue).
+"""Статистика admin: email из auth и роль после смены (stores/auth.ts, Statistics.vue).
 
 Статистика приходит из task и time с одними user_id, email и имена страница берёт у auth. Роль в
 токене живёт до 15 минут, поэтому после смены роли при открытой сессии фронт сверяет /me с токеном
@@ -50,9 +50,9 @@ def test_statistics_shows_user_email(open_session, base_url, run_label):
 
     login(s.page, ADMIN)
     with s.page.expect_response(lambda r: api_path(r.url) == STATISTICS) as stats:
-        s.page.reload()
+        s.page.get_by_role("link", name="Статистика").click()
     assert stats.value.status == 200, f"статистика: {stats.value.status}"
-    s.page.get_by_role("button", name="Статистика").click()
+    expect(s.page).to_have_url(re.compile(r"/statistics$"))
     expect(s.page.locator(".stats-table tbody tr").filter(has_text=USER1)).to_have_count(1)
 
     users = [r for r in s.net.responses if r[1] == "/api/auth/users"]
@@ -77,19 +77,22 @@ def test_promoted_user_sees_statistics_after_reload(open_session, base_url, run_
     try:
         # сессия открыта, пока он обычный user: токен несёт role=user
         login(s.page, email)
-        expect(s.page.get_by_role("button", name="Статистика")).to_have_count(0)
+        statistics = s.page.get_by_role("link", name="Статистика")
+        expect(statistics).to_have_count(0)
 
         patch({"role": "admin"})
         s.net.clear()
-        with s.page.expect_response(lambda r: api_path(r.url) == STATISTICS) as stats:
-            s.page.reload()
+        s.page.reload()
         # без повторного входа: /me говорит admin, токен — user, фронт один раз обновляет токен
+        expect(statistics).to_have_count(1)
+        expect(s.page).to_have_url(re.compile(r"/dashboard$"))
+        with s.page.expect_response(lambda r: api_path(r.url) == STATISTICS) as stats:
+            statistics.click()
         assert stats.value.status == 200, f"статистика после смены роли: {stats.value.status}"
-        expect(s.page.get_by_role("button", name="Статистика")).to_have_count(1)
         assert s.net.api("POST", "/api/auth/refresh") == [200], s.net.responses
         assert [r for r in s.net.responses if r[2] == 403] == [], s.net.responses
         assert local_storage(s.page, "access_token") is not None
-        expect(s.page).to_have_url(re.compile(r"/dashboard$"))
+        expect(s.page).to_have_url(re.compile(r"/statistics$"))
         assert s.net.foreign(base_url) == [], "запросы не на origin фронта"
     finally:
         patch({"role": "user", "is_active": False})

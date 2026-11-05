@@ -1,193 +1,74 @@
 <template>
-  <n-layout>
-    <n-layout-header class="dashboard-header">
-      <div class="header-content">
-        <div class="header-title">
-          <h1 style="margin: 0; color: var(--color-text); font-size: 24px">Проекты</h1>
-        </div>
+  <div class="dashboard-content">
+    <!-- Идущий таймер -->
+    <n-button v-if="timer.entry" type="warning" class="running-timer" @click="openRunningTimer">
+      <template #icon><app-icon :icon="Timer" /></template>
+      {{ timer.runningTitle }} · {{ timer.formatted }}
+    </n-button>
 
-        <div class="header-nav">
-          <n-button-group>
-            <n-button
-              :type="currentTab === 'tasks' ? 'primary' : 'tertiary'"
-              @click="currentTab = 'tasks'"
-            >
-              <template #icon><app-icon :icon="ListChecks" /></template>
-              Задачи
-            </n-button>
-            <n-button
-              v-if="isAdmin"
-              :type="currentTab === 'statistics' ? 'primary' : 'tertiary'"
-              @click="currentTab = 'statistics'"
-            >
-              <template #icon><app-icon :icon="ChartColumn" /></template>
-              Статистика
-            </n-button>
-            <n-button v-if="isAdmin" type="tertiary" @click="router.push('/users')">
-              <template #icon><app-icon :icon="Users" /></template>
-              Пользователи
-            </n-button>
-          </n-button-group>
-        </div>
-
-        <div class="header-user">
-          <div class="user-info">
-            <n-avatar
-              v-if="auth.user"
-              round
-              :style="{ background: 'var(--color-accent-soft)', color: 'var(--color-text)' }"
-            >
-              {{ (auth.user.full_name || auth.user.email).charAt(0).toUpperCase() }}
-            </n-avatar>
-            <div class="user-text">
-              <div class="user-name">{{ auth.user?.full_name || auth.user?.email }}</div>
-              <div v-if="isAdmin" class="user-role">
-                <app-icon :icon="Crown" :size="14" /> Администратор
-              </div>
-              <div v-else class="user-role"><app-icon :icon="User" :size="14" /> Пользователь</div>
-            </div>
-          </div>
-          <n-button-group>
-            <n-button text style="color: var(--color-text-secondary)" @click="toProfile">
-              <template #icon><app-icon :icon="User" /></template>
-              Профиль
-            </n-button>
-            <n-button text style="color: var(--color-text-secondary)" @click="onLogout">
-              <template #icon><app-icon :icon="LogOut" /></template>
-              Выйти
-            </n-button>
-          </n-button-group>
-        </div>
+    <div class="fade-in">
+      <div class="section-header">
+        <h1>Ваши проекты</h1>
       </div>
-    </n-layout-header>
 
-    <n-layout-content class="dashboard-content">
-      <!-- Идущий таймер -->
-      <n-button v-if="timer.entry" type="warning" class="running-timer" @click="openRunningTimer">
-        <template #icon><app-icon :icon="Timer" /></template>
-        {{ timer.runningTitle }} · {{ timer.formatted }}
-      </n-button>
-
-      <!-- TAB: TASKS -->
-      <div v-if="currentTab === 'tasks'" class="fade-in">
-        <div class="section-header">
-          <h2 style="margin: 0">Ваши проекты</h2>
-        </div>
-
-        <div class="project-filters">
-          <n-select
-            v-model:value="sort"
-            class="project-sort"
-            :options="sortOptions"
-            style="width: 200px"
-            @update:value="onFilterChange"
-          />
-          <label class="archive-switch">
-            <n-switch v-model:value="showArchive" @update:value="onFilterChange" />
-            Показать архив
-          </label>
-        </div>
-
-        <div class="projects-grid">
-          <!-- Задачи вне проекта: всегда первая, не зависит от страницы, сортировки и архива -->
-          <NoProjectCard
-            :total="noProjectTotal"
-            :preview="noProjectPreview"
-            @open="openNoProject"
-          />
-          <!-- Карточки проектов -->
-          <ProjectCard
-            v-for="p in projects"
-            :key="p.id"
-            :project="p"
-            :busy="busyId === p.id"
-            @open="openProject"
-            @toggle-archive="toggleArchive"
-            @edit="openEditProject"
-          />
-
-          <!-- Карточка создания проекта (для всех) -->
-          <div class="create-project-card" @click="createProjectOpen">
-            <div class="create-project-icon">+</div>
-            <div class="create-project-text">
-              <div class="create-project-title">Создать проект</div>
-              <div class="create-project-desc">Новый проект</div>
-            </div>
-          </div>
-
-          <!-- Пустое состояние -->
-          <div v-if="projects.length === 0" class="empty-state">
-            <div style="color: var(--color-text-secondary); margin-bottom: 12px">
-              <app-icon :icon="Inbox" :size="40" />
-            </div>
-            <div style="font-weight: 600; margin-bottom: 4px">Нет проектов</div>
-            <div style="color: var(--color-text-secondary)">
-              Создайте первый проект — нажмите «Создать проект»
-            </div>
-          </div>
-        </div>
-
-        <n-pagination
-          v-if="total > PAGE_SIZE"
-          class="projects-pagination"
-          :page="page"
-          :page-size="PAGE_SIZE"
-          :item-count="total"
-          @update:page="onPageChange"
+      <div class="project-filters">
+        <n-select
+          v-model:value="sort"
+          class="project-sort"
+          :options="sortOptions"
+          style="width: 200px"
+          @update:value="onFilterChange"
         />
+        <label class="archive-switch">
+          <n-switch v-model:value="showArchive" @update:value="onFilterChange" />
+          Показать архив
+        </label>
       </div>
 
-      <!-- TAB: STATISTICS -->
-      <div v-if="currentTab === 'statistics' && isAdmin" class="fade-in">
-        <div class="section-header">
-          <h2 style="margin: 0">Статистика пользователей</h2>
-          <p style="margin: 8px 0 0 0; color: var(--color-text-secondary)">
-            Сводка по работе команды
-          </p>
+      <div class="projects-grid">
+        <!-- Задачи вне проекта: всегда первая, не зависит от страницы, сортировки и архива -->
+        <NoProjectCard :total="noProjectTotal" :preview="noProjectPreview" @open="openNoProject" />
+        <!-- Карточки проектов -->
+        <ProjectCard
+          v-for="p in projects"
+          :key="p.id"
+          :project="p"
+          :busy="busyId === p.id"
+          @open="openProject"
+          @toggle-archive="toggleArchive"
+          @edit="openEditProject"
+        />
+
+        <!-- Карточка создания проекта (для всех) -->
+        <div class="create-project-card" @click="createProjectOpen">
+          <div class="create-project-icon">+</div>
+          <div class="create-project-text">
+            <div class="create-project-title">Создать проект</div>
+            <div class="create-project-desc">Новый проект</div>
+          </div>
         </div>
 
-        <n-card class="stats-table-card">
-          <table class="stats-table">
-            <thead>
-              <tr>
-                <th>Пользователь</th>
-                <th>Записей</th>
-                <th>Задач</th>
-                <th>Всего (чч:мм)</th>
-                <th>Среднее на задачу (чч:мм)</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr v-for="row in usersStats" :key="row.user_id">
-                <td>{{ userLabel(row.user_id) }}</td>
-                <td class="text-center">{{ row.entries_count }}</td>
-                <td class="text-center">
-                  <n-tag type="info" round>{{ row.tasks_count }}</n-tag>
-                </td>
-                <td class="text-center">
-                  <n-tag type="success" round>{{ formatHoursMinutes(row.total_seconds) }}</n-tag>
-                </td>
-                <td class="text-center">
-                  <n-tag type="success" round>{{
-                    formatHoursMinutes(row.avg_seconds_per_task)
-                  }}</n-tag>
-                </td>
-              </tr>
-            </tbody>
-          </table>
-        </n-card>
-
-        <div v-if="usersStats.length === 0" class="empty-state">
+        <!-- Пустое состояние -->
+        <div v-if="projects.length === 0" class="empty-state">
           <div style="color: var(--color-text-secondary); margin-bottom: 12px">
-            <app-icon :icon="ChartColumn" :size="40" />
+            <app-icon :icon="Inbox" :size="40" />
           </div>
-          <div style="font-weight: 600; margin-bottom: 4px">Нет данных</div>
+          <div style="font-weight: 600; margin-bottom: 4px">Нет проектов</div>
           <div style="color: var(--color-text-secondary)">
-            Статистика будет доступна после создания задач
+            Создайте первый проект — нажмите «Создать проект»
           </div>
         </div>
       </div>
-    </n-layout-content>
+
+      <n-pagination
+        v-if="total > PAGE_SIZE"
+        class="projects-pagination"
+        :page="page"
+        :page-size="PAGE_SIZE"
+        :item-count="total"
+        @update:page="onPageChange"
+      />
+    </div>
 
     <!-- Drawer с задачами -->
     <ProjectTasksDrawer
@@ -221,16 +102,15 @@
       @update:show="createProjectModal = $event"
       @created="onProjectCreated"
     />
-  </n-layout>
+  </div>
 </template>
 
 <script setup lang="ts">
-import { ChartColumn, Crown, Inbox, ListChecks, LogOut, Timer, User, Users } from '@lucide/vue'
+import { Inbox, Timer } from '@lucide/vue'
 import AppIcon from '../components/AppIcon.vue'
-import { ref, reactive, computed, onMounted, onUnmounted } from 'vue'
-import { useRouter } from 'vue-router'
+import { ref, onMounted, onUnmounted } from 'vue'
 import { useAuthStore } from '../stores/auth'
-import { useTimerStore, formatHoursMinutes } from '../stores/timer'
+import { useTimerStore } from '../stores/timer'
 import {
   NO_PROJECT_ID,
   getProjects,
@@ -247,32 +127,11 @@ import ProjectTasksDrawer from '../components/ProjectTasksDrawer.vue'
 import TaskTimerModal from '../components/TaskTimerModal.vue'
 import CreateProjectModal from '../components/CreateProjectModal.vue'
 import ProjectEditModal from '../components/ProjectEditModal.vue'
-import {
-  NAvatar,
-  NButton,
-  NButtonGroup,
-  NCard,
-  NLayout,
-  NLayoutContent,
-  NLayoutHeader,
-  NPagination,
-  NSelect,
-  NSwitch,
-  NTag,
-  useMessage
-} from 'naive-ui'
-import api from '../services/api'
-import type { UserStatistics } from '../services/time'
-import { listUsers, type UserItem } from '../services/users'
+import { NButton, NPagination, NSelect, NSwitch, useMessage } from 'naive-ui'
 
-const router = useRouter()
 const auth = useAuthStore()
 const timer = useTimerStore()
 const message = useMessage()
-
-const isAdmin = computed(() => {
-  return auth.user?.role === 'admin'
-})
 
 const PAGE_SIZE = 20
 
@@ -296,10 +155,6 @@ const noProjectPreview = ref<Task[]>([])
 // ответ устаревшего запроса не должен затереть более новый
 let requestSeq = 0
 let noProjectSeq = 0
-const usersStats = ref<UserStatistics[]>([])
-const statsUsers = reactive<Record<number, UserItem>>({})
-
-const currentTab = ref('tasks')
 
 const drawerShow = ref(false)
 const tasksDrawer = ref<InstanceType<typeof ProjectTasksDrawer> | null>(null)
@@ -316,38 +171,6 @@ const editProjectShow = ref(false)
 function openEditProject(p: ProjectListItem) {
   editProject.value = p
   editProjectShow.value = true
-}
-
-async function loadStatistics() {
-  try {
-    const stats = await api.get<UserStatistics[]>('/api/tasks/statistics/users')
-    usersStats.value = stats.data
-  } catch {
-    message.error('Ошибка загрузки статистики')
-    return
-  }
-  await loadStatsUsers(usersStats.value.map((row) => row.user_id))
-}
-
-// email и имя из auth порциями по 200 (лимит фильтра id); не нашёлся или auth ответил ошибкой — «#id».
-// Об ошибке — одно предупреждение на всю загрузку, а не на каждую порцию
-async function loadStatsUsers(ids: number[]) {
-  let failed = false
-  for (let i = 0; i < ids.length; i += 200) {
-    try {
-      const page = await listUsers({ id: ids.slice(i, i + 200), limit: 200 })
-      for (const u of page.items) statsUsers[u.id] = u
-    } catch {
-      failed = true
-    }
-  }
-  if (failed) message.warning('Не удалось загрузить email пользователей, показаны номера')
-}
-
-function userLabel(id: number) {
-  const u = statsUsers[id]
-  if (!u) return `#${id}`
-  return u.full_name ? `${u.email} · ${u.full_name}` : u.email
 }
 
 // список проектов и карточка «Без проекта» — два независимых запроса; ошибка одного не мешает другому
@@ -464,15 +287,6 @@ function onVisibilityChange() {
   if (document.visibilityState === 'visible') timer.refresh().catch(() => {})
 }
 
-function onLogout() {
-  auth.logout()
-  window.location.href = '/login'
-}
-
-function toProfile() {
-  router.push('/profile')
-}
-
 function createProjectOpen() {
   createProjectModal.value = true
 }
@@ -488,9 +302,6 @@ onMounted(async () => {
   document.addEventListener('visibilitychange', onVisibilityChange)
   timer.refresh().catch(() => message.error('Не удалось загрузить таймер'))
   await load()
-  if (isAdmin.value) {
-    await loadStatistics()
-  }
 })
 
 onUnmounted(() => {
@@ -499,63 +310,8 @@ onUnmounted(() => {
 </script>
 
 <style scoped>
-.dashboard-header {
-  padding: 0;
-  height: auto;
-}
-
-.header-content {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 16px 24px;
-  gap: 24px;
-}
-
-.header-title {
-  flex: 0 0 auto;
-  min-width: 200px;
-}
-
-.header-nav {
-  flex: 1;
-  display: flex;
-  justify-content: center;
-}
-
-.header-user {
-  flex: 0 0 auto;
-  display: flex;
-  align-items: center;
-  gap: 16px;
-  color: var(--color-text);
-}
-
-.user-info {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-
-.user-text {
-  display: flex;
-  flex-direction: column;
-}
-
-.user-name {
-  font-weight: var(--weight-strong);
-  font-size: 14px;
-}
-
-.user-role {
-  font-size: 12px;
-  opacity: 0.8;
-}
-
 .dashboard-content {
   padding: 32px 24px;
-  background: var(--color-bg);
-  min-height: calc(100vh - 80px);
 }
 
 .section-header {
@@ -566,7 +322,7 @@ onUnmounted(() => {
   margin-bottom: 20px;
 }
 
-.section-header h2 {
+.section-header h1 {
   font-size: 28px;
   font-weight: var(--weight-heading);
   color: var(--color-text);
@@ -648,62 +404,11 @@ onUnmounted(() => {
   color: var(--color-text-secondary);
 }
 
-.stats-table {
-  width: 100%;
-  border-collapse: collapse;
-}
-
-.stats-table thead tr {
-  background: var(--color-surface-hover);
-}
-
-.stats-table th {
-  padding: 14px 16px;
-  text-align: left;
-  font-weight: var(--weight-strong);
-  color: var(--color-text);
-  border-bottom: 2px solid var(--color-line);
-}
-
-.stats-table td {
-  padding: 14px 16px;
-  border-bottom: 1px solid var(--color-line);
-  color: var(--color-text);
-}
-
-.stats-table tbody tr:hover {
-  background: var(--color-surface-hover);
-}
-
-.text-center {
-  text-align: center;
-}
-
 .fade-in {
   animation: fadeIn 0.3s ease-out;
 }
 
 @media (max-width: 1024px) {
-  .header-content {
-    flex-wrap: wrap;
-    padding: 12px 16px;
-  }
-
-  .header-title {
-    flex: 1 1 100%;
-    min-width: auto;
-    margin-bottom: 8px;
-  }
-
-  .header-nav {
-    flex: 1 1 auto;
-  }
-
-  .header-user {
-    flex: 1 1 auto;
-    justify-content: flex-end;
-  }
-
   .projects-grid {
     grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
   }
@@ -714,32 +419,8 @@ onUnmounted(() => {
     padding: 20px 16px;
   }
 
-  .header-content {
-    flex-direction: column;
-    gap: 12px;
-  }
-
-  .header-user {
-    flex: 1 1 100%;
-    justify-content: space-between;
-    order: -1;
-  }
-
-  .user-text {
-    display: none;
-  }
-
   .projects-grid {
     grid-template-columns: 1fr;
-  }
-
-  .stats-table {
-    font-size: 12px;
-  }
-
-  .stats-table th,
-  .stats-table td {
-    padding: 8px 10px;
   }
 }
 </style>

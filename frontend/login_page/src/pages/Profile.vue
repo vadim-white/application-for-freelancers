@@ -1,17 +1,8 @@
 <template>
   <div class="profile-container">
-    <!-- Header -->
-    <div class="profile-header">
-      <div class="header-content">
-        <router-link to="/dashboard" class="back-link">
-          <app-icon :icon="ArrowLeft" /> Вернуться
-        </router-link>
-        <h1>Профиль</h1>
-      </div>
-    </div>
-
-    <!-- Content -->
     <div class="profile-content">
+      <h1 class="page-title">Профиль</h1>
+
       <!-- User Card -->
       <div class="user-card">
         <div class="user-avatar">
@@ -174,7 +165,12 @@
 
       <!-- Actions -->
       <div class="actions-section">
-        <n-button type="error" style="width: 100%; padding: 12px" size="large" @click="onLogout">
+        <n-button
+          type="error"
+          style="width: 100%; padding: 12px"
+          size="large"
+          @click="auth.logout()"
+        >
           <template #icon><app-icon :icon="LogOut" /></template>
           Выйти из системы
         </n-button>
@@ -185,7 +181,6 @@
 
 <script setup lang="ts">
 import {
-  ArrowLeft,
   Check,
   ChartColumn,
   CircleCheck,
@@ -203,61 +198,24 @@ import {
 import AppIcon from '../components/AppIcon.vue'
 import { computed } from 'vue'
 import { NButton, NCard, NTag } from 'naive-ui'
-import { useRouter } from 'vue-router'
 import { useAuthStore } from '../stores/auth'
 
 const auth = useAuthStore()
-const router = useRouter()
 
 const isAdmin = computed(() => {
   return auth.user?.role === 'admin'
 })
-
-function onLogout() {
-  auth.logout()
-  router.push('/login')
-}
 </script>
 
 <style scoped>
 .profile-container {
-  min-height: 100vh;
-  background: var(--color-bg);
   display: flex;
   flex-direction: column;
 }
 
-.profile-header {
-  background: var(--color-surface);
-  color: var(--color-text);
-  padding: 24px;
-  border-bottom: 1px solid var(--color-line);
-}
-
-.header-content {
-  max-width: 1200px;
-  margin: 0 auto;
-  width: 100%;
-}
-
-.back-link {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  color: var(--color-text-secondary);
-  text-decoration: none;
-  margin-bottom: 12px;
-  transition: color var(--transition);
-  font-weight: var(--weight-text);
-}
-
-.back-link:hover {
-  color: var(--color-text);
-}
-
-.header-content h1 {
+.page-title {
   font-size: 32px;
-  margin: 0;
+  margin: 0 0 24px;
   font-weight: var(--weight-heading);
 }
 
@@ -455,11 +413,7 @@ function onLogout() {
 }
 
 @media (max-width: 768px) {
-  .profile-header {
-    padding: 16px;
-  }
-
-  .header-content h1 {
+  .page-title {
     font-size: 24px;
   }
 

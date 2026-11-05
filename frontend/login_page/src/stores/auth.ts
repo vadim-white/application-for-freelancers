@@ -66,12 +66,16 @@ export const useAuthStore = defineStore('auth', () => {
     return res.data
   }
 
+  // Выход — с полной перезагрузкой, а не переходом роутера: она сбрасывает все сторы. Стор таймера
+  // держит идущую запись и задачу прошлого пользователя и тикает интервалом — без перезагрузки
+  // следующий вход в той же вкладке на миг показал бы чужой таймер. Так же выходит forceLogout в api.ts
   function logout() {
     accessToken.value = null
     refreshToken.value = null
     user.value = null
     localStorage.removeItem('access_token')
     localStorage.removeItem('refresh_token')
+    window.location.assign('/login')
   }
 
   // auto-fetch user if token present on store init

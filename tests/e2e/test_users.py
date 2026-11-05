@@ -1,4 +1,4 @@
-"""Страница пользователей /users: только admin; отключение и включение пользователя.
+"""Страницы admin /users и /statistics закрыты для user; отключение и включение пользователя.
 
 Seed-пользователей тест не трогает (на них опираются остальные тесты и smoke): отключается
 пользователь, которого тест сам регистрирует через API.
@@ -11,15 +11,19 @@ from playwright.sync_api import expect
 from helpers import ADMIN, PASSWORD, USER1, api_path, login
 
 
-def test_user_cannot_open_users_page(open_session, base_url):
+def test_user_cannot_open_admin_pages(open_session, base_url):
     s = open_session()
     login(s.page, USER1)
-    expect(s.page.get_by_role("button", name="Пользователи")).to_have_count(0)
+    expect(s.page.get_by_role("link", name="Пользователи")).to_have_count(0)
+    expect(s.page.get_by_role("link", name="Статистика")).to_have_count(0)
 
     s.net.clear()
     s.page.goto("/users")
     expect(s.page).to_have_url(re.compile(r"/dashboard$"))
     assert s.net.api("GET", "/api/auth/users") == [], "user запросил список пользователей"
+    s.page.goto("/statistics")
+    expect(s.page).to_have_url(re.compile(r"/dashboard$"))
+    assert s.net.api("GET", "/api/tasks/statistics/users") == [], "user запросил статистику"
     assert s.net.foreign(base_url) == [], "запросы не на origin фронта"
 
 
@@ -39,7 +43,7 @@ def test_admin_disables_and_enables_user(open_session, base_url, run_label):
     assert login_status() == 200, "новый пользователь не вошёл до отключения"
 
     login(s.page, ADMIN)
-    s.page.get_by_role("button", name="Пользователи").click()
+    s.page.get_by_role("link", name="Пользователи").click()
     expect(s.page).to_have_url(re.compile(r"/users$"))
 
     # поиск находит ровно пользователя теста

@@ -62,6 +62,6 @@ def test_root_route_by_auth_state(open_session, base_url):
     for path in ("/", "/login", "/register"):
         s.page.goto(path)
         expect(s.page).to_have_url(re.compile(r"/dashboard$"))
-        expect(s.page.locator(".dashboard-header")).to_be_visible()
+        expect(s.page.get_by_test_id("app-header")).to_be_visible()
     for sess in (guest, s):
         assert sess.net.foreign(base_url) == [], "запросы не на origin фронта"

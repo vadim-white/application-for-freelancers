@@ -8,7 +8,7 @@
 import { Timer } from '@lucide/vue'
 import AppIcon from './AppIcon.vue'
 
-// Знак J1: иконка timer в квадрате цвета акцента. В шапку встаёт в 3.2.4; тот же знак — public/favicon.svg
+// Знак J1: иконка timer в квадрате цвета акцента, стоит в шапке (AppLayout); тот же знак — public/favicon.svg
 defineProps({
   size: { type: Number, default: 32 }
 })
