@@ -5,7 +5,21 @@
       <p style="margin: 8px 0 0 0; color: var(--color-text-secondary)">Сводка по работе команды</p>
     </div>
 
-    <n-card class="stats-table-card">
+    <StateLoading v-if="loading" label="Загружаем статистику…" />
+    <StateError
+      v-else-if="loadError !== null"
+      title="Не удалось загрузить статистику"
+      :text="loadError"
+      @retry="loadStatistics"
+    />
+    <StateEmpty
+      v-else-if="usersStats.length === 0"
+      :icon="ChartColumn"
+      title="Нет данных"
+      hint="Статистика будет доступна после создания задач"
+    />
+
+    <n-card v-else class="stats-table-card">
       <table class="stats-table">
         <thead>
           <tr>
@@ -33,25 +47,18 @@
         </tbody>
       </table>
     </n-card>
-
-    <div v-if="usersStats.length === 0" class="empty-state">
-      <div style="color: var(--color-text-secondary); margin-bottom: 12px">
-        <app-icon :icon="ChartColumn" :size="40" />
-      </div>
-      <div style="font-weight: 600; margin-bottom: 4px">Нет данных</div>
-      <div style="color: var(--color-text-secondary)">
-        Статистика будет доступна после создания задач
-      </div>
-    </div>
   </div>
 </template>
 
 <script setup lang="ts">
 import { ChartColumn } from '@lucide/vue'
-import AppIcon from '../components/AppIcon.vue'
+import StateEmpty from '../components/StateEmpty.vue'
+import StateError from '../components/StateError.vue'
+import StateLoading from '../components/StateLoading.vue'
 import { ref, reactive, onMounted } from 'vue'
 import { NCard, NTag, useMessage } from 'naive-ui'
 import { formatHoursMinutes } from '../stores/timer'
+import { errorText } from '../services/errors'
 import api from '../services/api'
 import type { UserStatistics } from '../services/time'
 import { listUsers, type UserItem } from '../services/users'
@@ -60,17 +67,23 @@ import { listUsers, type UserItem } from '../services/users'
 const message = useMessage()
 
 const usersStats = ref<UserStatistics[]>([])
+const loading = ref(true)
+const loadError = ref<string | null>(null)
 const statsUsers = reactive<Record<number, UserItem>>({})
 
 async function loadStatistics() {
+  loading.value = true
+  loadError.value = null
   try {
     const stats = await api.get<UserStatistics[]>('/api/tasks/statistics/users')
     usersStats.value = stats.data
-  } catch {
-    message.error('Ошибка загрузки статистики')
+  } catch (err) {
+    loadError.value = errorText(err, 'Ошибка загрузки статистики')
+    loading.value = false
     return
   }
   await loadStatsUsers(usersStats.value.map((row) => row.user_id))
+  loading.value = false
 }
 
 // email и имя из auth порциями по 200 (лимит фильтра id); не нашёлся или auth ответил ошибкой — «#id».
@@ -111,12 +124,6 @@ onMounted(loadStatistics)
   font-weight: var(--weight-heading);
   color: var(--color-text);
   margin: 0;
-}
-
-.empty-state {
-  text-align: center;
-  padding: 60px 20px;
-  color: var(--color-text-secondary);
 }
 
 .stats-table {

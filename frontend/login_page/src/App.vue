@@ -1,7 +1,14 @@
 <template>
   <n-config-provider :theme="naiveTheme" :theme-overrides="overrides">
     <n-message-provider>
-      <router-view />
+      <div v-if="chunkError !== null" class="chunk-error">
+        <StateError
+          title="Не удалось открыть страницу"
+          text="Страница могла обновиться или пропала связь. Повторите попытку."
+          @retry="retryChunk"
+        />
+      </div>
+      <router-view v-else />
     </n-message-provider>
   </n-config-provider>
 </template>
@@ -24,12 +31,13 @@ import {
   paginationDark,
   selectDark,
   spaceDark,
-  spinDark,
   switchDark,
   tagDark,
   type GlobalTheme
 } from 'naive-ui'
 import { computed } from 'vue'
+import StateError from './components/StateError.vue'
+import { RELOAD_FLAG, chunkError } from './services/chunkError'
 import { useThemeStore } from './stores/theme'
 import { palettes, themeOverrides } from './styles/tokens'
 
@@ -52,9 +60,19 @@ const darkTheme: GlobalTheme = {
   Pagination: paginationDark,
   Select: selectDark,
   Space: spaceDark,
-  Spin: spinDark,
   Switch: switchDark,
   Tag: tagDark
+}
+
+// Не открылась страница даже после перезагрузки (J6): «Повторить» снимает отметку и грузит адрес заново
+function retryChunk() {
+  const target = chunkError.value
+  try {
+    sessionStorage.removeItem(RELOAD_FLAG)
+  } catch {
+    // приватный режим: отметки и так нет
+  }
+  window.location.assign(target ?? '/')
 }
 
 // Тема Naive UI идёт за стором темы: тёмные темы и overrides тёмной палитры или светлые
@@ -64,3 +82,9 @@ const darkOverrides = themeOverrides(palettes.dark)
 const naiveTheme = computed(() => (theme.resolved === 'dark' ? darkTheme : null))
 const overrides = computed(() => (theme.resolved === 'dark' ? darkOverrides : lightOverrides))
 </script>
+
+<style scoped>
+.chunk-error {
+  padding: 48px 16px;
+}
+</style>

@@ -3,6 +3,7 @@
 Карточка показывает первые три задачи, а счётчик «(N)» — по всем активным задачам проекта.
 Превью и счётчик приходят в ответе списка проектов: задачи по проектам дашборд не запрашивает.
 Единственный запрос задач на загрузку — карточка «Без проекта» (`project_id=none`).
+Ошибка списка проектов показывается на месте списка с кнопкой «Повторить», а не только тостом.
 `/` ведёт залогиненного на /dashboard, остальных на /login; /login и /register залогиненного —
 на /dashboard (frontend/login_page/src/router/index.ts).
 """
@@ -11,7 +12,7 @@ import re
 
 from playwright.sync_api import expect
 
-from helpers import USER1, local_storage, login, wait_responses
+from helpers import USER1, api_path, is_projects_list, local_storage, login, wait_responses
 
 TASKS = 4
 
@@ -65,3 +66,31 @@ def test_root_route_by_auth_state(open_session, base_url):
         expect(s.page.get_by_test_id("app-header")).to_be_visible()
     for sess in (guest, s):
         assert sess.net.foreign(base_url) == [], "запросы не на origin фронта"
+
+
+def test_projects_error_shows_retry(open_session):
+    s = open_session()
+    projects = login(s.page, USER1)
+
+    def is_list(url: str) -> bool:
+        return api_path(url) == "/api/tasks/projects"
+
+    def fail(route) -> None:
+        route.fulfill(status=500, json={"detail": "Сервис временно недоступен"})
+
+    s.page.route(is_list, fail)
+    s.page.reload()
+    # на месте списка ошибка и кнопка; «Нет проектов» тут было бы неправдой
+    expect(s.page.get_by_text("Не удалось загрузить проекты")).to_be_visible()
+    expect(s.page.get_by_text("Сервис временно недоступен")).to_be_visible()
+    expect(s.page.get_by_role("button", name="Повторить")).to_be_visible()
+    expect(s.page.get_by_text("Нет проектов")).to_have_count(0)
+    expect(s.page.locator(".project-card")).to_have_count(0)
+
+    # «Повторить» шлёт тот же запрос заново: после снятия перехвата приходят карточки
+    s.page.unroute(is_list, fail)
+    with s.page.expect_response(is_projects_list) as retry:
+        s.page.get_by_role("button", name="Повторить").click()
+    assert retry.value.status == 200, f"повторный GET /api/tasks/projects: {retry.value.status}"
+    expect(s.page.locator(".project-card")).to_have_count(len(projects))
+    expect(s.page.get_by_role("button", name="Повторить")).to_have_count(0)

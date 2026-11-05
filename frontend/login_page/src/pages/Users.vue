@@ -23,7 +23,20 @@
       />
     </div>
 
-    <n-spin :show="loading">
+    <StateLoading v-if="loading && items.length === 0" label="Загружаем пользователей…" />
+    <StateError
+      v-else-if="loadError !== null"
+      title="Не удалось загрузить пользователей"
+      :text="loadError"
+      @retry="load"
+    />
+    <StateEmpty
+      v-else-if="items.length === 0"
+      :icon="Search"
+      title="Никого не найдено"
+      hint="Измените запрос или фильтры"
+    />
+    <div v-else :class="{ reloading: loading }">
       <table class="users-table">
         <thead>
           <tr>
@@ -61,15 +74,12 @@
               </template>
             </td>
           </tr>
-          <tr v-if="!loading && items.length === 0">
-            <td colspan="6">Никого не найдено</td>
-          </tr>
         </tbody>
       </table>
-    </n-spin>
+    </div>
 
     <n-pagination
-      v-if="total > PAGE_SIZE"
+      v-if="total > PAGE_SIZE && loadError === null"
       :page="page"
       :page-size="PAGE_SIZE"
       :item-count="total"
@@ -80,7 +90,11 @@
 
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted } from 'vue'
-import { NButton, NInput, NPagination, NSelect, NSpin, useMessage } from 'naive-ui'
+import { Search } from '@lucide/vue'
+import { NButton, NInput, NPagination, NSelect, useMessage } from 'naive-ui'
+import StateEmpty from '../components/StateEmpty.vue'
+import StateError from '../components/StateError.vue'
+import StateLoading from '../components/StateLoading.vue'
 import { useAuthStore } from '../stores/auth'
 import { errorText } from '../services/errors'
 import { listUsers, updateUser, type UserItem, type UserRole } from '../services/users'
@@ -105,7 +119,8 @@ const activeOptions = [
 const items = ref<UserItem[]>([])
 const total = ref(0)
 const page = ref(1)
-const loading = ref(false)
+const loading = ref(true)
+const loadError = ref<string | null>(null)
 const busyId = ref<number | null>(null)
 
 const search = ref('')
@@ -123,6 +138,7 @@ function formatDate(iso: string): string {
 async function load() {
   const seq = ++requestSeq
   loading.value = true
+  loadError.value = null
   try {
     const q = search.value.trim()
     const data = await listUsers({
@@ -135,6 +151,7 @@ async function load() {
     if (seq !== requestSeq) return
     items.value = data.items
     total.value = data.total
+    loadError.value = null
     // фильтры сузили выдачу: страницы, на которой мы стоим, больше нет
     const lastPage = Math.max(1, Math.ceil(data.total / PAGE_SIZE))
     if (page.value > lastPage) {
@@ -143,7 +160,7 @@ async function load() {
     }
   } catch (err) {
     if (seq !== requestSeq) return
-    message.error(errorText(err, 'Ошибка загрузки пользователей'))
+    loadError.value = errorText(err, 'Ошибка загрузки пользователей')
   } finally {
     if (seq === requestSeq) loading.value = false
   }
@@ -184,3 +201,10 @@ async function change(u: UserItem, patch: { role?: UserRole; is_active?: boolean
 onMounted(load)
 onUnmounted(() => clearTimeout(searchTimer))
 </script>
+
+<style scoped>
+/* список перечитывается (поиск, фильтр, страница): прежние строки на месте, чуть бледнее */
+.reloading {
+  opacity: 0.6;
+}
+</style>

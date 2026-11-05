@@ -30,13 +30,23 @@
           </label>
         </div>
 
-        <n-spin :show="loading">
+        <StateLoading v-if="loading && !hasTasks" label="Загружаем задачи…" />
+        <StateError
+          v-else-if="loadError !== null"
+          title="Не удалось загрузить задачи"
+          :text="loadError"
+          @retry="loadTasks"
+        />
+        <div v-else :class="{ reloading: loading }">
           <!-- Текущие задачи -->
           <div class="tasks-section tasks-current">
             <h3 class="section-title">Текущие задачи ({{ currentTotal }})</h3>
-            <div v-if="!currentTasks.length && !loading" class="no-active-tasks">
-              {{ showArchive ? 'Нет архивных задач' : 'Нет текущих задач' }}
-            </div>
+            <StateEmpty
+              v-if="!currentTasks.length && !loading"
+              compact
+              :icon="Inbox"
+              :title="showArchive ? 'Нет архивных задач' : 'Нет текущих задач'"
+            />
             <div class="tasks-list">
               <div v-for="task in currentTasks" :key="task.id" class="task-item">
                 <div class="task-main">
@@ -151,16 +161,13 @@
             />
           </div>
 
-          <div v-if="!currentTotal && !doneTotal && !loading && !showArchive" class="empty-tasks">
-            <div style="color: var(--color-text-secondary); margin-bottom: 12px">
-              <app-icon :icon="Inbox" :size="40" />
-            </div>
-            <div style="font-weight: 600">Нет задач</div>
-            <div style="color: var(--color-text-secondary); font-size: 13px">
-              Создайте первую задачу ниже
-            </div>
-          </div>
-        </n-spin>
+          <StateEmpty
+            v-if="!currentTotal && !doneTotal && !loading && !showArchive"
+            :icon="Inbox"
+            title="Нет задач"
+            hint="Создайте первую задачу ниже"
+          />
+        </div>
 
         <!-- Форма добавления задачи -->
         <div class="add-task-section">
@@ -205,6 +212,9 @@
 import { Check, ChevronDown, ChevronRight, Inbox, Timer } from '@lucide/vue'
 import AppIcon from './AppIcon.vue'
 import StatusIcon from './StatusIcon.vue'
+import StateEmpty from './StateEmpty.vue'
+import StateError from './StateError.vue'
+import StateLoading from './StateLoading.vue'
 import { ref, computed, watch, type PropType } from 'vue'
 import {
   NO_PROJECT_ID,
@@ -228,7 +238,6 @@ import {
   NInput,
   NPagination,
   NSelect,
-  NSpin,
   NSwitch,
   useMessage
 } from 'naive-ui'
@@ -284,6 +293,11 @@ const showDone = ref(true)
 const loadingCurrent = ref(false)
 const loadingDone = ref(false)
 const loading = computed(() => loadingCurrent.value || loadingDone.value)
+// ошибка любого из двух списков — одна на панель, вместо обоих списков; «Повторить» перечитывает оба
+const currentError = ref<string | null>(null)
+const doneError = ref<string | null>(null)
+const loadError = computed(() => currentError.value ?? doneError.value)
+const hasTasks = computed(() => currentTasks.value.length > 0 || doneTasks.value.length > 0)
 const message = useMessage()
 const timer = useTimerStore()
 
@@ -302,6 +316,8 @@ watch(
     if (!p) {
       currentSeq++
       doneSeq++
+      currentError.value = null
+      doneError.value = null
       currentTasks.value = []
       currentTotal.value = 0
       doneTasks.value = []
@@ -310,6 +326,11 @@ watch(
       loadingDone.value = false
       return
     }
+    // старые задачи не остаются под загрузкой нового проекта
+    currentTasks.value = []
+    currentTotal.value = 0
+    doneTasks.value = []
+    doneTotal.value = 0
     await loadTasks()
   },
   { immediate: true }
@@ -330,9 +351,11 @@ async function loadCurrent() {
   if (!props.project) return
   const seq = ++currentSeq
   loadingCurrent.value = true
+  currentError.value = null
   try {
     const data = await fetchPage(CURRENT_STATUSES, currentPage.value)
     if (seq !== currentSeq) return
+    currentError.value = null
     currentTasks.value = data.items
     currentTotal.value = data.total
     // страницы, на которой мы стоим, больше нет (задачи ушли в архив или в «Выполненные»)
@@ -343,7 +366,7 @@ async function loadCurrent() {
     }
   } catch (err) {
     if (seq !== currentSeq) return
-    message.error(errorText(err, 'Не удалось загрузить задачи'))
+    currentError.value = errorText(err, 'Не удалось загрузить задачи')
     currentTasks.value = []
     currentTotal.value = 0
   } finally {
@@ -355,9 +378,11 @@ async function loadDone() {
   if (!props.project) return
   const seq = ++doneSeq
   loadingDone.value = true
+  doneError.value = null
   try {
     const data = await fetchPage(['done'], donePage.value)
     if (seq !== doneSeq) return
+    doneError.value = null
     doneTasks.value = data.items
     doneTotal.value = data.total
     const lastPage = Math.max(1, Math.ceil(data.total / PAGE_SIZE))
@@ -367,7 +392,7 @@ async function loadDone() {
     }
   } catch (err) {
     if (seq !== doneSeq) return
-    message.error(errorText(err, 'Не удалось загрузить выполненные задачи'))
+    doneError.value = errorText(err, 'Не удалось загрузить выполненные задачи')
     doneTasks.value = []
     doneTotal.value = 0
   } finally {
@@ -610,12 +635,6 @@ async function addTask() {
   user-select: none;
 }
 
-.no-active-tasks {
-  font-size: 13px;
-  color: var(--color-text-secondary);
-  margin-bottom: 12px;
-}
-
 .task-item-done {
   opacity: 0.7;
   border-left-color: var(--color-status-done);
@@ -650,10 +669,9 @@ async function addTask() {
   flex-wrap: wrap;
 }
 
-.empty-tasks {
-  text-align: center;
-  padding: 40px 20px;
-  color: var(--color-text-secondary);
+/* списки перечитываются (сортировка, архив, действие): прежние строки на месте, чуть бледнее */
+.reloading {
+  opacity: 0.6;
 }
 
 .add-task-section {

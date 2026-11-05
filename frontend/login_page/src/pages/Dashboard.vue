@@ -30,7 +30,7 @@
         <NoProjectCard :total="noProjectTotal" :preview="noProjectPreview" @open="openNoProject" />
         <!-- Карточки проектов -->
         <ProjectCard
-          v-for="p in projects"
+          v-for="p in shownProjects"
           :key="p.id"
           :project="p"
           :busy="busyId === p.id"
@@ -38,6 +38,19 @@
           @toggle-archive="toggleArchive"
           @edit="openEditProject"
         />
+
+        <!-- Ожидание списка: серые заготовки на месте карточек -->
+        <div
+          v-for="n in 3"
+          v-show="projectsLoading && !projects.length && projectsError === null"
+          :key="`skeleton-${n}`"
+          class="project-skeleton"
+          aria-hidden="true"
+        >
+          <div class="skeleton-line skeleton-title"></div>
+          <div class="skeleton-line"></div>
+          <div class="skeleton-line skeleton-short"></div>
+        </div>
 
         <!-- Карточка создания проекта (для всех) -->
         <div class="create-project-card" @click="createProjectOpen">
@@ -48,20 +61,25 @@
           </div>
         </div>
 
-        <!-- Пустое состояние -->
-        <div v-if="projects.length === 0" class="empty-state">
-          <div style="color: var(--color-text-secondary); margin-bottom: 12px">
-            <app-icon :icon="Inbox" :size="40" />
-          </div>
-          <div style="font-weight: 600; margin-bottom: 4px">Нет проектов</div>
-          <div style="color: var(--color-text-secondary)">
-            Создайте первый проект — нажмите «Создать проект»
-          </div>
-        </div>
+        <!-- Ошибка списка и пустое состояние -->
+        <StateError
+          v-if="projectsError !== null"
+          class="projects-state"
+          title="Не удалось загрузить проекты"
+          :text="projectsError"
+          @retry="load"
+        />
+        <StateEmpty
+          v-else-if="!projectsLoading && projects.length === 0"
+          class="projects-state"
+          :icon="Inbox"
+          title="Нет проектов"
+          hint="Создайте первый проект — нажмите «Создать проект»"
+        />
       </div>
 
       <n-pagination
-        v-if="total > PAGE_SIZE"
+        v-if="total > PAGE_SIZE && projectsError === null"
         class="projects-pagination"
         :page="page"
         :page-size="PAGE_SIZE"
@@ -108,7 +126,7 @@
 <script setup lang="ts">
 import { Inbox, Timer } from '@lucide/vue'
 import AppIcon from '../components/AppIcon.vue'
-import { ref, onMounted, onUnmounted } from 'vue'
+import { computed, ref, onMounted, onUnmounted } from 'vue'
 import { useAuthStore } from '../stores/auth'
 import { useTimerStore } from '../stores/timer'
 import {
@@ -123,6 +141,8 @@ import {
 import { errorText } from '../services/errors'
 import ProjectCard from '../components/ProjectCard.vue'
 import NoProjectCard from '../components/NoProjectCard.vue'
+import StateEmpty from '../components/StateEmpty.vue'
+import StateError from '../components/StateError.vue'
 import ProjectTasksDrawer from '../components/ProjectTasksDrawer.vue'
 import TaskTimerModal from '../components/TaskTimerModal.vue'
 import CreateProjectModal from '../components/CreateProjectModal.vue'
@@ -143,6 +163,11 @@ const sortOptions = [
 ]
 
 const projects = ref<ProjectListItem[]>([])
+// список проектов: идёт ли запрос (с первого кадра, чтобы не мелькало «Нет проектов») и текст ошибки
+const projectsLoading = ref(true)
+const projectsError = ref<string | null>(null)
+// при ошибке старый список не показываем: на его месте ошибка с «Повторить»
+const shownProjects = computed(() => (projectsError.value === null ? projects.value : []))
 const total = ref(0)
 const page = ref(1)
 const sort = ref<'created_at' | '-created_at' | 'name' | '-name'>('-created_at')
@@ -173,12 +198,15 @@ function openEditProject(p: ProjectListItem) {
   editProjectShow.value = true
 }
 
-// список проектов и карточка «Без проекта» — два независимых запроса; ошибка одного не мешает другому
+// список проектов и карточка «Без проекта» — два независимых запроса; ошибка одного не мешает другому.
+// Ошибка карточки — тостом, и только если список не показал свою: две жалобы на одну поломку не нужны
 async function load() {
-  await Promise.all([loadProjects(), loadNoProject()])
+  const [, noProjectError] = await Promise.all([loadProjects(), loadNoProject()])
+  if (noProjectError && projectsError.value === null) message.error(noProjectError)
 }
 
-async function loadNoProject() {
+// возвращает текст ошибки или null
+async function loadNoProject(): Promise<string | null> {
   const seq = ++noProjectSeq
   try {
     const data = await getTasks({
@@ -187,17 +215,20 @@ async function loadNoProject() {
       limit: 3,
       sort: 'created_at'
     })
-    if (seq !== noProjectSeq) return
+    if (seq !== noProjectSeq) return null
     noProjectTotal.value = data.total
     noProjectPreview.value = data.items
+    return null
   } catch (err) {
-    if (seq !== noProjectSeq) return
-    message.error(errorText(err, 'Ошибка загрузки задач без проекта'))
+    if (seq !== noProjectSeq) return null
+    return errorText(err, 'Ошибка загрузки задач без проекта')
   }
 }
 
 async function loadProjects() {
   const seq = ++requestSeq
+  projectsLoading.value = true
+  projectsError.value = null
   try {
     // превью задач и счётчик для карточек приходят в том же ответе
     const data = await getProjects({
@@ -217,7 +248,9 @@ async function loadProjects() {
     }
   } catch (err) {
     if (seq !== requestSeq) return
-    message.error(errorText(err, 'Ошибка загрузки проектов'))
+    projectsError.value = errorText(err, 'Ошибка загрузки проектов')
+  } finally {
+    if (seq === requestSeq) projectsLoading.value = false
   }
 }
 
@@ -397,11 +430,49 @@ onUnmounted(() => {
   opacity: 0.7;
 }
 
-.empty-state {
+.projects-state {
   grid-column: 1 / -1;
-  text-align: center;
-  padding: 60px 20px;
-  color: var(--color-text-secondary);
+}
+
+.project-skeleton {
+  display: grid;
+  gap: 10px;
+  align-content: start;
+  min-height: 200px;
+  padding: 24px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-line);
+  border-radius: var(--radius-lg);
+}
+
+.skeleton-line {
+  height: 10px;
+  width: 85%;
+  border-radius: var(--radius-sm);
+  background: var(--color-line);
+  animation: skeleton-pulse 1.4s ease-in-out infinite;
+}
+
+.skeleton-title {
+  height: 16px;
+  width: 55%;
+  margin-bottom: 6px;
+}
+
+.skeleton-short {
+  width: 60%;
+}
+
+@keyframes skeleton-pulse {
+  50% {
+    opacity: 0.45;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .skeleton-line {
+    animation: none;
+  }
 }
 
 .fade-in {
