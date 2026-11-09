@@ -4,22 +4,22 @@ version = "0.1.0"
 description = "Проекты и задачи"
 requires-python = "==3.14.*"
 dependencies = [
-    "fastapi==0.161.1",
+    "fastapi==0.162.0",
     "uvicorn[standard]==0.54.0",
     "SQLAlchemy==2.1.6",
     "alembic==1.20.1",
-    "pydantic==2.14.1",
-    "pydantic-settings==2.16.1",
+    "pydantic==2.14.3",
+    "pydantic-settings==2.16.2",
     "pyjwt==2.15.1",
     "python-dotenv==1.2.4",
     "httpx==0.28.1",
-    "psycopg[binary]==3.3.6",
+    "psycopg[binary]==3.3.8",
 ]
 
 # зависимости только для тестов: uv sync ставит их по умолчанию, в образ не попадают (--no-dev)
 [dependency-groups]
 dev = [
-    "pytest==9.1.1",
+    "pytest==9.2.0",
     "httpx2==2.16.0",
     "pytest-cov==7.1.0",
 ]
